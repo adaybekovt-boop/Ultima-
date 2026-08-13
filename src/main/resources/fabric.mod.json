@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "ultima",
+  "version": "${version}",
+  "name": "Ultima",
+  "description": "Compatibility-first Minecraft performance mod.",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.ultima.Ultima"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
