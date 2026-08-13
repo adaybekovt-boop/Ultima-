@@ -17,3 +17,4 @@ gradle/wrapper/
 # OS
 .DS_Store
 Thumbs.db
+bench/ultima_bench/data/ultima/function/load_test.mcfunction

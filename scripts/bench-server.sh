@@ -45,6 +45,34 @@ PROPS
 echo "== module states (${MODE}) =="
 cat run/config/ultima.properties
 
+# The entity load is generated rather than committed, from a fixed seed and an explicit linear
+# congruential generator, so every run places exactly the same entities in the same places.
+# They are spread across the whole force-loaded region so that the number of populated entity
+# sections resembles a server whose players are spread out rather than standing in one place.
+FUNCTIONS="bench/ultima_bench/data/ultima/function"
+mkdir -p "$FUNCTIONS"
+awk -v span=260 -v mobs=700 -v items=400 'BEGIN {
+  print "gamerule advance_time false";
+  print "gamerule random_tick_speed 3";
+  print "time set midnight";
+  print "difficulty normal";
+  split("zombie skeleton cow sheep pig chicken creeper spider", kinds, " ");
+  seed = 20260616;
+  width = span * 2 + 1;
+  for (i = 0; i < mobs + items; i++) {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    x = (seed % width) - span;
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    z = (seed % width) - span;
+    if (i < mobs) {
+      printf "summon minecraft:%s %d.5 -59.0 %d.5\n", kinds[(i % 8) + 1], x, z;
+    } else {
+      printf "summon minecraft:item %d.5 -59.0 %d.5 {Item:{id:\"minecraft:cobblestone\",count:1}}\n", x, z;
+    }
+  }
+}' > "${FUNCTIONS}/load_test.mcfunction"
+echo "generated $(wc -l < "${FUNCTIONS}/load_test.mcfunction") load commands"
+
 TMUX_CONF=(-f /exec-daemon/tmux.portal.conf)
 if [[ ! -f /exec-daemon/tmux.portal.conf ]]; then TMUX_CONF=(); fi
 
@@ -69,12 +97,20 @@ mkdir -p "run/${WORLD}/datapacks"
 cp -r bench/ultima_bench "run/${WORLD}/datapacks/"
 send "reload" 10
 wait_for 'Reloading!' 60
-send "forceload add -80 -80 80 80" 6
-send "function ultima:load_test" 30
+
+# forceload is capped per command, so the region is covered in tiles.
+for cx in -272 -16 240; do
+  for cz in -272 -16 240; do
+    send "forceload add ${cx} ${cz} $((cx + 255)) $((cz + 255))" 4
+  done
+done
+send "function ultima:load_test" 45
 send "tick sprint ${TICKS}" 5
-wait_for 'Sprint completed' 900
+wait_for 'Sprint completed' 1800
 send "tick query" 5
+# Confirms both sides of a comparison really ticked the same load.
+send "kill @e[type=cow]" 4
 send "stop" 15
 
 echo "===== ${LABEL} (${MODE}) ====="
-grep -E 'Sprint completed|Average time per tick|Percentiles' "$LOG" || true
+grep -E 'Sprint completed|Average time per tick|Percentiles|Killed' "$LOG" || true

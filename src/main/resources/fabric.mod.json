@@ -9,11 +9,7 @@
     "main": ["dev.ultima.Ultima"]
   },
   "mixins": [
-    "ultima.mixins.json",
-    {
-      "config": "ultima.client.mixins.json",
-      "environment": "client"
-    }
+    "ultima.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.19.3",

@@ -11,9 +11,5 @@
     "block_collision_shape.BlockCollisionsMixin",
     "cursor_step.Cursor3DMixin",
     "entity_section_lookup.EntitySectionStorageMixin"
-  ],
-  "client": [
-  ],
-  "server": [
   ]
 }
