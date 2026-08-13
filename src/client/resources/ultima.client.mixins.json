@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.ultima.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "dev.ultima.config.UltimaMixinPlugin",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+  ]
+}
