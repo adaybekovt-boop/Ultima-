@@ -1,0 +1,14 @@
+.gradle/
+build/
+out/
+run/
+.idea/
+*.iml
+.vscode/
+
+# Local/generated Minecraft material. Never commit it.
+.agent/
+
+# OS
+.DS_Store
+Thumbs.db
