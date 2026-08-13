@@ -21,18 +21,9 @@ public final class UltimaModules {
             new Module("block_collision_shape", true,
                     "Only build the collider's voxel shape when a non-cube block shape actually needs to be "
                             + "intersected with it."),
-            new Module("collision_fast_path", true,
-                    "Skip building intermediate collider lists when a movement cannot collide with anything."),
-            new Module("goal_selector", true,
-                    "Avoid per-goal flag set iteration while no goal control flag is disabled."),
-            new Module("chunk_ticking_range", true,
-                    "Cache the per-tick chunk ticking range lookups keyed by chunk position."),
-            new Module("random_source", true,
-                    "Reuse the per-chunk random tick position work instead of re-deriving shared state."),
-            new Module("brightness_cache", true,
-                    "Cache the client's per-frame block brightness lookups for the section being rebuilt."),
-            new Module("model_part_culling", true,
-                    "Skip pose stack work for entity model parts that are neither visible nor have children."));
+            new Module("cursor_step", true,
+                    "Step the block iteration cursor by carrying an increment instead of dividing a running "
+                            + "index by the volume's width and height at every position."));
 
     private UltimaModules() {
     }
