@@ -42,6 +42,7 @@ sync-chunk-writes=false
 view-distance=10
 simulation-distance=10
 max-tick-time=-1
+pause-when-empty-seconds=0
 PROPS
 
 # Write every known module explicitly so neither side depends on per-module defaults.
