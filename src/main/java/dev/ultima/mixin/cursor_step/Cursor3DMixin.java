@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
@@ -63,9 +64,17 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
     @Unique
     private boolean ultimaInteriorExhausted;
 
+    @Unique
+    private boolean ultimaCarryEligible;
+
+    @Inject(method = "<init>(IIIIII)V", at = @At("TAIL"))
+    private void ultimaCacheCarryEligibility(final CallbackInfo ci) {
+        this.ultimaCarryEligible = CursorMath.canUseCarry(this.width, this.height, this.depth);
+    }
+
     @Override
     public void ultimaVisitInteriorOnly() {
-        if (CursorMath.canUseCarry(this.width, this.height, this.depth)) {
+        if (this.ultimaCarryEligible) {
             this.ultimaInteriorOnly = true;
         }
     }
@@ -77,7 +86,7 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
          * its divide-by-zero and wrapped-index behaviour. The carry algorithm is equivalent only
          * when positive dimensions complete before the index wraps.
          */
-        if (!CursorMath.canUseCarry(this.width, this.height, this.depth)) {
+        if (!this.ultimaCarryEligible) {
             return;
         }
 
