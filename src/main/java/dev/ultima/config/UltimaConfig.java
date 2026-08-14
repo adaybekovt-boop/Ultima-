@@ -55,13 +55,17 @@ public final class UltimaConfig {
      */
     public boolean isEnabled(final String module) {
         Boolean value = this.modules.get(module);
-        return value == null || value;
+        if (value == null || !value) {
+            return value == null;
+        }
+
+        return !"collision_shell_skip".equals(module) || Boolean.TRUE.equals(this.modules.get("cursor_step"));
     }
 
     public int enabledModuleCount() {
         int enabled = 0;
-        for (Boolean value : this.modules.values()) {
-            if (value) {
+        for (String module : this.modules.keySet()) {
+            if (this.isEnabled(module)) {
                 enabled++;
             }
         }
@@ -107,6 +111,11 @@ public final class UltimaConfig {
                     }
                 }
             }
+        }
+
+        if (Boolean.TRUE.equals(modules.get("collision_shell_skip"))
+                && !Boolean.TRUE.equals(modules.get("cursor_step"))) {
+            LOGGER.warn("'collision_shell_skip' requires 'cursor_step'; the shell optimization will stay inactive.");
         }
 
         writeIfChanged(path, modules, properties);

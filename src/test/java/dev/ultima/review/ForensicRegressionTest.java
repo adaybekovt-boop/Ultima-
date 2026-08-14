@@ -1,8 +1,13 @@
 package dev.ultima.review;
 
+import dev.ultima.config.UltimaConfig;
 import dev.ultima.util.SectionRangeMath;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.TreeSet;
 import net.minecraft.core.SectionPos;
@@ -20,6 +25,7 @@ public final class ForensicRegressionTest {
         testEntitySectionOrder();
         testCursorCarry();
         testInteriorCursorAndIndex();
+        testConfigParsingAndDependencies();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -177,6 +183,27 @@ public final class ForensicRegressionTest {
                     assertEquals(interior.end, interior.index, "exhausted interior index");
                 }
             }
+        }
+    }
+
+    private static void testConfigParsingAndDependencies() {
+        try {
+            Method parseBoolean = UltimaConfig.class.getDeclaredMethod("parseBoolean", String.class);
+            parseBoolean.setAccessible(true);
+            assertTrue(Boolean.TRUE.equals(parseBoolean.invoke(null, " TRUE ")), "true config value");
+            assertTrue(Boolean.FALSE.equals(parseBoolean.invoke(null, "false")), "false config value");
+            assertTrue(parseBoolean.invoke(null, "enabled") == null, "invalid config value must not become false");
+
+            Constructor<UltimaConfig> constructor = UltimaConfig.class.getDeclaredConstructor(Map.class);
+            constructor.setAccessible(true);
+            Map<String, Boolean> modules = new LinkedHashMap<>();
+            modules.put("collision_shell_skip", true);
+            modules.put("cursor_step", false);
+            UltimaConfig config = constructor.newInstance(modules);
+            assertFalse(config.isEnabled("collision_shell_skip"), "shell skip must require cursor step");
+            assertEquals(0L, config.enabledModuleCount(), "dependency-aware enabled count");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not exercise config guards", e);
         }
     }
 
