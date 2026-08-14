@@ -12,10 +12,20 @@ set -euo pipefail
 
 LABEL="${1:?usage: bench-server.sh <run-label> <enabled|disabled>}"
 MODE="${2:?usage: bench-server.sh <run-label> <enabled|disabled>}"
-TICKS="${TICKS:-2000}"
+TICKS="${TICKS:-2500}"
+WARMUP_TICKS="${WARMUP_TICKS:-1000}"
 WORLD="ultima-bench"
 LOG="/tmp/ultima-bench-${LABEL}.log"
 SESSION="ultima-bench-${LABEL}"
+
+if [[ ! "$MODE" =~ ^(enabled|disabled)$ ]]; then
+  echo "mode must be exactly 'enabled' or 'disabled'" >&2
+  exit 2
+fi
+if [[ ! "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "label may contain only letters, digits, dot, underscore, and hyphen" >&2
+  exit 2
+fi
 
 cd "$(dirname "$0")/.."
 bash scripts/ensure-wrapper.sh
@@ -34,11 +44,21 @@ simulation-distance=10
 max-tick-time=-1
 PROPS
 
-# Write every known module to the requested state. Missing keys default to enabled, so the
-# disabled side must list them explicitly.
+# Write every known module explicitly so neither side depends on per-module defaults.
+mapfile -t MODULE_KEYS < <(
+  awk '/new Module\("[a-z_]+", (true|false),/ {
+    line = $0
+    sub(/^.*new Module\("/, "", line)
+    sub(/".*$/, "", line)
+    print line
+  }' src/main/java/dev/ultima/config/UltimaModules.java
+)
+if (( ${#MODULE_KEYS[@]} == 0 )); then
+  echo "failed to discover optimization module keys" >&2
+  exit 1
+fi
 {
-  for key in $(grep -oE '"[a-z_]+", (true|false)' src/main/java/dev/ultima/config/UltimaModules.java \
-      | sed 's/"\([a-z_]*\)".*/\1/'); do
+  for key in "${MODULE_KEYS[@]}"; do
     printf '%s=%s\n' "$key" "$([[ "$MODE" == enabled ]] && echo true || echo false)"
   done
 } > run/config/ultima.properties
@@ -77,6 +97,7 @@ TMUX_CONF=(-f /exec-daemon/tmux.portal.conf)
 if [[ ! -f /exec-daemon/tmux.portal.conf ]]; then TMUX_CONF=(); fi
 
 tmux "${TMUX_CONF[@]}" kill-session -t "=${SESSION}" 2>/dev/null || true
+rm -f "$LOG"
 tmux "${TMUX_CONF[@]}" new-session -d -s "${SESSION}" -c "$PWD" -- bash -l
 tmux "${TMUX_CONF[@]}" send-keys -t "${SESSION}:0.0" \
   "cd $PWD && ./gradlew --no-daemon --console=plain runServer 2>&1 | tee ${LOG}" C-m
@@ -91,8 +112,23 @@ wait_for() {
   echo "timed out waiting for: $pattern" >&2
   return 1
 }
+wait_for_count() {
+  local pattern="$1" expected="$2" limit="${3:-300}" waited=0 count
+  while (( waited < limit )); do
+    count="$(grep -c "$pattern" "$LOG" 2>/dev/null || true)"
+    if (( count >= expected )); then return 0; fi
+    sleep 3; waited=$((waited + 3))
+  done
+  echo "timed out waiting for occurrence ${expected} of: ${pattern}" >&2
+  return 1
+}
 
 wait_for 'Done ([0-9.]*s)!' 600
+if [[ "$MODE" == enabled ]]; then
+  wait_for "Ultima initialized with ${#MODULE_KEYS[@]} of ${#MODULE_KEYS[@]} optimization modules enabled" 30
+else
+  wait_for "Ultima initialized with 0 of ${#MODULE_KEYS[@]} optimization modules enabled" 30
+fi
 mkdir -p "run/${WORLD}/datapacks"
 cp -r bench/ultima_bench "run/${WORLD}/datapacks/"
 send "reload" 10
@@ -101,12 +137,18 @@ wait_for 'Reloading!' 60
 # forceload is capped per command, so the region is covered in tiles.
 for cx in -272 -16 240; do
   for cz in -272 -16 240; do
-    send "forceload add ${cx} ${cz} $((cx + 255)) $((cz + 255))" 4
+    x_end=$((cx + 255))
+    z_end=$((cz + 255))
+    (( x_end > 271 )) && x_end=271
+    (( z_end > 271 )) && z_end=271
+    send "forceload add ${cx} ${cz} ${x_end} ${z_end}" 4
   done
 done
 send "function ultima:load_test" 45
+send "tick sprint ${WARMUP_TICKS}" 2
+wait_for_count 'Sprint completed' 1 1800
 send "tick sprint ${TICKS}" 5
-wait_for 'Sprint completed' 1800
+wait_for_count 'Sprint completed' 2 1800
 send "tick query" 5
 # Confirms both sides of a comparison really ticked the same load.
 send "kill @e[type=cow]" 4
