@@ -84,8 +84,8 @@ public final class UltimaConfig {
 
     public int enabledModuleCount() {
         int enabled = 0;
-        for (UltimaModules.Module module : UltimaModules.all()) {
-            if (this.isEnabled(module.key())) {
+        for (String module : this.modules.keySet()) {
+            if (this.isEnabled(module)) {
                 enabled++;
             }
         }
