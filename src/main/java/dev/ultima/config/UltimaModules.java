@@ -21,6 +21,9 @@ public final class UltimaModules {
             new Module("block_collision_shape", true,
                     "Only build the collider's voxel shape when a non-cube block shape actually needs to be "
                             + "intersected with it."),
+            new Module("collision_shell_skip", true,
+                    "Reject the one-block shell around a collision query without reading block states when "
+                            + "no section it covers can hold a block whose shape reaches outside its own cube."),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."));
