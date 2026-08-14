@@ -10,7 +10,10 @@
   },
   "mixins": [
     "ultima.mixins.json",
-    "ultima.client.mixins.json"
+    {
+      "config": "ultima.client.mixins.json",
+      "environment": "client"
+    }
   ],
   "depends": {
     "fabricloader": ">=0.19.3",
