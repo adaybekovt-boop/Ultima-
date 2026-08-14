@@ -84,6 +84,11 @@ The old nine force-load commands each covered up to 16×16 chunks, for 2304 chun
 span actually occupies chunk coordinates -17 through 16, or 34×34 = 1156 chunks. The commands now
 cover exactly that range.
 
+The old script also defaulted to 2000 sprint ticks while the report described 2500 without recording
+the required environment override. Its final table implies about 97.4 and 113.0 uncapped ticks/s
+from the listed run means, not the reported 96.9 and 112.3; the 96.9 value instead matches the older
+10.32 ms three-run baseline documented in history. The headline was stale relative to its own table.
+
 The historic 10.26 ms → 8.85 ms figures cannot be tied to the checked-in script and are not accepted
 as evidence for the reviewed code.
 
@@ -269,6 +274,8 @@ historic per-module nanosecond claims, and does not override the correctness/def
   independently imply TPS/FPS gain.
 - The original four-baseline/three-optimized sample is unbalanced, has no standard deviation or
   confidence interval, and provides no raw logs.
+- The historic script/report disagree on 2000 vs 2500 measured ticks, and the reported throughput
+  values disagree with the final ms/tick table.
 - The staged 9.80 → 9.62 → 8.85 sequence changes both feature set and injection mechanism. It does
   not isolate interactions among all four final modules.
 - `/tick sprint` reports uncapped throughput, not a playable server rate above Minecraft's 20 TPS
