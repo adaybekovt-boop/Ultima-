@@ -49,6 +49,10 @@ tasks.register("forensicRegressionTest", JavaExec) {
     mainClass = "dev.ultima.review.ForensicRegressionTest"
 }
 
+test {
+    failOnNoDiscoveredTests = false
+}
+
 check.dependsOn forensicRegressionTest
 
 java {
