@@ -1,6 +1,7 @@
 package dev.ultima.mixin.cursor_step;
 
 import dev.ultima.ext.InteriorOnlyCursor;
+import dev.ultima.util.CursorMath;
 import net.minecraft.core.Cursor3D;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -64,17 +65,19 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
 
     @Override
     public void ultimaVisitInteriorOnly() {
-        this.ultimaInteriorOnly = true;
+        if (CursorMath.canUseCarry(this.width, this.height, this.depth)) {
+            this.ultimaInteriorOnly = true;
+        }
     }
 
     @Inject(method = "advance", at = @At("HEAD"), cancellable = true)
     private void ultimaAdvanceWithoutDividing(final CallbackInfoReturnable<Boolean> cir) {
         /*
-         * Cursor3D is public and accepts inverted bounds. Vanilla then retains its divide-by-zero
-         * and overflow behaviour. The carry algorithm is equivalent only for positive dimensions,
-         * which are the dimensions used by collision and client sampling call sites.
+         * Cursor3D is public and accepts inverted or int-overflowing bounds. Vanilla then retains
+         * its divide-by-zero and wrapped-index behaviour. The carry algorithm is equivalent only
+         * when positive dimensions complete before the index wraps.
          */
-        if (this.width <= 0 || this.height <= 0 || this.depth <= 0) {
+        if (!CursorMath.canUseCarry(this.width, this.height, this.depth)) {
             return;
         }
 

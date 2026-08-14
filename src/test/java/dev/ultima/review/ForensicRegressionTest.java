@@ -1,6 +1,8 @@
 package dev.ultima.review;
 
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
+import dev.ultima.util.CursorMath;
 import dev.ultima.util.SectionRangeMath;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -23,6 +25,7 @@ public final class ForensicRegressionTest {
         testSaturatedSectionVolume();
         testPackedSectionBounds();
         testEntitySectionOrder();
+        testCursorCarryBounds();
         testCursorCarry();
         testInteriorCursorAndIndex();
         testConfigParsingAndDependencies();
@@ -160,6 +163,13 @@ public final class ForensicRegressionTest {
         }
     }
 
+    private static void testCursorCarryBounds() {
+        assertTrue(CursorMath.canUseCarry(1, 1, Integer.MAX_VALUE), "largest non-wrapping cursor");
+        assertFalse(CursorMath.canUseCarry(2, 1, Integer.MAX_VALUE), "overflowing cursor must use vanilla");
+        assertFalse(CursorMath.canUseCarry(0, 2, 2), "zero width must preserve vanilla divide-by-zero");
+        assertFalse(CursorMath.canUseCarry(-1, 2, 2), "inverted bounds must preserve vanilla behavior");
+    }
+
     private static void testInteriorCursorAndIndex() {
         for (int width = 1; width <= 12; width++) {
             for (int height = 1; height <= 12; height++) {
@@ -202,6 +212,13 @@ public final class ForensicRegressionTest {
             UltimaConfig config = constructor.newInstance(modules);
             assertFalse(config.isEnabled("collision_shell_skip"), "shell skip must require cursor step");
             assertEquals(0L, config.enabledModuleCount(), "dependency-aware enabled count");
+
+            Map<String, Boolean> defaults = new LinkedHashMap<>();
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                defaults.put(module.key(), module.enabledByDefault());
+            }
+            assertFalse(defaults.get("entity_section_lookup"), "full replacement must remain opt-in");
+            assertFalse(defaults.get("collision_shell_skip"), "snapshot optimization must remain opt-in");
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not exercise config guards", e);
         }
