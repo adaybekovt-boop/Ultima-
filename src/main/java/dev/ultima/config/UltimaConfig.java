@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,7 +62,11 @@ public final class UltimaConfig {
 
     private boolean isEnabled(final String module, final Set<String> resolving) {
         UltimaModules.Module definition = UltimaModules.byKey(module);
-        if (definition == null || !Boolean.TRUE.equals(this.modules.get(module)) || !resolving.add(module)) {
+        if (definition == null
+                || !isApplicableInCurrentEnvironment(definition)
+                || hasLoadedIncompatibility(definition)
+                || !Boolean.TRUE.equals(this.modules.get(module))
+                || !resolving.add(module)) {
             return false;
         }
 
@@ -79,8 +84,8 @@ public final class UltimaConfig {
 
     public int enabledModuleCount() {
         int enabled = 0;
-        for (String module : this.modules.keySet()) {
-            if (this.isEnabled(module)) {
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (this.isEnabled(module.key())) {
                 enabled++;
             }
         }
@@ -89,7 +94,13 @@ public final class UltimaConfig {
     }
 
     public int knownModuleCount() {
-        return this.modules.size();
+        int known = 0;
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (isApplicableInCurrentEnvironment(module)) {
+                known++;
+            }
+        }
+        return known;
     }
 
     private static UltimaConfig load() {
@@ -130,9 +141,11 @@ public final class UltimaConfig {
 
         UltimaConfig resolved = new UltimaConfig(modules);
         for (UltimaModules.Module module : UltimaModules.all()) {
-            if (Boolean.TRUE.equals(modules.get(module.key())) && !resolved.isEnabled(module.key())) {
-                LOGGER.warn("'{}' has an inactive or cyclic dependency {}; the module will stay inactive.",
-                        module.key(), module.dependencies());
+            if (isApplicableInCurrentEnvironment(module)
+                    && Boolean.TRUE.equals(modules.get(module.key()))
+                    && !resolved.isEnabled(module.key())) {
+                LOGGER.warn("'{}' is inactive because of a dependency, cycle, or loaded incompatible mod (dependencies={}, incompatibleMods={}).",
+                        module.key(), module.dependencies(), module.incompatibleMods());
             }
         }
 
@@ -183,5 +196,18 @@ public final class UltimaConfig {
             return false;
         }
         return null;
+    }
+
+    private static boolean isApplicableInCurrentEnvironment(final UltimaModules.Module module) {
+        return !module.clientOnly() || FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT;
+    }
+
+    private static boolean hasLoadedIncompatibility(final UltimaModules.Module module) {
+        for (String modId : module.incompatibleMods()) {
+            if (FabricLoader.getInstance().isModLoaded(modId)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

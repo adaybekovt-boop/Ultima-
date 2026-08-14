@@ -11,13 +11,36 @@ import java.util.List;
  * disabled module.
  */
 public final class UltimaModules {
-    public record Module(String key, boolean enabledByDefault, String description, List<String> dependencies) {
+    public record Module(
+            String key,
+            boolean enabledByDefault,
+            String description,
+            List<String> dependencies,
+            List<String> incompatibleMods,
+            boolean clientOnly) {
         public Module(final String key, final boolean enabledByDefault, final String description) {
-            this(key, enabledByDefault, description, List.of());
+            this(key, enabledByDefault, description, List.of(), List.of(), false);
+        }
+
+        public Module(
+                final String key,
+                final boolean enabledByDefault,
+                final String description,
+                final List<String> dependencies) {
+            this(key, enabledByDefault, description, dependencies, List.of(), false);
         }
 
         public Module {
             dependencies = List.copyOf(dependencies);
+            incompatibleMods = List.copyOf(incompatibleMods);
+        }
+
+        public static Module client(
+                final String key,
+                final boolean enabledByDefault,
+                final String description,
+                final List<String> incompatibleMods) {
+            return new Module(key, enabledByDefault, description, List.of(), incompatibleMods, true);
         }
     }
 
@@ -37,7 +60,18 @@ public final class UltimaModules {
                     List.of("cursor_step")),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
-                            + "index by the volume's width and height at every position."));
+                            + "index by the volume's width and height at every position."),
+            Module.client("client_chunk_matrix_reuse", true,
+                    "Reuse one immutable model-view matrix snapshot for all chunk-section uniforms in a frame. "
+                            + "Automatically disabled when Sodium or Iris is loaded.",
+                    List.of("sodium", "iris")),
+            Module.client("client_chunk_layer_array_reuse", true,
+                    "Reuse one ChunkSectionLayer.values() array during chunk submission preparation. "
+                            + "Automatically disabled when Sodium or Iris is loaded.",
+                    List.of("sodium", "iris")),
+            Module.client("client_benchmark", false,
+                    "Record reproducible client frame-time distributions when explicitly requested.",
+                    List.of()));
 
     private UltimaModules() {
     }

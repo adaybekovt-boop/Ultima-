@@ -48,10 +48,10 @@ PROPS
 
 # Write every known module explicitly so neither side depends on per-module defaults.
 mapfile -t MODULE_ENTRIES < <(
-  awk '/new Module\("[a-z_]+", (true|false),/ {
+  awk '/(new Module|Module\.client)\("[a-z_]+", (true|false),/ {
     line = $0
     state = line
-    sub(/^.*new Module\("/, "", line)
+    sub(/^.*(new Module|Module\.client)\("/, "", line)
     sub(/".*$/, "", line)
     sub(/^.*", /, "", state)
     sub(/,.*/, "", state)
@@ -62,12 +62,18 @@ if (( ${#MODULE_ENTRIES[@]} == 0 )); then
   echo "failed to discover optimization module keys" >&2
   exit 1
 fi
-DEFAULT_ENABLED=0
+SERVER_MODULE_COUNT="$(
+  awk '/new Module\("[a-z_]+", (true|false),/ { count++ } END { print count + 0 }' \
+    src/main/java/dev/ultima/config/UltimaModules.java
+)"
+SERVER_DEFAULT_ENABLED="$(
+  awk '/new Module\("[a-z_]+", true,/ { count++ } END { print count + 0 }' \
+    src/main/java/dev/ultima/config/UltimaModules.java
+)"
 {
   for entry in "${MODULE_ENTRIES[@]}"; do
     key="${entry%%=*}"
     default_state="${entry#*=}"
-    [[ "$default_state" == true ]] && DEFAULT_ENABLED=$((DEFAULT_ENABLED + 1))
     case "$MODE" in
       enabled) state=true ;;
       disabled) state=false ;;
@@ -139,11 +145,11 @@ wait_for_count() {
 
 wait_for 'Done ([0-9.]*s)!' 600
 case "$MODE" in
-  enabled) EXPECTED_ENABLED=${#MODULE_ENTRIES[@]} ;;
+  enabled) EXPECTED_ENABLED=$SERVER_MODULE_COUNT ;;
   disabled) EXPECTED_ENABLED=0 ;;
-  default) EXPECTED_ENABLED=$DEFAULT_ENABLED ;;
+  default) EXPECTED_ENABLED=$SERVER_DEFAULT_ENABLED ;;
 esac
-wait_for "Ultima initialized with ${EXPECTED_ENABLED} of ${#MODULE_ENTRIES[@]} optimization modules enabled" 30
+wait_for "Ultima initialized with ${EXPECTED_ENABLED} of ${SERVER_MODULE_COUNT} optimization modules enabled" 30
 mkdir -p "run/${WORLD}/datapacks"
 cp -r bench/ultima_bench "run/${WORLD}/datapacks/"
 send "reload" 10

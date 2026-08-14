@@ -238,9 +238,15 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("entity_section_lookup"), "full replacement must remain opt-in");
             assertFalse(defaults.get("block_collision_shape"), "deferred wrapper composition must remain opt-in");
             assertFalse(defaults.get("collision_shell_skip"), "snapshot optimization must remain opt-in");
+            assertTrue(defaults.get("client_chunk_matrix_reuse"), "vanilla chunk matrix reuse should default on");
+            assertTrue(defaults.get("client_chunk_layer_array_reuse"), "vanilla chunk layer reuse should default on");
+            assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
             assertTrue(
                     UltimaModules.byKey("collision_shell_skip").dependencies().contains("cursor_step"),
                     "shell dependency must be declared in the registry");
+            assertTrue(
+                    UltimaModules.byKey("client_chunk_matrix_reuse").incompatibleMods().contains("sodium"),
+                    "terrain optimization must declare Sodium incompatibility");
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not exercise config guards", e);
         }

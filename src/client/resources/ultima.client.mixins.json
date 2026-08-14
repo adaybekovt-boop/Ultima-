@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.ultima.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "dev.ultima.config.UltimaMixinPlugin",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "client_benchmark.MinecraftMixin",
+    "client_chunk_layer_array_reuse.LevelRendererMixin",
+    "client_chunk_matrix_reuse.LevelRendererMixin"
+  ]
+}
