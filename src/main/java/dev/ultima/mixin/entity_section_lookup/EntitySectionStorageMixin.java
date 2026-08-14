@@ -2,7 +2,6 @@ package dev.ultima.mixin.entity_section_lookup;
 
 import dev.ultima.util.SectionRangeMath;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import it.unimi.dsi.fastutil.longs.LongSortedSet;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.AbortableIterationConsumer;
 import net.minecraft.world.level.entity.EntityAccess;
@@ -31,20 +30,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(EntitySectionStorage.class)
 public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
-    /**
-     * Above this many candidate sections the query is broad enough that vanilla's strip walk is not
-     * obviously worse, so it is only replaced while it cannot visit fewer sections than we probe.
-     */
+    /** Broad direct probes can be much worse than vanilla in an empty x strip. */
     @Unique
     private static final long ULTIMA_DIRECT_LOOKUP_BUDGET = 1024L;
 
     @Shadow
     @Final
     private Long2ObjectMap<EntitySection<T>> sections;
-
-    @Shadow
-    @Final
-    private LongSortedSet sectionIds;
 
     @Inject(method = "forEachAccessibleNonEmptySection", at = @At("HEAD"), cancellable = true)
     private void ultimaLookupSectionsDirectly(final AABB bb, final AbortableIterationConsumer<EntitySection<T>> output, final CallbackInfo ci) {
@@ -70,7 +62,7 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
         // Saturation is required: the three spans can have a mathematical product up to 2^96.
         long candidates = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET && candidates > this.sectionIds.size()) {
+        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET) {
             return;
         }
 

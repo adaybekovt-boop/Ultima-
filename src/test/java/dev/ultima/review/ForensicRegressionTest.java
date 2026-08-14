@@ -76,7 +76,7 @@ public final class ForensicRegressionTest {
             int zMin = random.nextInt(-16, 17);
             int zMax = random.nextInt(zMin, 17);
             long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-            if (volume > 1024L && volume > populated.size()) {
+            if (volume > 1024L) {
                 continue;
             }
 
