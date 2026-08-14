@@ -11,7 +11,24 @@ public final class Ultima implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        UltimaConfig config = UltimaConfig.get();
         LOGGER.info("Ultima initialized with {} of {} optimization modules enabled.",
-                UltimaConfig.get().enabledModuleCount(), UltimaConfig.get().knownModuleCount());
+                config.enabledModuleCount(), config.knownModuleCount());
+        warnAboutInertModules(config);
+    }
+
+    /**
+     * {@code collision_shell_skip} reaches the block iteration cursor through the interface the
+     * {@code cursor_step} Mixin adds to it. With {@code cursor_step} off that interface is absent,
+     * the shell skip finds nothing to drive, and collision queries silently fall back to the vanilla
+     * traversal. That is safe, but the user has disabled an optimization without being told, so say
+     * so rather than letting the combination look like it works.
+     */
+    private static void warnAboutInertModules(final UltimaConfig config) {
+        if (config.isEnabled("collision_shell_skip") && !config.isEnabled("cursor_step")) {
+            LOGGER.warn("'collision_shell_skip' needs 'cursor_step' to have any effect, and "
+                    + "'cursor_step' is disabled. Collision queries will use the vanilla traversal. "
+                    + "Enable 'cursor_step', or disable 'collision_shell_skip' as well.");
+        }
     }
 }

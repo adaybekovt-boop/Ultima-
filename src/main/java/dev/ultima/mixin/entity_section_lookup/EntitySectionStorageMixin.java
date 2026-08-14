@@ -11,7 +11,6 @@ import net.minecraft.world.phys.AABB;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -27,16 +26,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * hash map instead. The visited set is identical because {@code sections} and {@code sectionIds}
  * always hold the same keys, and the sections are visited in exactly the vanilla order so that any
  * ordering the caller can observe is unchanged.
+ *
+ * <p>Direct probing is only a win while the box covers fewer section keys than the storage holds
+ * sections; a wide query against a sparsely populated world would otherwise probe far more keys than
+ * vanilla would ever walk, so that case falls back to the vanilla scan.
  */
 @Mixin(EntitySectionStorage.class)
 public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
-    /**
-     * Above this many candidate sections the query is broad enough that vanilla's strip walk is not
-     * obviously worse, so it is only replaced while it cannot visit fewer sections than we probe.
-     */
-    @Unique
-    private static final long ULTIMA_DIRECT_LOOKUP_BUDGET = 1024L;
-
     @Shadow
     @Final
     private Long2ObjectMap<EntitySection<T>> sections;
@@ -60,7 +56,13 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
         // Long arithmetic throughout: a degenerate box can span the whole coordinate range.
         long candidates = ((long)xMax - xMin + 1L) * ((long)yMax - yMin + 1L) * ((long)zMax - zMin + 1L);
-        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET && candidates > this.sectionIds.size()) {
+
+        // Probing is only worth it while there are fewer keys to probe than there are sections
+        // vanilla could possibly walk. `sectionIds.size()` is the whole storage, so this is a
+        // generous bound on vanilla's cost — it never falls back on a query the direct lookup
+        // would have won. Without it a wide query against a sparsely populated world probes
+        // hundreds of empty keys to find nothing, which is strictly worse than the strip walk.
+        if (candidates > this.sectionIds.size()) {
             return;
         }
 

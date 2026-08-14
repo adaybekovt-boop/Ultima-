@@ -70,7 +70,10 @@ public abstract class BlockCollisionsShellMixin {
             method = "<init>(Lnet/minecraft/world/level/CollisionGetter;Lnet/minecraft/world/phys/shapes/CollisionContext;Lnet/minecraft/world/phys/AABB;ZLjava/util/function/BiFunction;)V",
             at = @At("TAIL"))
     private void ultimaRestrictCursorToInterior(final CallbackInfo ci) {
-        if (this.ultimaShellIsIrrelevant() && this.cursor instanceof InteriorOnlyCursor interiorOnly) {
+        // The instanceof is tested first on purpose. It is the cheap half, and it is false for the
+        // whole run when the cursor_step module is disabled, in which case there is nothing to drive
+        // and the palette scan below would be paid on every query for no effect.
+        if (this.cursor instanceof InteriorOnlyCursor interiorOnly && this.ultimaShellIsIrrelevant()) {
             interiorOnly.ultimaVisitInteriorOnly();
         }
     }

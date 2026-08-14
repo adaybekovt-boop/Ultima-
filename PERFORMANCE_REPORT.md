@@ -28,6 +28,15 @@ Six candidates were rejected outright, including one whose first implementation 
 replaced after measurement showed the injection mechanism cost more than the optimization saved. The
 client renderer was deliberately left untouched; the reasoning is in *Rejected optimizations*.
 
+> **Amended by the second-pass architectural audit.** `ARCHITECTURAL_AUDIT.md` re-reviewed all four
+> modules and corrected three claims made below. In short: `block_collision_shape` was not removing
+> the allocation it describes (the injector used does not suppress the call); `entity_section_lookup`
+> had a fallback guard that left an unbounded worst case, measured at ~45x slower than vanilla on a
+> sparse world; and the `-9.7%` attributed to `collision_shell_skip` was measured on a superflat
+> world, which is that module's best case by construction. Corrections are inline in each section
+> below and marked **[audit]**. The end-to-end A/B figures themselves were not re-run — the audit
+> environment could not reach Fabric maven or Mojang, so no server could be built or benchmarked.
+
 ## Environment fixes required first
 
 `scripts/export-vanilla-sources.sh` could not succeed on any input. It tested candidate JARs with
@@ -128,6 +137,23 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   300,000 volumes including degenerate spans, and stays exhausted after finishing. The instrumentation
   was removed before the change was kept.
 - **Contribution:** mean tick time 9.80 ms to 8.85 ms, **-9.7%**, on top of the other three.
+- **[audit] The -9.7% is specific to the superflat bench world and does not generalize.** The
+  saving is a fixed count of skipped shell positions, but the cost is
+  `Σ over covered sections of (palette size)` predicate tests per query, because
+  `LevelChunkSection.maybeHas` scans the palette. `scripts/bench-server.sh` sets
+  `level-type=minecraft:flat`, whose sections are single-value air or a ~4-entry flat stack, so a
+  query pays roughly 4-8 tests. An ordinary overworld surface or cave section carries a
+  `LinearPalette` (<=16) or `HashMapPalette` (17-256), so the same query pays roughly 60-180. The
+  benchmark understates this module's cost by about an order of magnitude while its benefit is
+  unchanged. **An A/B on a default world type is required before this figure is quoted again.**
+  Two further costs belong in that measurement and were never counted: `ultimaShellIsIrrelevant()`
+  performs one `getChunkForCollisions` per (x, z) column per query *outside* the one-entry chunk
+  cache in `BlockCollisions`, and a `GlobalPalette`-backed section returns `true` unconditionally
+  after the scan of every other section has already been paid.
+- **[audit] Ordering fix.** The eligibility test used to run before the `instanceof InteriorOnlyCursor`
+  check. With the `cursor_step` module disabled, that meant every query paid the full palette scan
+  and then found no cursor to drive. The two are now tested cheap-first, and Ultima warns at startup
+  when that combination is configured.
 
 ### 2. `entity_section_lookup` — direct entity section lookup
 
@@ -150,10 +176,26 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   maps a negative coordinate above every non-negative one. Order matters because callers collect
   into a `List` and some resolve ties by first-encountered — for example a mob picking a target at
   equal distance.
-- **Fallback:** if the candidate volume exceeds 1024 sections *and* exceeds the total number of
-  existing sections, the vanilla path runs instead, so a pathological query can never make Ultima
-  probe more sections than vanilla would visit. A degenerate or infinite bounding box produces a
-  candidate count computed in `long` arithmetic and falls back for the same reason.
+- **Fallback:** if the candidate volume exceeds the total number of existing sections, the vanilla
+  path runs instead, so a pathological query can never make Ultima probe more sections than vanilla
+  could visit. A degenerate or infinite bounding box produces a candidate count computed in `long`
+  arithmetic and falls back for the same reason.
+- **[audit] The guard originally read `candidates > 1024 && candidates > sectionIds.size()`, which
+  did not bound the worst case.** Because both clauses had to hold, any query covering 1024 or
+  fewer candidate sections took the direct-probe path however sparse the world was — that is,
+  protection was disabled exactly where it was needed, since direct probing wins on dense worlds and
+  loses on empty ones. Wide boxes are routine (mob follow ranges, explosion entity collection,
+  command selectors), and a 128-block box yields ~787 candidates, comfortably under the budget.
+  Measured on real fastutil containers with 3 populated sections and a 128-block query, 200k
+  queries after warmup: vanilla **101 ns**, Ultima with the old guard **4579 ns**, Ultima with the
+  `1024` clause removed **90 ns** — a ~45x regression, repaired. The dense-world wins are unaffected
+  (an entity-sized query covers 2-8 candidates against thousands of sections). Result equivalence
+  under the tightened guard was re-verified over 18000 queries with 0 mismatches. Reproduce with
+  `bash tools/audit/run.sh`.
+- **[audit] Residual, disclosed:** mid-density worlds where the candidate count is just under
+  `sectionIds.size()` but the x-strip is nearly empty still probe more than vanilla walks (measured
+  33.9 vs 13.2 work units on one such shape). Closing that needs the per-strip population, which a
+  `LongSortedSet` cannot supply in O(1). The unbounded case is gone; this one is bounded and small.
 - **Mod compatibility risk:** low-medium. It is a cancelling `@Inject` at `HEAD`, which is a full
   replacement of a five-line loop; another mod injecting into the same method still runs. There is
   no narrower hook, since the loop *is* the cost. Disabling the module restores vanilla exactly.
@@ -207,10 +249,32 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   usually takes its allocating branch rather than returning the shared full-cube shape.
 - **Why behaviour is equivalent:** the shape is produced by the same call on the same immutable box,
   so the intersection test observes the same value. It is computed at most once per query.
-- **Mod compatibility risk:** low. Implemented with MixinExtras `@ModifyExpressionValue` (bundled in
-  Fabric Loader 0.19.3), which is stackable — unlike `@Redirect`, several mods can wrap the same
-  expression without an exclusivity conflict.
+- **Mod compatibility risk:** low. Implemented with MixinExtras (bundled in Fabric Loader 0.19.3),
+  which is stackable — unlike `@Redirect`, several mods can wrap the same expression without an
+  exclusivity conflict.
 - **Shader compatibility risk:** none.
+- **[audit] The original implementation did not remove the allocation described above.** It used
+  `@ModifyExpressionValue` on the `Shapes.create` call and returned `null`. That annotation does not
+  suppress the expression: MixinExtras 0.5.4's own javadoc says the handler "receives the
+  expression's resultant value ... and should return the adjusted value", and
+  `ModifyExpressionValueInjector.injectValueModifier` *inserts* the handler call after the original
+  instruction rather than replacing it. `Shapes.create(box)` therefore still ran and still allocated;
+  only the reference was discarded. Any real saving depended on C2 inlining the call and proving the
+  result non-escaping, which is plausible but unguaranteed, while the module reliably added a handler
+  invocation per construction and a null check per `entityShape` read. It is now implemented with
+  `@WrapOperation`, whose handler declines to call `original`, which is what actually skips the call.
+  No varargs array is allocated precisely because `original` is never invoked, and this runs once per
+  query rather than once per block position — so the boxing cost that disqualified `@WrapOperation`
+  for `collision_shell_skip` does not apply here.
+- **[audit] Consequence for the staged measurements:** this module's historical contribution should
+  be assumed to be near zero and re-measured. It was never isolated — it is folded into the
+  three-module staged row below — so no published figure has to be withdrawn, but none supports it
+  either.
+- **[audit] Known fragility:** both the old and the new form leave `entityShape` null and patch its
+  reads in `computeNext` only. If a future Minecraft version reads that field from a second method,
+  the read returns null and throws. `defaultRequire: 1` does not protect against this; it validates
+  that injection points resolve, not that the set of field readers is unchanged. Re-validate on
+  every version bump.
 - **Verification:** build and runtime validation below. This change removes allocations without
   altering control flow, so it has no differential harness of its own; it is covered by the
   end-to-end A/B and the physics checks.
@@ -283,8 +347,15 @@ longer runs listed under *Required real-PC tests*.
 
 These figures are specific to this load. They understate `entity_section_lookup`, whose isolated gain
 is 8-21x but which has little to bite on here: the entities occupy roughly 33 chunk columns, so the
-strip vanilla walks is already short. They are representative for `cursor_step` and
-`collision_shell_skip`, which scale with block collision volume and are present in every tick.
+strip vanilla walks is already short. They are representative for `cursor_step`, which scales with
+block collision volume and is present in every tick.
+
+**[audit] The claim that they are also representative for `collision_shell_skip` is withdrawn.**
+That module's cost scales with section palette size, and the bench world is superflat
+(`level-type=minecraft:flat`), whose palettes are the smallest that exist. Its benefit is
+world-independent but its cost is not, so this world is its best case by construction. See the
+module's entry above and `ARCHITECTURAL_AUDIT.md` §A-5. The bench script should grow a
+default-world mode before the next optimization is measured against it.
 
 ## Rejected optimizations
 
@@ -366,6 +437,23 @@ Last command: `./gradlew --no-daemon clean build` — **BUILD SUCCESSFUL**.
 `bash scripts/check.sh` runs the same build. No vanilla source is copied into the repository, and
 `.agent/` is untracked (0 files matched in `git ls-files`).
 
+**[audit] The second-pass changes have not been through that build.** The audit environment's egress
+proxy denies `maven.fabricmc.net` and Mojang's distribution hosts (403 to `CONNECT`), so Loom cannot
+resolve `fabric-loom:1.17-SNAPSHOT`, no Minecraft jar can be fetched, `.agent/vanilla-src` cannot be
+generated and no server can be launched. What was verified instead:
+
+- **Differential harnesses**, now committed at `tools/audit/` and runnable with
+  `bash tools/audit/run.sh`: 0 mismatches over 40216 cursor volumes / 4963671 positions, and 0
+  visited-set and 0 visit-order mismatches over 24000 entity-section queries, plus 18000 more under
+  the tightened guard.
+- **A stub-based type check** of all of `src/main/java` against hand-written Minecraft, Fabric and
+  Sponge Mixin signatures with the real MixinExtras 0.5.4, fastutil and jspecify jars: compiles
+  clean under `-Xlint:all`. This validates Ultima's own syntax, generics and handler signatures; it
+  does **not** validate that the Mixin targets exist in 26.2.
+- Both JSON resources parse.
+
+`bash scripts/check.sh` must be run on a machine with Fabric maven access before release.
+
 ## Runtime validation
 
 Performed on a real dedicated 26.2 server with the mod loaded (`Ultima initialized with 4 of 4
@@ -415,7 +503,17 @@ changed, because the collision and entity-section code paths run on the client:
 
 ## Next targets
 
-Ranked by the evidence gathered, not by guesswork:
+Ranked by the evidence gathered, not by guesswork.
+
+**[audit] Re-ranked.** The second pass promotes the fan-out above the predicate allocation, and
+sharpens what to do about it. Rather than proving the step-up and `findSupportingBlock` volumes are
+contained in the primary sweep's volume — which needs a containment proof — memoise the
+*shell-eligibility answer* for the duration of one `Entity.move`. No block state changes during a
+single entity movement, so the palette answer is constant across all three traversals of that
+movement. That cuts the palette cost identified in `ARCHITECTURAL_AUDIT.md` §A-5 by roughly 3x and
+is the change most likely to make `collision_shell_skip` unambiguously positive on ordinary worlds.
+It needs a working build to measure and was deliberately not implemented on evidence this
+environment could not produce.
 
 1. **`Level.getEntities` and the collision predicate path** — 15.2% inclusive, with 9.4% self time in
    the collector lambda. `getEntityCollisions` builds a fresh `NO_SPECTATORS.and(source::canCollideWith)`
