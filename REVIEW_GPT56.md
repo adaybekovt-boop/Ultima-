@@ -40,13 +40,14 @@ The constructor hook was an expression-value modifier. `Shapes.create(AABB)` had
 before the handler returned `null`. The common path therefore retained all eager computation and
 allocation; the uncommon non-cube path called `Shapes.create` again from `computeNext`.
 
-The hook is now a MixinExtras `@WrapOperation` that intentionally does not call the constructor
-operation. Runtime output is unchanged for vanilla finite AABBs, and the first non-cube read creates
-and retains one shape.
+The hook is now a MixinExtras `@WrapOperation` that suppresses the constructor call, retains the
+supplied operation chain, and invokes it on the first non-cube read. Runtime output is unchanged for
+vanilla finite AABBs, and inner wrappers represented by `original` still participate.
 
 Remaining compatibility risk: the vanilla private final `entityShape` is temporarily `null`, and an
-inner third-party wrapper around the same call is not invoked when Ultima terminates the operation
-chain. Mods that access that field or transform the same constructor/field read require testing.
+outer wrapper can observe that constructor-time sentinel before Ultima invokes its retained chain.
+No mechanism can both skip the immediate operation and provide every outer wrapper its immediate
+result. The module is therefore disabled by default.
 
 #### H2 — `collision_shell_skip` can use stale world state (mitigated, not eliminated)
 
@@ -62,6 +63,10 @@ call timing/order observable to chunk and collision mods.
 Normal vanilla movement consumes these iterators immediately on one thread, so the practical
 window is small, but exact semantic equivalence is not proven for a public lazy iterator and modded
 callbacks. The module is now opt-in and its dependency on `cursor_step` is enforced.
+
+The final integration also moved the constant-time cursor eligibility check before the section
+scan. Degenerate or int-overflowing volumes now fail open before chunk/palette work, preventing an
+enormous query that vanilla exhausts immediately from triggering an unbounded pre-check.
 
 #### H3 — direct section lookup aliased out-of-range coordinates (fixed)
 
@@ -125,8 +130,9 @@ for every emitted position and sets `index=end` on exhaustion.
 The old guard allowed more than 1024 direct probes whenever the candidate volume was no larger than
 the *global* `sectionIds` count. Global sections outside the queried x strip do not represent work
 the vanilla query would perform. A broad empty-strip query could replace zero vanilla section visits
-with thousands of hash probes. Direct lookup is now unconditionally capped at 1024 candidates, and
-the no-longer-needed `sectionIds` shadow was removed.
+with thousands of hash probes. Direct lookup is now capped at 1024 candidates and also falls back
+when candidates exceed the total loaded section count. The no-longer-needed `sectionIds` shadow was
+removed.
 
 #### M4 — module configuration could silently misreport behavior (fixed)
 
@@ -135,10 +141,11 @@ the no-longer-needed `sectionIds` shadow was removed.
   enabled because `Cursor3D` lacked `InteriorOnlyCursor`.
 - Security failures while writing the config could escape despite the documented fallback.
 
-Boolean parsing is now strict, invalid values retain the declared default with a warning, the module
-dependency affects both Mixin application and enabled count, and write-time security failures are
-handled. Existing explicit configs are preserved; users of prerelease builds should review old
-generated values because changing defaults does not override explicit `true`.
+Boolean parsing is now strict, invalid values retain the declared default with a warning, module
+dependencies affect both Mixin application and enabled count, unknown module packages fail closed,
+and write-time security failures are handled. Dependencies are registry data rather than
+string-special-cased. Existing explicit configs are preserved; users of prerelease builds should
+review old generated values because changing defaults does not override explicit `true`.
 
 #### M5 — Mixin failure policy is fail-closed
 
@@ -165,7 +172,7 @@ conflict is identified; they do not provide runtime self-disabling. This especia
 | Optimization | Correctness confidence | Compatibility confidence | Performance evidence quality | Risk | Verdict |
 |---|---:|---:|---:|---|---|
 | `entity_section_lookup` | 90/100 | 40/100 | 25/100 | HIGH | **DISABLE BY DEFAULT** |
-| `block_collision_shape` | 88/100 | 52/100 | 20/100 | MEDIUM | **KEEP BUT HARDEN** (injector fixed) |
+| `block_collision_shape` | 88/100 | 58/100 | 20/100 | MEDIUM | **DISABLE BY DEFAULT** |
 | `cursor_step` | 96/100 | 65/100 | 55/100 | MEDIUM | **SAFE TO KEEP** |
 | `collision_shell_skip` | 58/100 | 48/100 | 35/100 | HIGH | **DISABLE BY DEFAULT** |
 
@@ -186,8 +193,8 @@ For vanilla, `AABB` is immutable and the corrected operation computes the same `
 value at most once when the non-cube branch needs it. There is no world lifecycle/cache issue.
 
 The prior benchmark measured the ineffective injector. The corrected hook may save the documented
-allocation, but it has not been isolated from the other modules and its wrapper/null-field
-compatibility needs a Lithium-like collision stack. Keep it switchable.
+allocation and now retains the wrapped operation chain, but it has not been isolated and cannot
+compose perfectly with wrappers outside Ultima or early field readers. Keep it opt-in.
 
 ### `cursor_step`
 
@@ -212,14 +219,16 @@ until a current-state validation strategy or a constrained immediate-consumption
 
 ## Fixes made
 
-- Replaced the ineffective constructor expression modifier with a non-invoking `@WrapOperation`.
+- Replaced the ineffective constructor expression modifier with a deferred `@WrapOperation` whose
+  retained operation preserves inner wrapper chains.
 - Added saturated section-volume arithmetic and packed-coordinate bounds.
 - Replaced the global-count performance heuristic with a hard 1024-candidate cap.
 - Removed the unnecessary `sectionIds` Mixin shadow.
 - Added vanilla fallbacks for inverted and index-overflowing cursors.
 - Preserved the vanilla cursor index during interior-only traversal.
 - Cached cursor eligibility at construction to avoid hot-loop arithmetic.
-- Disabled `entity_section_lookup` and `collision_shell_skip` by default.
+- Checked cursor eligibility before shell palette scanning.
+- Disabled `entity_section_lookup`, `block_collision_shape`, and `collision_shell_skip` by default.
 - Enforced the shell-skip dependency on cursor stepping.
 - Hardened config parsing and write failure handling.
 - Added benchmark mode/label validation, explicit module discovery checks, a 1000-tick warmup,
@@ -236,34 +245,43 @@ until a current-state validation strategy or a constrained immediate-consumption
 - 100,000 randomized division/modulo vs carried cursor comparisons;
 - every width/height/depth combination from 1 through 12 for interior subsequence, order, and index;
 - zero, inverted, and `Integer.MAX_VALUE` cursor eligibility boundaries;
-- strict config boolean parsing, module dependency, enabled-count, and risky-default assertions.
+- strict config boolean parsing, registry dependency, unknown-module, enabled-count, and
+  risky-default assertions.
 
 The test is dependency-free and runs as a Java verification task, avoiding a benchmark/test
 framework dependency merely for arithmetic differential checks.
 
-## Benchmark rerun
+## Release artifact
 
-After all code fixes were committed, the corrected harness ran three alternating disabled/enabled
-pairs. Each fresh JVM performed a 1000-tick warmup followed by the reported 2500-tick sprint. The
-world was recreated each time and all four modules were set explicitly; the enabled side therefore
-includes the two opt-in modules and is not representative of default configuration.
+`build/libs/ultima-0.1.0.jar` is the production mod JAR from the final clean build. Archive inspection
+confirmed `fabric.mod.json`, `ultima.mixins.json`, `Ultima.class`, config/util classes, and all four
+compiled Mixin classes. It is not the separate `ultima-0.1.0-sources.jar` and contains compiled
+`.class` entries rather than `.java` sources.
 
-| Pair | All disabled (ms/tick) | All enabled (ms/tick) |
-|---|---:|---:|
-| A | 9.08 | 7.54 |
-| B | 8.61 | 6.96 |
-| C | 9.38 | 7.13 |
-| **Mean** | **9.02** | **7.21** |
-| Range | 8.61–9.38 | 6.96–7.54 |
+## Release-candidate benchmark rerun
 
-For this synthetic load, combined enabled modules reduced measured sprint time by **20.1%**. Mean
-reported uncapped throughput was 110.7 vs 138.3 ticks/s (**+25.0%**). All six runs killed 88 cows,
-completed a clean Gradle/server shutdown, and had no exception or Mixin failure. The recurring
-`No key layers in MapLike[{}]` line occurred equally on both sides and predates the Mixins.
+After final code integration, the corrected harness ran three alternating rounds of all-disabled,
+release-default, and all-enabled configurations. Each fresh JVM performed a 1000-tick warmup followed
+by a 2500-tick measured sprint. The world was recreated each time and all module states were explicit.
 
-This is credible evidence that the combined current implementation has a large effect on this
-specific entity/collision stress load. It does not isolate any module, does not rehabilitate the
-historic per-module nanosecond claims, and does not override the correctness/default-state verdicts.
+| Round | All disabled | Release default (`cursor_step`) | All enabled experimental |
+|---|---:|---:|---:|
+| A | 8.82 ms/tick | 8.21 ms/tick | 7.25 ms/tick |
+| B | 8.85 ms/tick | 8.97 ms/tick | 7.42 ms/tick |
+| C | 8.91 ms/tick | 8.73 ms/tick | 7.57 ms/tick |
+| **Mean** | **8.86 ms/tick** | **8.64 ms/tick** | **7.41 ms/tick** |
+| Range | 8.82–8.91 | 8.21–8.97 | 7.25–7.57 |
+
+On this synthetic collision-heavy load, the shipped default was **2.5% lower mean tick cost** than
+all-disabled. Its ranges overlap and one default run was slower than every baseline run, so this is
+directional evidence only, not a robust release performance claim. All-enabled experimental reduced
+mean tick cost by **16.3%**, with non-overlapping ranges, but includes three modules intentionally
+disabled for compatibility/correctness reasons.
+
+The corresponding console values are uncapped sprint throughput, not normal Minecraft TPS. All nine
+runs loaded the expected 0/1/4 enabled-module states, killed 88 cows, shut down cleanly, and had no
+exception or Mixin failure. The recurring `No key layers in MapLike[{}]` line occurred equally in all
+configurations and predates the Mixins.
 
 ## Benchmark caveats
 
@@ -309,9 +327,8 @@ historic per-module nanosecond claims, and does not override the correctness/def
 With these fixes, merge is reasonable only as a guarded experimental release:
 
 - keep `cursor_step` enabled by default;
-- keep the corrected `block_collision_shape` switchable and require a collision-mod compatibility
-  pass before calling it broadly safe;
-- keep `entity_section_lookup` and `collision_shell_skip` disabled by default;
+- keep `entity_section_lookup`, `block_collision_shape`, and `collision_shell_skip` disabled by
+  default;
 - do not publish the historic 13.7%/15.9% figures as results for the reviewed code;
 - do not claim shader/FPS gains.
 

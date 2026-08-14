@@ -10,16 +10,29 @@
 
 Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26.2, Java 25.
 
-## Summary
+## Release-candidate configuration
+
+| Module | Enabled by default | Reason |
+|---|---|---|
+| `cursor_step` | yes | bounded arithmetic substitution with differential coverage |
+| `entity_section_lookup` | no | cancelling whole-method replacement overlaps entity optimization mods |
+| `block_collision_shape` | no | deferred call cannot compose perfectly with every constructor-time wrapper |
+| `collision_shell_skip` | no | lazy palette snapshot and pre-check trade-offs require explicit opt-in |
+
+The default configuration is therefore `cursor_step` only. “All modules enabled” is an experimental
+configuration used to bound the synthetic workload's potential, not the behavior users receive.
+Neither configuration supports an FPS or normal-TPS claim.
+
+## Historical summary (superseded)
 
 Four optimizations are implemented, each behind its own switch in `config/ultima.properties`. All
 four sit in code that both the dedicated server and the client execute, so they apply to multiplayer
 servers, to the integrated server in single-player, and to client-side entity and particle physics.
 
 Measured end to end on a dedicated 26.2 server under a fixed 1100-entity load spread over 1089
-force-loaded chunks, mean tick time dropped from **10.26 ms to 8.85 ms (-13.7%)** and sustained tick
-uncapped sprint throughput rose from **96.9 to 112.3 ticks/s (+15.9%)**, over four baseline runs and three optimized runs whose
-ranges do not overlap.
+force-loaded chunks, the old report claimed **10.26 ms to 8.85 ms (-13.7%)** and **96.9 to 112.3
+uncapped ticks/s (+15.9%)**. Those values are retained only as history: their harness and arithmetic
+failed forensic review and they do not describe the release candidate.
 
 Target selection was driven by a Java Flight Recorder profile of the running server rather than by
 inspection alone. That profile is what disqualified two changes I had already designed, and what
@@ -57,8 +70,9 @@ its Mixins live in, so `dev.ultima.mixin.cursor_step.Cursor3DMixin` belongs to `
 `UltimaMixinPlugin` implements `IMixinConfigPlugin` and refuses to apply the Mixins of a disabled
 module, so a single incompatible optimization can be switched off without disabling the mod.
 `UltimaConfig` reads the properties file once, before any Mixin is applied, and never touches a
-Minecraft class; unknown or missing keys are treated as enabled, and any failure to read or write
-the file degrades to defaults with a warning rather than failing.
+Minecraft class. Known missing keys use declared defaults, unknown Mixin module packages fail closed
+to vanilla, dependencies are registry data, and any read/write failure degrades to defaults with a
+warning rather than failing.
 
 ## Second-order architectural pass
 
@@ -115,14 +129,17 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
 - **Why behaviour is equivalent:** the emitted sequence is exactly the `TYPE_INSIDE` subsequence of
   the vanilla traversal, in the same order, so every result vanilla would have produced is still
   produced in the same order. Order matters because callers collect into lists.
-- **Why no stale-state risk:** nothing is cached beyond a single query. There is no index that could
-  fall out of sync with the world and let an entity walk through a fence, which is exactly what a
-  maintained per-section counter would have risked.
+- **Lifecycle:** no persistent world index is maintained, avoiding unload/reload invalidation.
+  However, the palette answer is a constructor-time snapshot for a lazy iterator. A mod that retains
+  the iterator or mutates an unvisited shell position during a callback can diverge from vanilla;
+  this is why the module is opt-in.
 - **Fallback:** the fast path requires a `Level` that is not a debug world (a debug world synthesises
   block states in `LevelChunk.getBlockState` without consulting the section, so its palettes say
   nothing) and chunks that are `LevelChunk`. `GlobalPalette.maybeHas` returns `true`
   unconditionally, so a section with a palette too large to discriminate falls open to vanilla by
   itself. An absent chunk is treated as contributing nothing, which is what vanilla does with it.
+  Cursor eligibility is checked before any palette access, so degenerate or int-overflowing volumes
+  fail open before potentially unbounded section work.
 - **Mod compatibility risk:** low-medium. Blocks from other mods are handled conservatively: a state
   with a dynamic shape has no shape cache and therefore reports `true` from
   `hasLargeCollisionShape()`, which disables the fast path for that section. The hooks are an
@@ -158,10 +175,9 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   maps a negative coordinate above every non-negative one. Order matters because callers collect
   into a `List` and some resolve ties by first-encountered — for example a mob picking a target at
   equal distance.
-- **Fallback:** if the candidate volume exceeds 1024 sections *and* exceeds the total number of
-  existing sections, the vanilla path runs instead, so a pathological query can never make Ultima
-  probe more sections than vanilla would visit. A degenerate or infinite bounding box produces a
-  candidate count computed in `long` arithmetic and falls back for the same reason.
+- **Fallback:** vanilla runs if the candidate volume exceeds 1024 sections or exceeds the total
+  loaded section count. Saturating arithmetic handles products up to `2^96`, packed-coordinate
+  bounds prevent aliasing, and unsupported ranges fail open before direct probing.
 - **Mod compatibility risk:** low-medium. It is a cancelling `@Inject` at `HEAD`, which is a full
   replacement of a five-line loop; another mod injecting into the same method still runs. There is
   no narrower hook, since the loop *is* the cost. Disabling the module restores vanilla exactly.
@@ -215,9 +231,11 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   usually takes its allocating branch rather than returning the shared full-cube shape.
 - **Why behaviour is equivalent:** the shape is produced by the same call on the same immutable box,
   so the intersection test observes the same value. It is computed at most once per query.
-- **Mod compatibility risk:** low. Implemented with MixinExtras `@ModifyExpressionValue` (bundled in
-  Fabric Loader 0.19.3), which is stackable — unlike `@Redirect`, several mods can wrap the same
-  expression without an exclusivity conflict.
+- **Mod compatibility risk:** medium. A MixinExtras `@WrapOperation` suppresses the eager call,
+  retains the supplied operation chain, and invokes it lazily so inner wrappers still participate.
+  Perfect composition is impossible: an outer wrapper can still observe the constructor-time null
+  sentinel, and a mod reading vanilla's private final field before iteration can observe null.
+  The module is therefore opt-in.
 - **Shader compatibility risk:** none.
 - **Verification:** build and runtime validation below. This change removes allocations without
   altering control flow, so it has no differential harness of its own; it is covered by the
@@ -248,7 +266,28 @@ Leaf attribution was treated as unreliable: it credited 2.43% of self time to `J
 which is two field writes, so inlining clearly smears samples across neighbouring frames. Only
 inclusive shares and line-level attribution were used for decisions.
 
-### End-to-end A/B on the dedicated server
+### Release-candidate three-configuration A/B
+
+The corrected harness ran three alternating rounds after final integration. Each fresh JVM used a
+1000-tick warmup and a 2500-tick measured sprint in a recreated 1156-force-loaded-chunk world.
+
+| Round | All disabled | Release default (`cursor_step`) | All enabled experimental |
+|---|---:|---:|---:|
+| A | 8.82 ms/tick | 8.21 ms/tick | 7.25 ms/tick |
+| B | 8.85 ms/tick | 8.97 ms/tick | 7.42 ms/tick |
+| C | 8.91 ms/tick | 8.73 ms/tick | 7.57 ms/tick |
+| **Mean** | **8.86 ms/tick** | **8.64 ms/tick** | **7.41 ms/tick** |
+
+The default configuration's mean was 2.5% lower than all-disabled, but ranges overlap and one default
+run was slower than every baseline. Treat this as directional, load-specific evidence rather than a
+stable release percentage. All-enabled experimental was 16.3% lower on this collision-heavy load,
+with non-overlapping ranges, but it includes three intentionally opt-in modules.
+
+Console ticks/s from `/tick sprint` are uncapped synthetic throughput, not normal Minecraft TPS. All
+nine runs loaded the expected module counts, killed 88 cows, stopped cleanly, and had no Mixin
+failure or exception.
+
+### Historical end-to-end A/B (superseded)
 
 `scripts/bench-server.sh <label> <enabled|disabled>` recreates the world from scratch each run:
 superflat, fixed seed, view and simulation distance 10, 1089 force-loaded chunks, and a generated
@@ -367,14 +406,21 @@ that all three implemented optimizations still run on the client, in client-side
 collision and in the integrated server, and `entity_section_lookup` benefits most at high view
 distance — the 21.4x microbenchmark point corresponds to a view distance of 32.
 
-## Build status
+## Release-candidate build status
 
-Last command: `./gradlew --no-daemon clean build` — **BUILD SUCCESSFUL**.
+Required commands completed on the integrated release-candidate code:
+
+- `bash scripts/check.sh` — **BUILD SUCCESSFUL**, including `forensicRegressionTest`;
+- `./gradlew --no-daemon clean build` — **BUILD SUCCESSFUL**.
+
+Production artifact: `build/libs/ultima-0.1.0.jar`. It contains `fabric.mod.json`,
+`ultima.mixins.json`, `Ultima.class`, all four compiled Mixin classes, config classes, and utility
+classes. It is distinct from `ultima-0.1.0-sources.jar` and contains `.class`, not `.java`, entries.
 
 `bash scripts/check.sh` runs the same build. No vanilla source is copied into the repository, and
 `.agent/` is untracked (0 files matched in `git ls-files`).
 
-## Runtime validation
+## Historical runtime validation (superseded)
 
 Performed on a real dedicated 26.2 server with the mod loaded (`Ultima initialized with 4 of 4
 optimization modules enabled`, `mixinextras 0.5.4` present):

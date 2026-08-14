@@ -34,6 +34,19 @@ bash scripts/check.sh
 
 Built mod JARs appear in `build/libs/`.
 
+## Release-candidate defaults
+
+Ultima's modules are configured in `config/ultima.properties`.
+
+- Enabled by default: `cursor_step`
+- Disabled by default: `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`
+
+The disabled modules are expert opt-ins because they replace common mod targets, defer a wrapped
+constructor operation, or snapshot lazy collision state. See `REVIEW_GPT56.md` and
+`ARCHITECTURAL_AUDIT.md` before enabling them in a modpack.
+
+The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
+
 ## Important
 
 The generated Minecraft sources under `.agent/` are local reference material only and are ignored by Git. Do not commit or redistribute them.
