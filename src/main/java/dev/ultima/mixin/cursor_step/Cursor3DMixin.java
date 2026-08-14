@@ -69,6 +69,15 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
 
     @Inject(method = "advance", at = @At("HEAD"), cancellable = true)
     private void ultimaAdvanceWithoutDividing(final CallbackInfoReturnable<Boolean> cir) {
+        /*
+         * Cursor3D is public and accepts inverted bounds. Vanilla then retains its divide-by-zero
+         * and overflow behaviour. The carry algorithm is equivalent only for positive dimensions,
+         * which are the dimensions used by collision and client sampling call sites.
+         */
+        if (this.width <= 0 || this.height <= 0 || this.depth <= 0) {
+            return;
+        }
+
         if (this.ultimaInteriorOnly) {
             cir.setReturnValue(this.ultimaAdvanceInterior());
             return;
@@ -108,6 +117,7 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
         if (!this.ultimaInteriorStarted) {
             if (this.width < 3 || this.height < 3 || this.depth < 3) {
                 this.ultimaInteriorExhausted = true;
+                this.index = this.end;
                 return false;
             }
 
@@ -115,7 +125,8 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
             this.x = 1;
             this.y = 1;
             this.z = 1;
-            this.index++;
+            // Vanilla's index is the linear position most recently emitted, plus one.
+            this.index = this.width * this.height + this.width + 2;
             return true;
         }
 
@@ -125,9 +136,18 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
                 this.y = 1;
                 if (++this.z == this.depth - 1) {
                     this.ultimaInteriorExhausted = true;
+                    this.index = this.end;
                     return false;
                 }
+
+                // Two complete y-face rows plus the two x-face positions were skipped.
+                this.index += 2 * this.width + 3;
+                return true;
             }
+
+            // The x-face at each end of the row was skipped.
+            this.index += 3;
+            return true;
         }
 
         this.index++;

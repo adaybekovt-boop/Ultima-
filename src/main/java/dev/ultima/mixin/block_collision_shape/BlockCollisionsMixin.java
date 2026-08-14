@@ -1,6 +1,8 @@
 package dev.ultima.mixin.block_collision_shape;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.world.level.BlockCollisions;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -30,10 +32,11 @@ public abstract class BlockCollisionsMixin {
     @Unique
     private @Nullable VoxelShape ultimaEntityShape;
 
-    @ModifyExpressionValue(
+    @WrapOperation(
             method = "<init>(Lnet/minecraft/world/level/CollisionGetter;Lnet/minecraft/world/phys/shapes/CollisionContext;Lnet/minecraft/world/phys/AABB;ZLjava/util/function/BiFunction;)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)Lnet/minecraft/world/phys/shapes/VoxelShape;"))
-    private VoxelShape ultimaSkipEagerVoxelisation(final VoxelShape original) {
+    private @Nullable VoxelShape ultimaSkipEagerVoxelisation(final AABB box, final Operation<VoxelShape> original) {
+        // Intentionally do not call the operation: calling it would perform the allocation we defer.
         return null;
     }
 

@@ -50,8 +50,8 @@ public final class UltimaConfig {
     }
 
     /**
-     * @return whether the module is enabled; unknown module names are treated as enabled so a
-     *         missing config entry can never silently disable an optimization.
+     * @return whether the module is enabled; known modules start from their declared default and
+     *         unknown module names are treated as enabled.
      */
     public boolean isEnabled(final String module) {
         Boolean value = this.modules.get(module);
@@ -91,14 +91,20 @@ public final class UltimaConfig {
         if (Files.exists(path)) {
             try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
                 properties.load(reader);
-            } catch (IOException | IllegalArgumentException e) {
+            } catch (IOException | IllegalArgumentException | SecurityException e) {
                 LOGGER.warn("Could not read {}; using defaults.", path, e);
             }
 
             for (String key : modules.keySet()) {
                 String value = properties.getProperty(key);
                 if (value != null) {
-                    modules.put(key, Boolean.parseBoolean(value.trim()));
+                    Boolean parsed = parseBoolean(value);
+                    if (parsed == null) {
+                        LOGGER.warn("Ignoring invalid boolean value '{}' for '{}' in {}; using {}.",
+                                value, key, path, modules.get(key));
+                    } else {
+                        modules.put(key, parsed);
+                    }
                 }
             }
         }
@@ -111,7 +117,7 @@ public final class UltimaConfig {
         List<String> lines = new ArrayList<>();
         lines.add("# Ultima optimization modules.");
         lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
-        lines.add("# Unknown or missing keys are treated as enabled.");
+        lines.add("# Missing keys use the documented module default.");
         for (UltimaModules.Module module : UltimaModules.all()) {
             lines.add("");
             lines.add("# " + module.description());
@@ -122,7 +128,7 @@ public final class UltimaConfig {
         if (upToDate) {
             for (Map.Entry<String, Boolean> entry : modules.entrySet()) {
                 String value = existing.getProperty(entry.getKey());
-                if (value == null || !Boolean.valueOf(Boolean.parseBoolean(value.trim())).equals(entry.getValue())) {
+                if (value == null || !entry.getValue().equals(parseBoolean(value))) {
                     upToDate = false;
                     break;
                 }
@@ -136,8 +142,19 @@ public final class UltimaConfig {
         try {
             Files.createDirectories(path.getParent());
             Files.write(path, lines, StandardCharsets.UTF_8);
-        } catch (IOException | UncheckedIOException e) {
+        } catch (IOException | UncheckedIOException | SecurityException e) {
             LOGGER.warn("Could not write {}; Ultima keeps running with the values it resolved.", path, e);
         }
+    }
+
+    private static @org.jspecify.annotations.Nullable Boolean parseBoolean(final String value) {
+        String normalized = value.trim();
+        if ("true".equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        return null;
     }
 }

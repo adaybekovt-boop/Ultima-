@@ -41,6 +41,16 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 25
 }
 
+tasks.register("forensicRegressionTest", JavaExec) {
+    group = "verification"
+    description = "Runs dependency-free differential checks for optimization arithmetic."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.ForensicRegressionTest"
+}
+
+check.dependsOn forensicRegressionTest
+
 java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_25

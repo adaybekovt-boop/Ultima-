@@ -15,15 +15,17 @@ public final class UltimaModules {
     }
 
     private static final List<Module> ALL = List.of(
-            new Module("entity_section_lookup", true,
+            new Module("entity_section_lookup", false,
                     "Look up entity sections intersecting a box directly instead of scanning every "
-                            + "loaded section in the same chunk column strip."),
+                            + "loaded section in the same chunk column strip. Opt-in because this replaces "
+                            + "a full query method also targeted by entity optimization mods."),
             new Module("block_collision_shape", true,
                     "Only build the collider's voxel shape when a non-cube block shape actually needs to be "
                             + "intersected with it."),
-            new Module("collision_shell_skip", true,
+            new Module("collision_shell_skip", false,
                     "Reject the one-block shell around a collision query without reading block states when "
-                            + "no section it covers can hold a block whose shape reaches outside its own cube."),
+                            + "no section it covers can hold a block whose shape reaches outside its own cube. "
+                            + "Opt-in because the palette decision is a snapshot for a lazy iterator."),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."));

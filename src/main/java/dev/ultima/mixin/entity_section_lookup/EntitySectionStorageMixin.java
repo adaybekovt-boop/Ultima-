@@ -1,5 +1,6 @@
 package dev.ultima.mixin.entity_section_lookup;
 
+import dev.ultima.util.SectionRangeMath;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.LongSortedSet;
 import net.minecraft.core.SectionPos;
@@ -58,27 +59,39 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
             return;
         }
 
-        // Long arithmetic throughout: a degenerate box can span the whole coordinate range.
-        long candidates = ((long)xMax - xMin + 1L) * ((long)yMax - yMin + 1L) * ((long)zMax - zMin + 1L);
+        /*
+         * SectionPos truncates coordinates to 22/20/22 bits. Vanilla decodes z and y before
+         * applying the range filter, whereas a direct lookup outside that representable range
+         * would alias an unrelated loaded section and return it. Keep vanilla for such inputs.
+         */
+        if (!SectionRangeMath.isPackable(xMin, yMin, zMin, xMax, yMax, zMax)) {
+            return;
+        }
+
+        // Saturation is required: the three spans can have a mathematical product up to 2^96.
+        long candidates = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
         if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET && candidates > this.sectionIds.size()) {
             return;
         }
 
         ci.cancel();
 
-        for (int x = xMin; x <= xMax; x++) {
+        for (long xCursor = xMin; xCursor <= xMax; xCursor++) {
+            int x = (int)xCursor;
             // Both z and y are masked into the key, so a negative coordinate sorts above every
             // non-negative one. Visiting the non-negative half first reproduces the tree order.
             for (int zHalf = 0; zHalf < 2; zHalf++) {
                 int zFrom = zHalf == 0 ? Math.max(zMin, 0) : zMin;
                 int zTo = zHalf == 0 ? zMax : Math.min(zMax, -1);
 
-                for (int z = zFrom; z <= zTo; z++) {
+                for (long zCursor = zFrom; zCursor <= zTo; zCursor++) {
+                    int z = (int)zCursor;
                     for (int yHalf = 0; yHalf < 2; yHalf++) {
                         int yFrom = yHalf == 0 ? Math.max(yMin, 0) : yMin;
                         int yTo = yHalf == 0 ? yMax : Math.min(yMax, -1);
 
-                        for (int y = yFrom; y <= yTo; y++) {
+                        for (long yCursor = yFrom; yCursor <= yTo; yCursor++) {
+                            int y = (int)yCursor;
                             EntitySection<T> section = this.sections.get(SectionPos.asLong(x, y, z));
                             if (section != null
                                     && !section.isEmpty()
