@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 # Measures dedicated-server tick cost under a fixed, entity-heavy load.
 #
-# Usage: bash scripts/bench-server.sh <run-label> <enabled|disabled>
+# Usage: bash scripts/bench-server.sh <run-label> <enabled|disabled|default>
 #
-# The second argument writes an Ultima config with every optimization module either enabled or
-# disabled, so the same world and the same load can be measured against vanilla behaviour.
+# The second argument writes every module explicitly as enabled, disabled, or at its release default
+# so the same world and load can compare vanilla behavior, the shipped configuration, and the
+# all-modules experimental configuration.
 #
 # The world is recreated from scratch on every run so that entity counts, forced chunks and the
 # world seed are identical between the two sides of a comparison.
 set -euo pipefail
 
-LABEL="${1:?usage: bench-server.sh <run-label> <enabled|disabled>}"
-MODE="${2:?usage: bench-server.sh <run-label> <enabled|disabled>}"
+LABEL="${1:?usage: bench-server.sh <run-label> <enabled|disabled|default>}"
+MODE="${2:?usage: bench-server.sh <run-label> <enabled|disabled|default>}"
 TICKS="${TICKS:-2500}"
 WARMUP_TICKS="${WARMUP_TICKS:-1000}"
 WORLD="ultima-bench"
 LOG="/tmp/ultima-bench-${LABEL}.log"
 SESSION="ultima-bench-${LABEL}"
 
-if [[ ! "$MODE" =~ ^(enabled|disabled)$ ]]; then
-  echo "mode must be exactly 'enabled' or 'disabled'" >&2
+if [[ ! "$MODE" =~ ^(enabled|disabled|default)$ ]]; then
+  echo "mode must be exactly 'enabled', 'disabled', or 'default'" >&2
   exit 2
 fi
 if [[ ! "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -46,21 +47,33 @@ pause-when-empty-seconds=0
 PROPS
 
 # Write every known module explicitly so neither side depends on per-module defaults.
-mapfile -t MODULE_KEYS < <(
+mapfile -t MODULE_ENTRIES < <(
   awk '/new Module\("[a-z_]+", (true|false),/ {
     line = $0
+    state = line
     sub(/^.*new Module\("/, "", line)
     sub(/".*$/, "", line)
-    print line
+    sub(/^.*", /, "", state)
+    sub(/,.*/, "", state)
+    print line "=" state
   }' src/main/java/dev/ultima/config/UltimaModules.java
 )
-if (( ${#MODULE_KEYS[@]} == 0 )); then
+if (( ${#MODULE_ENTRIES[@]} == 0 )); then
   echo "failed to discover optimization module keys" >&2
   exit 1
 fi
+DEFAULT_ENABLED=0
 {
-  for key in "${MODULE_KEYS[@]}"; do
-    printf '%s=%s\n' "$key" "$([[ "$MODE" == enabled ]] && echo true || echo false)"
+  for entry in "${MODULE_ENTRIES[@]}"; do
+    key="${entry%%=*}"
+    default_state="${entry#*=}"
+    [[ "$default_state" == true ]] && DEFAULT_ENABLED=$((DEFAULT_ENABLED + 1))
+    case "$MODE" in
+      enabled) state=true ;;
+      disabled) state=false ;;
+      default) state="$default_state" ;;
+    esac
+    printf '%s=%s\n' "$key" "$state"
   done
 } > run/config/ultima.properties
 echo "== module states (${MODE}) =="
@@ -125,11 +138,12 @@ wait_for_count() {
 }
 
 wait_for 'Done ([0-9.]*s)!' 600
-if [[ "$MODE" == enabled ]]; then
-  wait_for "Ultima initialized with ${#MODULE_KEYS[@]} of ${#MODULE_KEYS[@]} optimization modules enabled" 30
-else
-  wait_for "Ultima initialized with 0 of ${#MODULE_KEYS[@]} optimization modules enabled" 30
-fi
+case "$MODE" in
+  enabled) EXPECTED_ENABLED=${#MODULE_ENTRIES[@]} ;;
+  disabled) EXPECTED_ENABLED=0 ;;
+  default) EXPECTED_ENABLED=$DEFAULT_ENABLED ;;
+esac
+wait_for "Ultima initialized with ${EXPECTED_ENABLED} of ${#MODULE_ENTRIES[@]} optimization modules enabled" 30
 mkdir -p "run/${WORLD}/datapacks"
 cp -r bench/ultima_bench "run/${WORLD}/datapacks/"
 send "reload" 10

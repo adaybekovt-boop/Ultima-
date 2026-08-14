@@ -70,7 +70,15 @@ public abstract class BlockCollisionsShellMixin {
             method = "<init>(Lnet/minecraft/world/level/CollisionGetter;Lnet/minecraft/world/phys/shapes/CollisionContext;Lnet/minecraft/world/phys/AABB;ZLjava/util/function/BiFunction;)V",
             at = @At("TAIL"))
     private void ultimaRestrictCursorToInterior(final CallbackInfo ci) {
-        if (this.ultimaShellIsIrrelevant() && this.cursor instanceof InteriorOnlyCursor interiorOnly) {
+        /*
+         * Eligibility must precede the section scan. Cursor3D computes its end in int arithmetic;
+         * an enormous volume can overflow to a cursor that vanilla exhausts immediately. Scanning
+         * every covered section before discovering that interior mode cannot be used would turn
+         * that cheap vanilla query into effectively unbounded work.
+         */
+        if (this.cursor instanceof InteriorOnlyCursor interiorOnly
+                && interiorOnly.ultimaCanVisitInteriorOnly()
+                && this.ultimaShellIsIrrelevant()) {
             interiorOnly.ultimaVisitInteriorOnly();
         }
     }

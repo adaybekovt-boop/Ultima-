@@ -6,10 +6,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -51,15 +53,28 @@ public final class UltimaConfig {
 
     /**
      * @return whether the module is enabled; known modules start from their declared default and
-     *         unknown module names are treated as enabled.
+     *         unknown module names fail closed to vanilla behavior.
      */
     public boolean isEnabled(final String module) {
-        Boolean value = this.modules.get(module);
-        if (value == null || !value) {
-            return value == null;
+        return this.isEnabled(module, new HashSet<>());
+    }
+
+    private boolean isEnabled(final String module, final Set<String> resolving) {
+        UltimaModules.Module definition = UltimaModules.byKey(module);
+        if (definition == null || !Boolean.TRUE.equals(this.modules.get(module)) || !resolving.add(module)) {
+            return false;
         }
 
-        return !"collision_shell_skip".equals(module) || Boolean.TRUE.equals(this.modules.get("cursor_step"));
+        try {
+            for (String dependency : definition.dependencies()) {
+                if (!this.isEnabled(dependency, resolving)) {
+                    return false;
+                }
+            }
+            return true;
+        } finally {
+            resolving.remove(module);
+        }
     }
 
     public int enabledModuleCount() {
@@ -113,13 +128,16 @@ public final class UltimaConfig {
             }
         }
 
-        if (Boolean.TRUE.equals(modules.get("collision_shell_skip"))
-                && !Boolean.TRUE.equals(modules.get("cursor_step"))) {
-            LOGGER.warn("'collision_shell_skip' requires 'cursor_step'; the shell optimization will stay inactive.");
+        UltimaConfig resolved = new UltimaConfig(modules);
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (Boolean.TRUE.equals(modules.get(module.key())) && !resolved.isEnabled(module.key())) {
+                LOGGER.warn("'{}' has an inactive or cyclic dependency {}; the module will stay inactive.",
+                        module.key(), module.dependencies());
+            }
         }
 
         writeIfChanged(path, modules, properties);
-        return new UltimaConfig(modules);
+        return resolved;
     }
 
     private static void writeIfChanged(final Path path, final Map<String, Boolean> modules, final Properties existing) {

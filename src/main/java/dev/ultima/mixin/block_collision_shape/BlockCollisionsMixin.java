@@ -32,11 +32,20 @@ public abstract class BlockCollisionsMixin {
     @Unique
     private @Nullable VoxelShape ultimaEntityShape;
 
+    @Unique
+    private @Nullable Operation<VoxelShape> ultimaEntityShapeFactory;
+
     @WrapOperation(
             method = "<init>(Lnet/minecraft/world/level/CollisionGetter;Lnet/minecraft/world/phys/shapes/CollisionContext;Lnet/minecraft/world/phys/AABB;ZLjava/util/function/BiFunction;)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)Lnet/minecraft/world/phys/shapes/VoxelShape;"))
     private @Nullable VoxelShape ultimaSkipEagerVoxelisation(final AABB box, final Operation<VoxelShape> original) {
-        // Intentionally do not call the operation: calling it would perform the allocation we defer.
+        /*
+         * Retain the complete wrapped operation chain, not merely Shapes.create itself. Calling it
+         * on demand lets lower/inner MixinExtras wrappers still participate. Wrappers outside this
+         * handler necessarily observe the constructor-time null sentinel, so this module remains
+         * opt-in: perfect composition is impossible while also suppressing the eager call.
+         */
+        this.ultimaEntityShapeFactory = original;
         return null;
     }
 
@@ -50,7 +59,13 @@ public abstract class BlockCollisionsMixin {
 
         VoxelShape shape = this.ultimaEntityShape;
         if (shape == null) {
-            shape = Shapes.create(this.box);
+            Operation<VoxelShape> factory = this.ultimaEntityShapeFactory;
+            try {
+                shape = factory == null ? Shapes.create(this.box) : factory.call(this.box);
+            } finally {
+                // Do not retain captures from this constructor call for the iterator's lifetime.
+                this.ultimaEntityShapeFactory = null;
+            }
             this.ultimaEntityShape = shape;
         }
 

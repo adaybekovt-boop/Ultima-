@@ -28,6 +28,7 @@ public final class ForensicRegressionTest {
         testCursorCarryBounds();
         testCursorCarry();
         testInteriorCursorAndIndex();
+        testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
         System.out.println("Forensic regression checks passed.");
     }
@@ -196,6 +197,22 @@ public final class ForensicRegressionTest {
         }
     }
 
+    private static void testInteriorRequiresCarryEligibility() {
+        int[][] ineligible = {
+                {0, 4, 4},
+                {-1, 4, 4},
+                {4, 0, 4},
+                {4, 4, 0},
+                {3, 3, Integer.MAX_VALUE},
+        };
+        for (int[] dimensions : ineligible) {
+            assertFalse(
+                    CursorMath.canUseCarry(dimensions[0], dimensions[1], dimensions[2]),
+                    "shell pre-check must reject a cursor that cannot carry");
+        }
+        assertTrue(CursorMath.canUseCarry(3, 3, 3), "ordinary collision cursor must remain eligible");
+    }
+
     private static void testConfigParsingAndDependencies() {
         try {
             Method parseBoolean = UltimaConfig.class.getDeclaredMethod("parseBoolean", String.class);
@@ -212,13 +229,18 @@ public final class ForensicRegressionTest {
             UltimaConfig config = constructor.newInstance(modules);
             assertFalse(config.isEnabled("collision_shell_skip"), "shell skip must require cursor step");
             assertEquals(0L, config.enabledModuleCount(), "dependency-aware enabled count");
+            assertFalse(config.isEnabled("misspelled_module"), "unknown module must fail closed");
 
             Map<String, Boolean> defaults = new LinkedHashMap<>();
             for (UltimaModules.Module module : UltimaModules.all()) {
                 defaults.put(module.key(), module.enabledByDefault());
             }
             assertFalse(defaults.get("entity_section_lookup"), "full replacement must remain opt-in");
+            assertFalse(defaults.get("block_collision_shape"), "deferred wrapper composition must remain opt-in");
             assertFalse(defaults.get("collision_shell_skip"), "snapshot optimization must remain opt-in");
+            assertTrue(
+                    UltimaModules.byKey("collision_shell_skip").dependencies().contains("cursor_step"),
+                    "shell dependency must be declared in the registry");
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not exercise config guards", e);
         }

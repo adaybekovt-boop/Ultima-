@@ -11,7 +11,14 @@ import java.util.List;
  * disabled module.
  */
 public final class UltimaModules {
-    public record Module(String key, boolean enabledByDefault, String description) {
+    public record Module(String key, boolean enabledByDefault, String description, List<String> dependencies) {
+        public Module(final String key, final boolean enabledByDefault, final String description) {
+            this(key, enabledByDefault, description, List.of());
+        }
+
+        public Module {
+            dependencies = List.copyOf(dependencies);
+        }
     }
 
     private static final List<Module> ALL = List.of(
@@ -19,13 +26,15 @@ public final class UltimaModules {
                     "Look up entity sections intersecting a box directly instead of scanning every "
                             + "loaded section in the same chunk column strip. Opt-in because this replaces "
                             + "a full query method also targeted by entity optimization mods."),
-            new Module("block_collision_shape", true,
+            new Module("block_collision_shape", false,
                     "Only build the collider's voxel shape when a non-cube block shape actually needs to be "
-                            + "intersected with it."),
+                            + "intersected with it. Opt-in because deferral changes constructor-time wrapper "
+                            + "composition around the shape factory."),
             new Module("collision_shell_skip", false,
                     "Reject the one-block shell around a collision query without reading block states when "
                             + "no section it covers can hold a block whose shape reaches outside its own cube. "
-                            + "Opt-in because the palette decision is a snapshot for a lazy iterator."),
+                            + "Opt-in because the palette decision is a snapshot for a lazy iterator.",
+                    List.of("cursor_step")),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."));
@@ -35,5 +44,14 @@ public final class UltimaModules {
 
     public static List<Module> all() {
         return ALL;
+    }
+
+    public static @org.jspecify.annotations.Nullable Module byKey(final String key) {
+        for (Module module : ALL) {
+            if (module.key().equals(key)) {
+                return module;
+            }
+        }
+        return null;
     }
 }

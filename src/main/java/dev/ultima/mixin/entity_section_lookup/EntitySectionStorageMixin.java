@@ -30,7 +30,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(EntitySectionStorage.class)
 public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
-    /** Broad direct probes can be much worse than vanilla in an empty x strip. */
+    /** Broad direct probes can be much worse than vanilla in an empty or sparsely populated strip. */
     @Unique
     private static final long ULTIMA_DIRECT_LOOKUP_BUDGET = 1024L;
 
@@ -62,7 +62,7 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
         // Saturation is required: the three spans can have a mathematical product up to 2^96.
         long candidates = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET) {
+        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET || candidates > this.sections.size()) {
             return;
         }
 
