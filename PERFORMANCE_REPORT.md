@@ -4,24 +4,29 @@ Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26
 
 ## Summary
 
-Three optimizations are implemented, each behind its own switch in `config/ultima.properties`. All
-three sit in code that both the dedicated server and the client execute, so they apply to
-multiplayer servers, to the integrated server in single-player, and to client-side entity and
-particle physics.
+Four optimizations are implemented, each behind its own switch in `config/ultima.properties`. All
+four sit in code that both the dedicated server and the client execute, so they apply to multiplayer
+servers, to the integrated server in single-player, and to client-side entity and particle physics.
 
 Measured end to end on a dedicated 26.2 server under a fixed 1100-entity load spread over 1089
-force-loaded chunks, mean tick time dropped from **10.32 ms to 9.80 ms (-5.0%)** and sustained tick
-rate rose from **96.3 to 101.7 TPS**, across three runs per side whose ranges do not overlap. The
-individual algorithmic improvements are far larger than 5% in isolation; how much of that reaches
-the tick depends on how much of the world is populated, which is discussed under each entry.
+force-loaded chunks, mean tick time dropped from **10.26 ms to 8.85 ms (-13.7%)** and sustained tick
+rate rose from **96.9 to 112.3 TPS (+15.9%)**, over four baseline runs and three optimized runs whose
+ranges do not overlap.
 
 Target selection was driven by a Java Flight Recorder profile of the running server rather than by
 inspection alone. That profile is what disqualified two changes I had already designed, and what
 identified the largest one. Every optimization that reorders work was checked against a faithful
 port of the vanilla algorithm in a differential harness before being kept.
 
-Four candidates were rejected outright. The client renderer was deliberately left untouched; the
-reasoning is in *Rejected optimizations*.
+Most of the gain comes from one architectural finding rather than from local tuning. After the first
+three optimizations reached diminishing returns, a second-order pass over the *system* rather than
+the loop established that **87% of all block positions a collision query visits exist only to catch
+two rare block properties**, and can be skipped outright once the section palettes say those
+properties are absent. That single change accounts for a 9.7% reduction on top of the other three.
+
+Six candidates were rejected outright, including one whose first implementation worked but was
+replaced after measurement showed the injection mechanism cost more than the optimization saved. The
+client renderer was deliberately left untouched; the reasoning is in *Rejected optimizations*.
 
 ## Environment fixes required first
 
@@ -47,9 +52,84 @@ module, so a single incompatible optimization can be switched off without disabl
 Minecraft class; unknown or missing keys are treated as enabled, and any failure to read or write
 the file degrades to defaults with a warning rather than failing.
 
+## Second-order architectural pass
+
+After the first three optimizations, the profile still showed the collision subsystem dominating, so
+the next question was not "how do I make this loop faster" but "why does this loop have so much to
+do". Two structural observations came out of it.
+
+**A single entity movement triggers three separate traversals of overlapping block volumes.**
+`Entity.collide` scans the box expanded towards the movement; the step-up path rescans a second
+volume; `Entity.checkSupportingBlock` runs a third scan through `findSupportingBlock`. Instrumenting
+the server confirmed it: **2.6 million collision queries in 800 ticks with 1100 entities, about 3
+queries per entity per tick**. This is the fan-out that makes the collision iterator the hottest code
+in the game.
+
+**Most of what those traversals examine cannot possibly matter.** The iterator walks the collider's
+volume grown by one block in every direction. Only the interior is tested normally; the surrounding
+shell is examined solely to catch a block whose collision shape reaches outside its own cube, or a
+moving piston. Instrumentation measured **109 million positions visited in 800 ticks, 87% of them
+shell positions**, each costing a chunk lookup and a block state read to conclude that ordinary
+terrain is ordinary.
+
+Classifying the candidates this pass produced:
+
+| Class | Candidate | Outcome |
+|---|---|---|
+| MACRO | Skip the shell when no section in the volume can hold a qualifying block | **Implemented** (`collision_shell_skip`) |
+| MACRO | Shared per-tick block/shape cache across the 3 traversals | Rejected — the palette read is already O(1) and cheaper than a validated cache lookup |
+| MACRO | Maintained per-section index of large-shape blocks | Rejected in favour of the per-query palette query, which needs no lifecycle |
+| MESO | Reuse the collider list from the primary sweep for the step-up scan and `findSupportingBlock` | Not attempted — the boxes are derived from different positions; needs proof of containment |
+| MESO | Skip `ServerEntity.sendChanges` when no player tracks the entity | Not attempted — `sendChanges` also advances state that later deltas are based on |
+| MICRO | Multi-entry chunk cache, `getOnPos` caching, profiler overhead | Rejected, see below |
+
+The implemented MACRO change is the one that eliminates a whole class of repeated work rather than
+speeding up an operation, and it improves every collision caller at once: entity movement, supporting
+block resolution, suffocation checks, spawn placement checks, particle physics and
+`getAvailableSpaceBelow`.
+
 ## Implemented optimizations
 
-### 1. `entity_section_lookup` — direct entity section lookup
+### 1. `collision_shell_skip` — skip the shell of a collision query
+
+- **Subsystem:** block collision iteration (server and client).
+- **Vanilla hotspot:** `BlockCollisions.computeNext()` via `Cursor3D`, at 28.4% inclusive of the tick.
+- **Change:** the volume is grown by one block in every direction, and a shell position only
+  contributes if `blockState.hasLargeCollisionShape()` (for a face position) or
+  `blockState.is(Blocks.MOVING_PISTON)` (for an edge position); corner positions are already skipped
+  by vanilla. Whether *any* block in the volume can qualify is a question about the block palettes of
+  the few sections it covers, and `LevelChunkSection.maybeHas` — a public vanilla method — answers it
+  without touching individual blocks. Asked once per query, the answer lets the cursor visit only the
+  interior.
+- **Why faster:** removes the chunk lookup, position write, block state read and condition evaluation
+  for 87% of visited positions. The interior-only traversal visits **15.4%** of the positions the full
+  traversal does.
+- **Why behaviour is equivalent:** the emitted sequence is exactly the `TYPE_INSIDE` subsequence of
+  the vanilla traversal, in the same order, so every result vanilla would have produced is still
+  produced in the same order. Order matters because callers collect into lists.
+- **Why no stale-state risk:** nothing is cached beyond a single query. There is no index that could
+  fall out of sync with the world and let an entity walk through a fence, which is exactly what a
+  maintained per-section counter would have risked.
+- **Fallback:** the fast path requires a `Level` that is not a debug world (a debug world synthesises
+  block states in `LevelChunk.getBlockState` without consulting the section, so its palettes say
+  nothing) and chunks that are `LevelChunk`. `GlobalPalette.maybeHas` returns `true`
+  unconditionally, so a section with a palette too large to discriminate falls open to vanilla by
+  itself. An absent chunk is treated as contributing nothing, which is what vanilla does with it.
+- **Mod compatibility risk:** low-medium. Blocks from other mods are handled conservatively: a state
+  with a dynamic shape has no shape cache and therefore reports `true` from
+  `hasLargeCollisionShape()`, which disables the fast path for that section. The hooks are an
+  `@Inject` at the constructor `TAIL` and the already-owned `Cursor3D.advance()`; `computeNext` itself
+  is untouched, so other mods' injections there are unaffected.
+- **Shader compatibility risk:** none.
+- **Verification:** the running server was instrumented to check every skipped position against the
+  qualifying predicate: **90,688,524 skipped positions, zero holding a block that could have
+  mattered**, with **95% of queries eligible** for the fast path. Separately, an offline harness
+  confirmed the interior-only cursor emits exactly the `TYPE_INSIDE` subsequence in order across
+  300,000 volumes including degenerate spans, and stays exhausted after finishing. The instrumentation
+  was removed before the change was kept.
+- **Contribution:** mean tick time 9.80 ms to 8.85 ms, **-9.7%**, on top of the other three.
+
+### 2. `entity_section_lookup` — direct entity section lookup
 
 - **Subsystem:** entity indexing (server and client).
 - **Vanilla hotspot:** `EntitySectionStorage.forEachAccessibleNonEmptySection(AABB, AbortableIterationConsumer)`.
@@ -89,7 +169,7 @@ the file degrades to defaults with a warning rather than failing.
   Nether), or which keep many chunks loaded. It is small when entities are concentrated in a few
   chunks, which is why the end-to-end figure below is dominated by the next entry.
 
-### 2. `cursor_step` — block iteration without integer division
+### 3. `cursor_step` — block iteration without integer division
 
 - **Subsystem:** block collision iteration (server and client).
 - **Vanilla hotspot:** `Cursor3D.advance()`, reached from `BlockCollisions.computeNext()`.
@@ -113,7 +193,7 @@ the file degrades to defaults with a warning rather than failing.
   every step, with **0 mismatches**. Cost measured at **3.74 ns to 1.60 ns per block position, a 57%
   reduction**, on the query shape a moving entity produces.
 
-### 3. `block_collision_shape` — deferred collider voxelisation
+### 4. `block_collision_shape` — deferred collider voxelisation
 
 - **Subsystem:** block collision queries (server and client).
 - **Vanilla hotspot:** `BlockCollisions` constructor, `Shapes.create(box)`.
@@ -170,32 +250,72 @@ ticks flat out. Both sides ran the same load; each run ends by killing all cows 
 
 Sprint result, ms per tick over 2500 ticks:
 
-| Run | Vanilla behaviour (modules disabled) | Ultima enabled |
+| Run | Vanilla behaviour (all modules disabled) | All four modules |
 |---|---|---|
-| 1 | 10.40 | 10.09 |
-| 2 | 10.31 | 9.94 |
-| 3 | 10.26 | 9.37 |
-| **mean** | **10.32** | **9.80** |
-| sustained TPS | 96.3 | 101.7 |
+| 1 | 10.40 | 9.03 |
+| 2 | 10.31 | 8.67 |
+| 3 | 10.26 | 8.86 |
+| 4 | 10.08 | — |
+| **mean** | **10.26** | **8.85** |
+| range | 10.08 - 10.40 | 8.67 - 9.03 |
+| sustained TPS | 96.9 | 112.3 |
 
-**-5.0% mean tick time, +5.6% sustained tick rate.** The ranges do not overlap: the worst enabled
-run (10.09) is still better than the best disabled run (10.26).
+**-13.7% mean tick time, +15.9% sustained tick rate.** The ranges do not overlap by a wide margin:
+the worst optimized run (9.03) beats the best baseline run (10.08). The fourth baseline run was taken
+last, after all optimized runs, to rule out machine drift.
 
-`/tick query` P50 over the 100 ticks following each sprint was 10.2 / 9.9 / 9.6 ms disabled against
-9.5 / 9.4 / 9.0 ms enabled, consistently about 6% lower.
+Staged, so each step is attributable:
 
-**P95 and P99 are not claimed as improvements.** Across these runs they were 11.7 / 14.3 / 12.2 ms
-and 15.1 / 36.2 / 16.5 ms disabled against 11.8 / 12.6 / 11.8 ms and 14.7 / 15.6 / 30.7 ms enabled.
-Both sides show occasional large outliers consistent with garbage collection, and 100 samples is far
-too few to separate signal from noise at the 99th percentile. Frame-pacing and tick-pacing claims
-need the longer runs listed under *Required real-PC tests*.
+| Configuration | mean ms/tick |
+|---|---|
+| Vanilla behaviour | 10.26 |
+| + `entity_section_lookup`, `cursor_step`, `block_collision_shape` | 9.80 |
+| + `collision_shell_skip` via MixinExtras `@WrapOperation` | 9.62 |
+| + `collision_shell_skip` driving the cursor directly | **8.85** |
 
-The 5% figure is specific to this load. It understates `entity_section_lookup`, whose isolated gain
+`/tick query` P50 over the 100 ticks following each sprint was 10.2 / 9.9 / 9.6 / 9.5 ms baseline
+against 8.7 / 9.2 / 8.1 ms optimized.
+
+**P95 and P99 are not claimed as improvements.** Both sides show occasional large outliers consistent
+with garbage collection — baseline P99 ranged 15.1 to 43.1 ms and optimized 12.6 to 26.7 ms — and 100
+samples is far too few to separate that from signal. Frame-pacing and tick-pacing claims need the
+longer runs listed under *Required real-PC tests*.
+
+These figures are specific to this load. They understate `entity_section_lookup`, whose isolated gain
 is 8-21x but which has little to bite on here: the entities occupy roughly 33 chunk columns, so the
-strip vanilla walks is already short. It is a reasonable estimate for `cursor_step`, which scales
-with block collision volume and is present in every tick.
+strip vanilla walks is already short. They are representative for `cursor_step` and
+`collision_shell_skip`, which scale with block collision volume and are present in every tick.
 
 ## Rejected optimizations
+
+**MixinExtras `@WrapOperation` as the mechanism for `collision_shell_skip`.** The first working
+implementation rejected shell positions by wrapping the chunk lookup inside `computeNext` and
+returning `null`, letting vanilla's own null guard do the skipping. That is elegant and stackable,
+and it was correct — but `Operation.call(Object...)` boxes both `int` arguments into a varargs array
+on every position that is *not* skipped, and in a loop running 109 million times per 800 ticks that
+overhead consumed most of the gain: **9.62 ms against 8.85 ms** for driving the cursor directly. The
+lesson is that the most compatibility-friendly injector is not always affordable in the hottest loop
+in the game; the replacement uses hooks Ultima already owns and leaves `computeNext` untouched, which
+is arguably *better* for compatibility as well.
+
+**A maintained per-section index of large-shape blocks.** The original design for
+`collision_shell_skip` was a counter on `LevelChunkSection` maintained like vanilla's `fluidCount`.
+It was abandoned after tracing the write paths: `recalcBlockCounts()` is called from only one of the
+three constructors, `read(FriendlyByteBuf)` restores some counters from the wire but not others, and
+`UpgradeData` mutates a section's `PalettedContainer` directly through the public `getStates()`,
+bypassing `setBlockState` entirely — and it does so specifically to fix up fence and wall
+connectivity, which is exactly the block class the index would track. An index that under-counts lets
+an entity walk through a fence. Querying the palette per query instead has no lifecycle to get wrong,
+and `maybeHas` turned out to be cheap enough (O(1) for uniform sections) that the maintained index was
+unnecessary.
+
+**A shared per-tick block state and shape cache across the three collision traversals.** The obvious
+response to "one movement scans overlapping volumes three times" is to memoise block states for the
+tick. Rejected on arithmetic: `LevelChunkSection.getBlockState` is a bit-packed palette read of a few
+nanoseconds, so a hash lookup plus the validity check needed to stay correct against mid-tick block
+changes would cost as much as the read it replaces, while adding an invalidation surface that could
+corrupt physics. The redundancy is real, but it is in the *number of positions visited*, not in the
+cost of reading one — which is what led to the shell finding instead.
 
 **Multi-entry chunk cache in `BlockCollisions`.** `Cursor3D` iterates x innermost while
 `BlockCollisions` caches exactly one chunk, so a box straddling a chunk boundary in x should thrash
@@ -248,20 +368,23 @@ Last command: `./gradlew --no-daemon clean build` — **BUILD SUCCESSFUL**.
 
 ## Runtime validation
 
-Performed on a real dedicated 26.2 server with the mod loaded (`Ultima initialized with 3 of 3
+Performed on a real dedicated 26.2 server with the mod loaded (`Ultima initialized with 4 of 4
 optimization modules enabled`, `mixinextras 0.5.4` present):
 
 - server startup, keypair generation, world creation and spawn preparation;
 - data pack reload, 1089 chunks force-loaded across 9 commands, 1100 entities summoned;
-- 2500-tick sprints, six times, three with all modules enabled and three with all disabled;
+- 2500-tick sprints, twelve times across the staged configurations, including four baseline runs and
+  three with all four modules enabled;
+- an instrumented run that audited 109 million collision positions and 90.7 million skipped ones;
 - `/tick query` percentile reporting;
 - clean `/stop` with all three dimensions saved;
 - **zero exceptions and zero Mixin failures** in any run. The only `ERROR` line, `No key layers in
   MapLike[{}]`, also appears in a pristine run of this workspace before any Mixin existed.
 
 Because `ultima.mixins.json` sets `defaultRequire: 1`, a Mixin whose injection point failed to
-resolve would abort class load. All three target classes are loaded during world and entity ticking,
-so a clean sprint demonstrates that all three actually applied.
+resolve would abort class load. All target classes are loaded during world and entity ticking, so a
+clean sprint demonstrates that they actually applied; the audit run additionally showed the collision
+hook executing by name in a stack trace.
 
 Physics correctness was checked directly, since `cursor_step` sits inside collision detection.
 Entities were summoned at y = -59.0, one block above the superflat surface. After 1500 ticks the
@@ -298,9 +421,12 @@ Ranked by the evidence gathered, not by guesswork:
    the collector lambda. `getEntityCollisions` builds a fresh `NO_SPECTATORS.and(source::canCollideWith)`
    composite predicate per call, per entity, per tick; a per-entity cached predicate would remove two
    allocations per call and give the JIT a stable call site.
-2. **`Entity.collide` running up to three block scans** — the step-up path rescans the volume and
-   allocates a `FloatArraySet` plus a sorted `float[]`. Worth investigating whether the step-up scan
-   can reuse the collider list already built for the primary sweep.
+2. **The three-traversals-per-movement fan-out** — instrumentation measured about 3 collision queries
+   per entity per tick. `collision_shell_skip` made each one much cheaper, but the duplication itself
+   remains. The tractable version is proving that the step-up volume and the `findSupportingBlock`
+   volume are contained in the volume already scanned by the primary sweep, which would let the
+   existing collider list be filtered instead of rescanned. This needs a containment proof before any
+   code, since the boxes are derived from different positions.
 3. **`MoveToBlockGoal.findNearestBlock`** — 90 of 387 `ServerChunkCache.getChunk` leaf samples came
    from this one goal re-scanning a block volume every tick. A per-search chunk hoist looks tractable.
 4. **`ChunkMap.tick`** — allocates a `SectionPos` and a `ChunkPos` per tracked entity per tick purely
