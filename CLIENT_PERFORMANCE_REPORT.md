@@ -151,18 +151,21 @@ pairs. Do not compare a standing camera against a moving route.
   confirming client resources/Mixins are excluded from server initialization.
 - A graphical client smoke test and short benchmark-recorder validation are recorded below.
 
-A graphical dev client reached the title screen with the final client Mixin set reporting 5 of 8
-applicable modules enabled and no Mixin application error. An earlier in-world software-rendered
-smoke sample completed 60 warmup + 300 measured frames and wrote valid JSON without a crash.
+A graphical dev client with the final client Mixin set reported 5 of 8 applicable modules enabled,
+loaded the `ultima-bench` world, and rendered normally for more than 30 seconds. Terrain, lighting,
+entities, UI, and debug rendering showed no visible artifact; no Mixin failure, crash, or gameplay
+exception occurred. An earlier in-world software-rendered smoke sample completed 60 warmup + 300
+measured frames and wrote valid JSON without a crash.
 
 That short VM sample is not performance evidence, but its counters confirm the targeted frequency:
 
 - 143,113 matrix copies avoided, **477.0 per measured frame**;
 - 151,022 layer-array clones avoided, **503.4 per measured frame**.
 
-The sample's 8.75 average FPS / 4.44 1% low reflects the VM's software/display environment and must
-not be compared with a real client. The final dirty-range module is covered by 10,000 randomized
-old-loop vs unique-section set/order comparisons and loaded without a Mixin target failure.
+The recorded sample's 8.75 average FPS / 4.44 1% low and the final smoke's observed 28–33 FPS reflect
+different VM scenes/display conditions and must not be compared or treated as an A/B. The final
+dirty-range module is additionally covered by 10,000 randomized old-loop vs unique-section
+set/order comparisons.
 
 ## Measurement status
 
