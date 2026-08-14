@@ -1,5 +1,13 @@
 # Ultima performance report
 
+> **Forensic status (2026-08-14): historical evidence, not a release claim.**
+> `REVIEW_GPT56.md` found that the original `block_collision_shape` injector still executed
+> `Shapes.create`, the checked-in server harness paused before measurement on Minecraft 26.2, and
+> its force-load commands covered 2304 chunks rather than the claimed 1089. The implementation and
+> harness have since been hardened, but the measurements below describe the pre-review revision and
+> must not be attributed to the reviewed code. See `REVIEW_GPT56.md` for the accepted findings,
+> rerun results, and merge recommendation.
+
 Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26.2, Java 25.
 
 ## Summary
@@ -10,7 +18,7 @@ servers, to the integrated server in single-player, and to client-side entity an
 
 Measured end to end on a dedicated 26.2 server under a fixed 1100-entity load spread over 1089
 force-loaded chunks, mean tick time dropped from **10.26 ms to 8.85 ms (-13.7%)** and sustained tick
-rate rose from **96.9 to 112.3 TPS (+15.9%)**, over four baseline runs and three optimized runs whose
+uncapped sprint throughput rose from **96.9 to 112.3 ticks/s (+15.9%)**, over four baseline runs and three optimized runs whose
 ranges do not overlap.
 
 Target selection was driven by a Java Flight Recorder profile of the running server rather than by
@@ -258,9 +266,9 @@ Sprint result, ms per tick over 2500 ticks:
 | 4 | 10.08 | — |
 | **mean** | **10.26** | **8.85** |
 | range | 10.08 - 10.40 | 8.67 - 9.03 |
-| sustained TPS | 96.9 | 112.3 |
+| uncapped sprint throughput (ticks/s) | 96.9 | 112.3 |
 
-**-13.7% mean tick time, +15.9% sustained tick rate.** The ranges do not overlap by a wide margin:
+**-13.7% mean tick time, +15.9% uncapped sprint throughput.** The ranges do not overlap by a wide margin:
 the worst optimized run (9.03) beats the best baseline run (10.08). The fourth baseline run was taken
 last, after all optimized runs, to rule out machine drift.
 
