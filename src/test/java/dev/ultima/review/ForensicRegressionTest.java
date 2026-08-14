@@ -7,6 +7,7 @@ import dev.ultima.util.SectionRangeMath;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,7 @@ public final class ForensicRegressionTest {
         testSaturatedSectionVolume();
         testPackedSectionBounds();
         testEntitySectionOrder();
+        testSectionDirtyDeduplication();
         testCursorCarryBounds();
         testCursorCarry();
         testInteriorCursorAndIndex();
@@ -148,6 +150,49 @@ public final class ForensicRegressionTest {
         return result;
     }
 
+    private static void testSectionDirtyDeduplication() {
+        Random random = new Random(0x4449525459L);
+        for (int trial = 0; trial < 10_000; trial++) {
+            int x0 = random.nextInt(-1_000_000, 1_000_001);
+            int y0 = random.nextInt(-1024, 1025);
+            int z0 = random.nextInt(-1_000_000, 1_000_001);
+            int x1 = x0 + random.nextInt(0, 40);
+            int y1 = y0 + random.nextInt(0, 40);
+            int z1 = z0 + random.nextInt(0, 40);
+
+            LinkedHashSet<Long> vanilla = new LinkedHashSet<>();
+            for (int z = z0 - 1; z <= z1 + 1; z++) {
+                for (int x = x0 - 1; x <= x1 + 1; x++) {
+                    for (int y = y0 - 1; y <= y1 + 1; y++) {
+                        vanilla.add(SectionPos.asLong(
+                                SectionPos.blockToSectionCoord(x),
+                                SectionPos.blockToSectionCoord(y),
+                                SectionPos.blockToSectionCoord(z)));
+                    }
+                }
+            }
+
+            List<Long> deduplicated = new ArrayList<>();
+            int minSectionX = SectionPos.blockToSectionCoord(x0 - 1);
+            int minSectionY = SectionPos.blockToSectionCoord(y0 - 1);
+            int minSectionZ = SectionPos.blockToSectionCoord(z0 - 1);
+            int maxSectionX = SectionPos.blockToSectionCoord(x1 + 1);
+            int maxSectionY = SectionPos.blockToSectionCoord(y1 + 1);
+            int maxSectionZ = SectionPos.blockToSectionCoord(z1 + 1);
+            for (int z = minSectionZ; z <= maxSectionZ; z++) {
+                for (int x = minSectionX; x <= maxSectionX; x++) {
+                    for (int y = minSectionY; y <= maxSectionY; y++) {
+                        deduplicated.add(SectionPos.asLong(x, y, z));
+                    }
+                }
+            }
+
+            if (!new ArrayList<>(vanilla).equals(deduplicated)) {
+                throw new AssertionError("section dirty order/set mismatch");
+            }
+        }
+    }
+
     private static void testCursorCarry() {
         Random random = new Random(0x435552534F52L);
         for (int trial = 0; trial < 100_000; trial++) {
@@ -240,6 +285,7 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("collision_shell_skip"), "snapshot optimization must remain opt-in");
             assertTrue(defaults.get("client_chunk_matrix_reuse"), "vanilla chunk matrix reuse should default on");
             assertTrue(defaults.get("client_chunk_layer_array_reuse"), "vanilla chunk layer reuse should default on");
+            assertTrue(defaults.get("client_chunk_dirty_dedup"), "duplicate dirty writes should default on");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
             assertTrue(
                     UltimaModules.byKey("collision_shell_skip").dependencies().contains("cursor_step"),

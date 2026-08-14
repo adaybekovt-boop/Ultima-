@@ -8,6 +8,7 @@ public final class ClientOptimizationCounters {
 
     private static long chunkMatrixCopiesAvoided;
     private static long chunkLayerArraysAvoided;
+    private static long sectionDirtyWritesAvoided;
 
     private ClientOptimizationCounters() {
     }
@@ -24,9 +25,16 @@ public final class ClientOptimizationCounters {
         }
     }
 
+    public static void avoidedSectionDirtyWrites(final long count) {
+        if (ENABLED) {
+            sectionDirtyWritesAvoided += count;
+        }
+    }
+
     public static void reset() {
         chunkMatrixCopiesAvoided = 0L;
         chunkLayerArraysAvoided = 0L;
+        sectionDirtyWritesAvoided = 0L;
     }
 
     public static long chunkMatrixCopiesAvoided() {
@@ -35,5 +43,9 @@ public final class ClientOptimizationCounters {
 
     public static long chunkLayerArraysAvoided() {
         return chunkLayerArraysAvoided;
+    }
+
+    public static long sectionDirtyWritesAvoided() {
+        return sectionDirtyWritesAvoided;
     }
 }

@@ -69,6 +69,10 @@ public final class UltimaModules {
                     "Reuse one ChunkSectionLayer.values() array during chunk submission preparation. "
                             + "Automatically disabled when Sodium or Iris is loaded.",
                     List.of("sodium", "iris")),
+            Module.client("client_chunk_dirty_dedup", true,
+                    "Collapse duplicate section-dirty writes from expanded block ranges. "
+                            + "Automatically disabled when Sodium or Iris is loaded.",
+                    List.of("sodium", "iris")),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()));

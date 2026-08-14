@@ -9,6 +9,7 @@
   },
   "client": [
     "client_benchmark.MinecraftMixin",
+    "client_chunk_dirty_dedup.LevelExtractorMixin",
     "client_chunk_layer_array_reuse.LevelRendererMixin",
     "client_chunk_matrix_reuse.LevelRendererMixin"
   ]

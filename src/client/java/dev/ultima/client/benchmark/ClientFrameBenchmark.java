@@ -89,6 +89,7 @@ public final class ClientFrameBenchmark {
                 .append("  \"cpuFrameTimeAvailable\": false,\n")
                 .append("  \"chunkMatrixCopiesAvoided\": ").append(ClientOptimizationCounters.chunkMatrixCopiesAvoided()).append(",\n")
                 .append("  \"chunkLayerArraysAvoided\": ").append(ClientOptimizationCounters.chunkLayerArraysAvoided()).append(",\n")
+                .append("  \"sectionDirtyWritesAvoided\": ").append(ClientOptimizationCounters.sectionDirtyWritesAvoided()).append(",\n")
                 .append("  \"averageChunkMatrixCopiesAvoidedPerFrame\": ")
                 .append((double)ClientOptimizationCounters.chunkMatrixCopiesAvoided() / SAMPLE_FRAMES)
                 .append(",\n")
