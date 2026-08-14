@@ -28,6 +28,7 @@ public final class ForensicRegressionTest {
         testCursorCarryBounds();
         testCursorCarry();
         testInteriorCursorAndIndex();
+        testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
         System.out.println("Forensic regression checks passed.");
     }
@@ -196,6 +197,33 @@ public final class ForensicRegressionTest {
         }
     }
 
+    /**
+     * The shell decision is only meaningful for a cursor that can carry, and the collision query
+     * consults that before doing the palette work rather than after. A volume that cannot carry must
+     * therefore never end up in interior mode, whatever the palettes said.
+     */
+    private static void testInteriorRequiresCarryEligibility() {
+        int[][] ineligible = {
+                {0, 4, 4},
+                {-1, 4, 4},
+                {4, 0, 4},
+                {4, 4, 0},
+                {3, 3, Integer.MAX_VALUE},
+        };
+        for (int[] dimensions : ineligible) {
+            assertFalse(
+                    CursorMath.canUseCarry(dimensions[0], dimensions[1], dimensions[2]),
+                    "volume must stay on the vanilla traversal");
+            CursorModel cursor = new CursorModel(dimensions[0], dimensions[1], dimensions[2]);
+            cursor.requestInterior();
+            assertFalse(cursor.interiorRequested, "interior mode must be refused without carry");
+        }
+
+        CursorModel eligible = new CursorModel(3, 3, 3);
+        eligible.requestInterior();
+        assertTrue(eligible.interiorRequested, "a carryable volume must accept interior mode");
+    }
+
     private static void testConfigParsingAndDependencies() {
         try {
             Method parseBoolean = UltimaConfig.class.getDeclaredMethod("parseBoolean", String.class);
@@ -259,12 +287,19 @@ public final class ForensicRegressionTest {
         private int z;
         private boolean interiorStarted;
         private boolean interiorExhausted;
+        private boolean interiorRequested;
 
         private CursorModel(final int width, final int height, final int depth) {
             this.width = width;
             this.height = height;
             this.depth = depth;
             this.end = width * height * depth;
+        }
+
+        private void requestInterior() {
+            if (CursorMath.canUseCarry(this.width, this.height, this.depth)) {
+                this.interiorRequested = true;
+            }
         }
 
         private boolean advanceVanilla() {

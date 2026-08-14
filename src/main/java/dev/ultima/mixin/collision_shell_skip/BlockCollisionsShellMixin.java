@@ -40,8 +40,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>Nothing is cached beyond a single query, so there is no index that could go stale and let an
  * entity walk through a fence. Anything that cannot be established — a chunk source that is not a
- * level, a debug world, or a palette large enough that {@code maybeHas} stops discriminating —
- * leaves the vanilla path in place.
+ * level, a debug world, a palette large enough that {@code maybeHas} stops discriminating, or a
+ * volume the cursor cannot restrict in the first place — leaves the vanilla path in place.
  */
 @Mixin(BlockCollisions.class)
 public abstract class BlockCollisionsShellMixin {
@@ -70,7 +70,16 @@ public abstract class BlockCollisionsShellMixin {
             method = "<init>(Lnet/minecraft/world/level/CollisionGetter;Lnet/minecraft/world/phys/shapes/CollisionContext;Lnet/minecraft/world/phys/AABB;ZLjava/util/function/BiFunction;)V",
             at = @At("TAIL"))
     private void ultimaRestrictCursorToInterior(final CallbackInfo ci) {
-        if (this.ultimaShellIsIrrelevant() && this.cursor instanceof InteriorOnlyCursor interiorOnly) {
+        /*
+         * Ask whether the answer can be used before computing it. The palette scan is bounded by the
+         * number of sections the volume covers, which is unbounded in the size of the box: a caller
+         * that asks about a region millions of blocks wide would otherwise scan sections eagerly for
+         * a cursor that keeps the vanilla traversal anyway, turning a query vanilla answers into one
+         * that does not finish. Cheap, constant-time conditions therefore come first.
+         */
+        if (this.cursor instanceof InteriorOnlyCursor interiorOnly
+                && interiorOnly.ultimaCanVisitInteriorOnly()
+                && this.ultimaShellIsIrrelevant()) {
             interiorOnly.ultimaVisitInteriorOnly();
         }
     }

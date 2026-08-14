@@ -73,6 +73,11 @@ public abstract class Cursor3DMixin implements InteriorOnlyCursor {
     }
 
     @Override
+    public boolean ultimaCanVisitInteriorOnly() {
+        return this.ultimaCarryEligible;
+    }
+
+    @Override
     public void ultimaVisitInteriorOnly() {
         if (this.ultimaCarryEligible) {
             this.ultimaInteriorOnly = true;

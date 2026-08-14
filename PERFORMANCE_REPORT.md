@@ -13,6 +13,15 @@ force-loaded chunks, mean tick time dropped from **10.26 ms to 8.85 ms (-13.7%)*
 rate rose from **96.9 to 112.3 TPS (+15.9%)**, over four baseline runs and three optimized runs whose
 ranges do not overlap.
 
+> **This figure is for all four modules enabled, which is not the shipped default.**
+> `entity_section_lookup` and `collision_shell_skip` ship disabled — deliberately, for the
+> compatibility reasons given under each — so a default install runs `cursor_step` and
+> `block_collision_shape` only. `scripts/bench-server.sh` writes every module explicitly, so it has
+> never measured the default either, and the staged table below has no row for it. Since
+> `collision_shell_skip` alone accounts for -9.7% of the -13.7%, **the default configuration's gain
+> is unmeasured and is a small fraction of the headline.** Measuring it is the first item of
+> outstanding work.
+
 Target selection was driven by a Java Flight Recorder profile of the running server rather than by
 inspection alone. That profile is what disqualified two changes I had already designed, and what
 identified the largest one. Every optimization that reorders work was checked against a faithful
@@ -110,6 +119,15 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
 - **Why no stale-state risk:** nothing is cached beyond a single query. There is no index that could
   fall out of sync with the world and let an entity walk through a fence, which is exactly what a
   maintained per-section counter would have risked.
+- **Known worst case:** `maybeHas` is O(1) only for a uniform section; otherwise it scans the palette.
+  A query therefore pays up to about eight palette scans and four chunk lookups before visiting any
+  position, and gets nothing back whenever a covered section holds a fence, a wall or a dynamic-shape
+  block — villages, fenced farms and fence-built mob farms, which are entity-dense by nature. The
+  measured 95% eligibility rate is a property of the near-uniform palettes of the superflat bench
+  world and should not be quoted as a general figure. Separately, the benchmark exercises callers
+  that drain the iterator; callers that stop at the first collider (`noCollision`, `isUnobstructed`)
+  can pay the whole pre-check for a traversal vanilla would have abandoned immediately, a small
+  constant-factor regression the benchmark does not show.
 - **Fallback:** the fast path requires a `Level` that is not a debug world (a debug world synthesises
   block states in `LevelChunk.getBlockState` without consulting the section, so its palettes say
   nothing) and chunks that are `LevelChunk`. `GlobalPalette.maybeHas` returns `true`
@@ -150,10 +168,15 @@ block resolution, suffocation checks, spawn placement checks, particle physics a
   maps a negative coordinate above every non-negative one. Order matters because callers collect
   into a `List` and some resolve ties by first-encountered — for example a mob picking a target at
   equal distance.
-- **Fallback:** if the candidate volume exceeds 1024 sections *and* exceeds the total number of
-  existing sections, the vanilla path runs instead, so a pathological query can never make Ultima
-  probe more sections than vanilla would visit. A degenerate or infinite bounding box produces a
-  candidate count computed in `long` arithmetic and falls back for the same reason.
+- **Fallback:** if the candidate volume exceeds 1024 sections the vanilla path runs instead, so the
+  number of probes is bounded. A degenerate or infinite bounding box produces a candidate count
+  computed in saturating `long` arithmetic and falls back for the same reason, as does any range
+  outside the coordinates `SectionPos` can represent.
+- **Known worst case:** the cap bounds the probe count but does not compare it against how populated
+  the world is. A query under the cap in a sparsely populated world can therefore probe more sections
+  than vanilla would have visited — for example 512 hash probes where vanilla walks 20 tree nodes.
+  Choosing between the flat cap and a population-aware guard needs the benchmark and has not been
+  done.
 - **Mod compatibility risk:** low-medium. It is a cancelling `@Inject` at `HEAD`, which is a full
   replacement of a five-line loop; another mod injecting into the same method still runs. There is
   no narrower hook, since the loop *is* the cost. Disabling the module restores vanilla exactly.
@@ -359,9 +382,31 @@ that all three implemented optimizations still run on the client, in client-side
 collision and in the integrated server, and `entity_section_lookup` benefits most at high view
 distance — the 21.4x microbenchmark point corresponds to a view distance of 32.
 
+## Second-pass audit
+
+`ARCHITECTURAL_AUDIT.md` records a later system-level review of this work. It confirmed the semantic
+equivalence of all three reordering optimizations against independently written vanilla models, and
+changed one thing: the `collision_shell_skip` constructor hook evaluated its palette scan *before*
+checking whether the cursor could use the result, so a sufficiently large query volume — one whose
+`width*height*depth` overflows `int`, where the cursor keeps the vanilla traversal anyway — could
+scan an unbounded number of sections for an answer that would be discarded. The cheap constant-time
+conditions are now evaluated first. It is a pure fail-open with no effect on any query the
+optimization helps, and it needs no tuning constant.
+
+The audit also lists the compatibility defect in `block_collision_shape` (the `@WrapOperation`
+discards `original`, silently dropping another mod's wrapper of the same expression) as the highest
+-value follow-up, deferred because it cannot be validated without a build.
+
 ## Build status
 
 Last command: `./gradlew --no-daemon clean build` — **BUILD SUCCESSFUL**.
+
+That build predates the second-pass audit. The audit environment could not run Gradle at all — its
+network policy blocks `maven.fabricmc.net` and `piston-meta.mojang.com`, so Loom cannot resolve
+Minecraft — and it had only JDK 21 against the project's 25. The audit's one-line change was
+type-checked by compiling all of `src/main/java` and `src/test/java` against stub classes, and
+`ForensicRegressionTest` was executed against a faithful `SectionPos` stub and passes. **`./gradlew
+build` has not been re-run since that change and must be before release.**
 
 `bash scripts/check.sh` runs the same build. No vanilla source is copied into the repository, and
 `.agent/` is untracked (0 files matched in `git ls-files`).
