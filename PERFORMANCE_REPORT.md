@@ -18,10 +18,15 @@ Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26
 | `entity_section_lookup` | no | cancelling whole-method replacement overlaps entity optimization mods |
 | `block_collision_shape` | no | deferred call cannot compose perfectly with every constructor-time wrapper |
 | `collision_shell_skip` | no | lazy palette snapshot and pre-check trade-offs require explicit opt-in |
+| `client_chunk_matrix_reuse` | vanilla client only | same-frame uniform matrix reuse; auto-disabled for Sodium/Iris |
+| `client_chunk_layer_array_reuse` | vanilla client only | enum-array allocation reuse; auto-disabled for Sodium/Iris |
+| `client_chunk_dirty_dedup` | vanilla client only | duplicate section invalidation writes; auto-disabled for Sodium/Iris |
 
-The default configuration is therefore `cursor_step` only. “All modules enabled” is an experimental
-configuration used to bound the synthetic workload's potential, not the behavior users receive.
-Neither configuration supports an FPS or normal-TPS claim.
+The common/server default is `cursor_step` only. A vanilla client additionally enables the three
+client modules; Sodium/Iris clients automatically keep them off. “All modules enabled” is an
+experimental configuration used to bound the synthetic workload's potential, not the behavior users
+receive. See `CLIENT_PERFORMANCE_REPORT.md`. No configuration currently supports a measured FPS or
+normal-TPS claim.
 
 ## Historical summary (superseded)
 

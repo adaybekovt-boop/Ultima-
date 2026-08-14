@@ -19,8 +19,12 @@ That is deliberate scope, not evidence that these are Minecraft's only important
 | `collision_shell_skip` | disabled | Keep opt-in; large synthetic win but lazy snapshot semantics and eager pre-check trade-offs |
 | `block_collision_shape` | disabled | Keep opt-in; allocation win, but perfect Mixin wrapper composition is impossible while deferring the call |
 
-Only `cursor_step` is enabled in the shipped default configuration. Results from an all-enabled
-benchmark are experimental and must not be presented as default-install performance.
+Among the original common modules, only `cursor_step` is enabled by default. Results from an
+all-enabled benchmark are experimental and must not be presented as default-install performance.
+
+The later client-priority pass adds three vanilla-renderer modules for same-frame chunk matrix/enum
+array reuse and duplicate dirty-write elimination. They are client-only and automatically disabled
+for Sodium/Iris; details and measurement protocol are in `CLIENT_PERFORMANCE_REPORT.md`.
 
 ## Workload bias
 

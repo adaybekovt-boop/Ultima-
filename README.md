@@ -38,12 +38,15 @@ Built mod JARs appear in `build/libs/`.
 
 Ultima's modules are configured in `config/ultima.properties`.
 
-- Enabled by default: `cursor_step`
+- Enabled by default everywhere: `cursor_step`
+- Enabled by default on the vanilla client renderer:
+  `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
 - Disabled by default: `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`
 
-The disabled modules are expert opt-ins because they replace common mod targets, defer a wrapped
-constructor operation, or snapshot lazy collision state. See `REVIEW_GPT56.md` and
-`ARCHITECTURAL_AUDIT.md` before enabling them in a modpack.
+Client terrain modules automatically disable when Sodium or Iris is loaded. The other disabled
+modules are expert opt-ins because they replace common mod targets, defer a wrapped constructor
+operation, or snapshot lazy collision state. See `REVIEW_GPT56.md`, `ARCHITECTURAL_AUDIT.md`, and
+`CLIENT_PERFORMANCE_REPORT.md` before changing defaults in a modpack.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 

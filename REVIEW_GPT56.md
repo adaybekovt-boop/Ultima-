@@ -329,6 +329,8 @@ With these fixes, merge is reasonable only as a guarded experimental release:
 - keep `cursor_step` enabled by default;
 - keep `entity_section_lookup`, `block_collision_shape`, and `collision_shell_skip` disabled by
   default;
+- keep the client chunk preparation modules enabled only on the vanilla renderer and automatically
+  disabled with Sodium/Iris pending real-PC A/B evidence;
 - do not publish the historic 13.7%/15.9% figures as results for the reviewed code;
 - do not claim shader/FPS gains.
 
