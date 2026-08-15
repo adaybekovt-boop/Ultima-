@@ -14,6 +14,7 @@ This file tracks architecture experiments. Allocation-only wins are not keepers.
 | Terrain prepare/submit CPU | n/a | n/a | n/a | harness ready (`terrainMetrics` in client JSON) |
 | Entity-farm mean tick | 8.333 ms | 6.518 ms | **−21.78%** | KEEP (prior, simulation) |
 | Visual parity | — | — | — | FAIL OPEN to vanilla |
+| `scripts/check.sh` | | | | **BUILD SUCCESSFUL** |
 | ≥25% real avg FPS | | | | **FAIL** until GPU A/B |
 
 Prototype keep threshold (not the product target): ≥5% avg FPS **or** ≥10% terrain prepare/render-thread CPU in a CPU/submission-limited terrain scene.

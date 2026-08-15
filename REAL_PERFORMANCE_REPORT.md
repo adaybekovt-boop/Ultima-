@@ -222,16 +222,55 @@ Hard limitation for GPU average FPS on this pass: no discrete GPU, llvmpipe did 
 
 ---
 
+## 13. Architecture pass (retained opaque terrain)
+
+Date: 2026-08-15. Still no discrete GPU. `bash scripts/check.sh` **BUILD SUCCESSFUL**, including `forensicRegressionTest` (packed 16³ visit order vs `BlockPos.betweenClosed`, visibility bit round-trip, new module defaults).
+
+This is **not** an FPS keep/reject. The opaque prototype is default **off**.
+
+### What landed
+
+| Module | Default | Role |
+|---|---|---|
+| `terrain_metrics` | client on | Prepare/command/submit ns, draws, sections, rebuilds/uploads; `terrainMetrics` in benchmark JSON |
+| `retained_terrain` | off | Opaque SOLID/CUTOUT retained records + section table UBO + multi-draw/indirect; translucent vanilla; fail open |
+| `render_snapshot` | off | Intern BE maps per live map identity inside one `RenderRegionCache` |
+| `java_mesher` | off | Packed x-fastest compile loop; ThreadLocal tessellators |
+| `section_task_queue` | off | Compact cancelled tasks; `parkNanos(50µs)` vs `onSpinWait` |
+| `rgss_endpoint` | off | Separate shader-source endpoint specialization; reject if GPU <3% |
+
+Not restored: `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`.
+
+### Experiment verdicts
+
+| ID | Baseline | Patch | Correctness | CPU | GPU | FPS | 1% low | p95/p99 | Allocations | Draw/command | Compatibility | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| E1 metrics | uninstrumented | mixins + JSON | no visual change | nanoTime only | 0 on this host | n/a | n/a | n/a | counters | counted | auto-off Sodium/Iris/Canvas | **KEEP** |
+| E2 retained opaque | vanilla prepare | opt-in producer | fail-open; compile green | not GPU-measured | not GPU-measured | n/a | n/a | n/a | no opaque Draw/Matrix4f | header + batch table | ultima shaders; vanilla core/terrain untouched | **PENDING GPU A/B** |
+| E3 snapshots | per-section BE copy | intern | palettes not shared | n/a | n/a | n/a | n/a | n/a | fewer BE maps | n/a | auto-off replacement renderers | **PENDING** |
+| E4 java mesher | betweenClosed | packed loop | visit-order test pass | n/a | n/a | n/a | n/a | n/a | no AbstractIterator | same tessellators | auto-off replacement renderers | **PENDING** |
+| E5 task queue | iterator.remove + spin | compact + park | same nearest/quota | n/a | n/a | n/a | n/a | n/a | fewer shifts | n/a | auto-off replacement renderers | **PENDING** |
+| E6 RGSS | always nearest+RGSS | endpoint early-out | exact at 0 and 1 | n/a | reject <3% | n/a | n/a | n/a | n/a | n/a | auto-off replacement renderers | **PENDING** |
+
+### Next measurement (GPU host)
+
+1. `terrain_metrics=true` on both A/B sides.
+2. TERRAIN-SUBMISSION: Fancy, high RD, stationary, `retained_terrain=false` vs `true`.
+3. Keep only if ≥5% avg FPS **or** ≥10% prepare/submit CPU.
+4. If per-draw submission is not the bottleneck, do not expand the prototype; re-profile.
+
+---
+
 REAL PERFORMANCE PASS COMPLETE
 
-ACCEPTED CLIENT OPTIMIZATIONS: 0
+ACCEPTED CLIENT OPTIMIZATIONS: 0 shipped (retained terrain is opt-in / unmeasured)
 
 ACCEPTED SIMULATION OPTIMIZATIONS: 6
 
 REMOVED USELESS OPTIMIZATIONS: 3
 
 AVERAGE FPS:
-OFF n/a (no GPU dataset for current defaults; prior RTX 3090 of deleted modules: 571.08)
+OFF n/a (no GPU dataset for current defaults or retained_terrain; prior RTX 3090 of deleted modules: 571.08)
 ON n/a (prior RTX 3090 of deleted modules: 569.48)
 DELTA n/a (prior: −0.28%, inconclusive)
 
@@ -241,15 +280,27 @@ ON n/a (prior: 269.48)
 DELTA n/a (prior: +0.69%, inconclusive)
 
 P99 FRAME TIME:
-OFF n/a (no client frame recorder on current defaults)
+OFF n/a
 ON n/a
 DELTA n/a
+
+TERRAIN DRAW/SUBMISSION CPU:
+OFF n/a (harness ready)
+ON n/a
+DELTA n/a
+
+CHUNK-STREAM P99: n/a
 
 ENTITY-FARM MEAN TICK TIME (heavy-frame / integrated-server stutter, n=6):
 OFF 8.333 ms
 ON 6.518 ms
 DELTA −21.78% (95% CI [−23.83%, −19.73%])
 
-TARGET >=5% AVG FPS OR >=10% 1% LOW: FAIL
+VISUAL PARITY: FAIL OPEN TO VANILLA (no screenshot pair this host)
 
-HEAVY-FRAME / STUTTER WORKLOAD >=10%: PASS
+STABILITY: `scripts/check.sh` BUILD SUCCESSFUL
+
+>=25% REAL AVG FPS: FAIL
+
+TARGET >=5% AVG FPS OR >=10% TERRAIN PREP CPU (prototype keep): NOT MEASURED
+
