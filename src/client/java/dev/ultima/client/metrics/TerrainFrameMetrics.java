@@ -30,6 +30,7 @@ public final class TerrainFrameMetrics {
     private static int metadataUpdates;
     private static long allocationBytes;
     private static boolean retainedActive;
+    private static boolean commandBatchesReused;
     private static String submitMode = "vanilla";
 
     private TerrainFrameMetrics() {
@@ -47,6 +48,7 @@ public final class TerrainFrameMetrics {
         metadataUpdates = 0;
         allocationBytes = 0L;
         retainedActive = false;
+        commandBatchesReused = false;
         submitMode = "vanilla";
     }
 
@@ -122,6 +124,14 @@ public final class TerrainFrameMetrics {
         return retainedActive;
     }
 
+    public static void setCommandBatchesReused(final boolean reused) {
+        commandBatchesReused = reused;
+    }
+
+    public static boolean isCommandBatchesReused() {
+        return commandBatchesReused;
+    }
+
     public static void incrementRebuilds() {
         CHUNK_REBUILDS.incrementAndGet();
     }
@@ -155,6 +165,7 @@ public final class TerrainFrameMetrics {
                 CHUNK_REBUILDS.get(),
                 CHUNK_UPLOADS.get(),
                 retainedActive,
+                commandBatchesReused,
                 submitMode);
     }
 
@@ -177,6 +188,7 @@ public final class TerrainFrameMetrics {
             long chunkRebuilds,
             long chunkUploads,
             boolean retainedActive,
+            boolean commandBatchesReused,
             String submitMode) {
         public void appendJson(final StringBuilder json) {
             json.append("  \"terrainMetrics\": {\n")
@@ -195,6 +207,7 @@ public final class TerrainFrameMetrics {
                     .append("    \"chunkRebuilds\": ").append(this.chunkRebuilds).append(",\n")
                     .append("    \"chunkUploads\": ").append(this.chunkUploads).append(",\n")
                     .append("    \"retainedActive\": ").append(this.retainedActive).append(",\n")
+                    .append("    \"commandBatchesReused\": ").append(this.commandBatchesReused).append(",\n")
                     .append("    \"submitMode\": \"").append(this.submitMode).append("\"\n")
                     .append("  }");
         }

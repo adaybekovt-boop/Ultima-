@@ -51,6 +51,12 @@ public final class RetainedTerrainRenderer {
     private int frameCommandRebuilds;
     private int frameMetadataUpdates;
     private int maxBatchSize = RetainedTerrainPipelines.BATCH_SIZE;
+    private long lastOpaqueFingerprint;
+    private int lastOpaqueDrawCount;
+    private boolean tryingReuse;
+    private boolean reuseFailed;
+    private long frameFingerprint;
+    private int frameOpaqueDraws;
 
     public static RetainedTerrainRenderer get() {
         return INSTANCE;
@@ -79,6 +85,8 @@ public final class RetainedTerrainRenderer {
         this.batchPool.clear();
         this.opaqueReady = false;
         this.failedOpen = false;
+        this.lastOpaqueFingerprint = 0L;
+        this.lastOpaqueDrawCount = 0;
         RetainedTerrainPipelines.invalidate();
         RetainedTerrainCapabilities.invalidate();
     }
@@ -107,7 +115,6 @@ public final class RetainedTerrainRenderer {
         TerrainFrameMetrics.beginCommand();
         try {
             this.gpu.beginFrame();
-            this.recycleBatches();
             this.maxBatchSize = RetainedTerrainCapabilities.maxDrawsPerBatch();
             this.blockAtlas = textureManager.getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView();
             this.headerModelView.set(modelView);
@@ -117,6 +124,10 @@ public final class RetainedTerrainRenderer {
             this.frameSectionLayers = 0;
             this.frameCommandRebuilds = 0;
             this.frameMetadataUpdates = 0;
+            this.tryingReuse = !this.batches.isEmpty();
+            this.reuseFailed = false;
+            this.frameFingerprint = 0xcbf29ce484222325L;
+            this.frameOpaqueDraws = 0;
 
             EnumMap<ChunkSectionLayer, Int2ObjectOpenHashMap<List<RenderPass.Draw<GpuBufferSlice[]>>>> translucent =
                     new EnumMap<>(ChunkSectionLayer.class);
@@ -139,6 +150,20 @@ public final class RetainedTerrainRenderer {
             } finally {
                 dispatcher.unlock();
             }
+
+            this.frameFingerprint ^= (long)visibleSections.size() * 0x9E3779B97F4A7C15L;
+            if (!this.tryingReuse
+                    || this.reuseFailed
+                    || this.frameFingerprint != this.lastOpaqueFingerprint
+                    || this.frameOpaqueDraws != this.lastOpaqueDrawCount) {
+                this.recycleBatches();
+                this.rebuildOpaqueBatches(visibleSections);
+                TerrainFrameMetrics.setCommandBatchesReused(false);
+            } else {
+                TerrainFrameMetrics.setCommandBatchesReused(true);
+            }
+            this.lastOpaqueFingerprint = this.frameFingerprint;
+            this.lastOpaqueDrawCount = this.frameOpaqueDraws;
 
             GpuBufferSlice[] translucentUbos = RenderSystem.getDynamicUniforms()
                     .writeChunkSections(translucentInfos.toArray(new DynamicUniforms.ChunkSectionInfo[0]));
@@ -188,7 +213,16 @@ public final class RetainedTerrainRenderer {
                 record.solid.clear();
                 record.cutout.clear();
                 this.frameCommandRebuilds++;
+                this.reuseFailed = true;
             }
+            this.frameFingerprint = mixFingerprint(
+                    this.frameFingerprint,
+                    record.slot,
+                    record.sectionNode,
+                    false,
+                    record.solid.commandGeneration,
+                    false,
+                    record.cutout.commandGeneration);
             return;
         }
         BlockPos origin = section.getRenderOrigin();
@@ -206,8 +240,17 @@ public final class RetainedTerrainRenderer {
         }
         record.meshId = meshId;
         record.visibleThisFrame = true;
+        record.temporalFlags = RetainedSectionRecord.FLAG_STATIC_WORLD_TRANSFORM;
         this.captureLayer(record, dispatcher, mesh, ChunkSectionLayer.SOLID, meshId);
         this.captureLayer(record, dispatcher, mesh, ChunkSectionLayer.CUTOUT, meshId);
+        this.frameFingerprint = mixFingerprint(
+                this.frameFingerprint,
+                record.slot,
+                record.sectionNode,
+                record.solid.alive,
+                record.solid.commandGeneration,
+                record.cutout.alive,
+                record.cutout.commandGeneration);
     }
 
     private void captureLayer(
@@ -223,15 +266,22 @@ public final class RetainedTerrainRenderer {
             if (slot.alive) {
                 slot.clear();
                 this.frameCommandRebuilds++;
+                this.reuseFailed = true;
             }
             return;
         }
         VertexFormat format = layer.pipeline().getVertexFormatBinding(0);
         if (slot.capture(draw, slice, format, meshId)) {
             this.frameCommandRebuilds++;
+            this.reuseFailed = true;
         }
         this.frameSectionLayers++;
-        this.appendBatch(layer, record, slot);
+        this.frameOpaqueDraws++;
+        if (this.tryingReuse && !this.reuseFailed) {
+            if (!this.patchBatchMetadata(record, slot)) {
+                this.reuseFailed = true;
+            }
+        }
     }
 
     private void appendBatch(
@@ -252,6 +302,61 @@ public final class RetainedTerrainRenderer {
             this.batches.add(batch);
         }
         batch.add(record.originX, record.originY, record.originZ, record.visibility, slot.firstIndex, slot.indexCount, slot.baseVertex);
+        slot.batchIndex = this.batches.size() - 1;
+        slot.drawIndex = batch.count - 1;
+    }
+
+    private boolean patchBatchMetadata(final RetainedSectionRecord record, final RetainedSectionRecord.LayerSlot slot) {
+        if (slot.batchIndex < 0 || slot.batchIndex >= this.batches.size()) {
+            return false;
+        }
+        OpaqueDrawBatch batch = this.batches.get(slot.batchIndex);
+        if (slot.drawIndex < 0 || slot.drawIndex >= batch.count) {
+            return false;
+        }
+        batch.patchMetadata(slot.drawIndex, record.originX, record.originY, record.originZ, record.visibility);
+        return true;
+    }
+
+    private void rebuildOpaqueBatches(final ObjectArrayList<SectionRenderDispatcher.RenderSection> visibleSections) {
+        for (int i = 0; i < visibleSections.size(); i++) {
+            SectionRenderDispatcher.RenderSection section = visibleSections.get(i);
+            int slot = section.index;
+            if (slot < 0 || slot >= this.sections.length) {
+                continue;
+            }
+            RetainedSectionRecord record = this.sections[slot];
+            if (record == null || !record.visibleThisFrame) {
+                continue;
+            }
+            if (record.solid.alive) {
+                this.appendBatch(ChunkSectionLayer.SOLID, record, record.solid);
+            }
+            if (record.cutout.alive) {
+                this.appendBatch(ChunkSectionLayer.CUTOUT, record, record.cutout);
+            }
+        }
+    }
+
+    private static long mixFingerprint(
+            long hash,
+            final int slot,
+            final long sectionNode,
+            final boolean solidAlive,
+            final int solidGeneration,
+            final boolean cutoutAlive,
+            final int cutoutGeneration) {
+        hash ^= slot;
+        hash *= 0x100000001b3L;
+        hash ^= sectionNode;
+        hash *= 0x100000001b3L;
+        hash ^= (solidAlive ? 1L : 0L) | (cutoutAlive ? 2L : 0L);
+        hash *= 0x100000001b3L;
+        hash ^= solidGeneration;
+        hash *= 0x100000001b3L;
+        hash ^= cutoutGeneration;
+        hash *= 0x100000001b3L;
+        return hash;
     }
 
     private int captureTranslucent(
@@ -332,6 +437,7 @@ public final class RetainedTerrainRenderer {
                     section.getRenderOrigin().getY(),
                     section.getRenderOrigin().getZ());
             this.frameCommandRebuilds++;
+            this.reuseFailed = true;
         }
         return record;
     }

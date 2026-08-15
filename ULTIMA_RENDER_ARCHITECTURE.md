@@ -34,7 +34,7 @@ Per frame:
 4. Submit SOLID then CUTOUT using retained batches.
 5. Build vanilla Draw lists **only for TRANSLUCENT**.
 
-Camera motion updates the shared `ChunkSection` header (`ModelViewMat`) and does not rebuild command objects.
+Camera motion updates the shared `ChunkSection` header (`ModelViewMat`) and does not rebuild command objects. If the visible opaque set and per-slot command generations are unchanged, CPU batch arrays are **patched in place** (origin/visibility only) instead of recycled.
 
 ---
 
@@ -48,6 +48,22 @@ Camera motion updates the shared `ChunkSection` header (`ModelViewMat`) and does
 | `generation` | Monotonic per slot; bumped on node change, mesh change, renderer reset |
 
 Do not key GPU slots by `BlockPos` objects. Origins are `int` block coordinates from `getRenderOrigin()` (section origin, 16-aligned).
+
+`temporalFlags` bit 0 (`FLAG_STATIC_WORLD_TRANSFORM`): previous world transform equals current. Camera motion still yields screen-space velocity. This is not an entity motion vector.
+
+---
+
+## 3b. Region identity
+
+Ultima does not yet own a separate region object. The vanilla `ViewArea` ring **is** the region:
+
+| Key | Meaning |
+|---|---|
+| `LevelRenderer` instance | Destroyed on close / level change → drop all Ultima GPU rings and section records |
+| `ViewArea.size()` / `RenderSection.index` | Slot in the ring; grows the CPU record array |
+| Ring wrap (`setSectionNode`) | Unload + load of that slot |
+
+A future packed snapshot/region cache may introduce an explicit region id; until then, do not key persistent GPU state by chunk `BlockPos` alone.
 
 ---
 
@@ -73,7 +89,7 @@ A command slot is `(sectionIndex, layer ∈ {SOLID, CUTOUT})`:
 
 Slots are persistent arrays sized to `ViewArea.size()`. They are **not** allocated per draw per frame.
 
-Rebuild the GPU batch lists only when any slot in that `(layer, vertexBuffer, indexBuffer)` group was created, removed, or had mesh/offset change. Visibility-only changes rewrite the metadata table, not the indirect commands (indexCount stays).
+Rebuild the GPU batch lists only when any slot in that `(layer, vertexBuffer, indexBuffer)` group was created, removed, or had mesh/offset change, or when the visible opaque set/order changed. Visibility-only and camera-only frames patch origin/visibility in the existing primitive arrays and skip recycle. `terrainMetrics.commandBatchesReused` records the skip.
 
 ---
 
@@ -159,6 +175,15 @@ Incompatible mods (`sodium`, `iris`, `canvas`): module auto-off via `UltimaModul
 | `java_mesher` | off | Packed x-fastest loop matching `BlockPos.betweenClosed`; ThreadLocal tessellators | Visit order tested; tessellation still vanilla `ModelBlockRenderer` / `FluidRenderer` |
 | `section_task_queue` | off | Compact cancelled tasks; `LockSupport.parkNanos(50µs)` instead of `onSpinWait` | Same nearest-initial / recompile-quota selection |
 | `rgss_endpoint` | off | Fragment source rewrite of `sampleRGSS` endpoints only | Exact at blend 0 and 1; reject unless GPU ≥3% |
+| `temporal` | client **on** | Native passthrough temporal contract (current/previous VP, reset events). No pixel change. | Auto-off Sodium/Iris/Canvas. See `ULTIMA_TEMPORAL_ARCHITECTURE.md` |
 
-Entity render-state arenas (Phase 12) and extra simulation (Phase 13) stay deferred until terrain is measured on a GPU.
+Entity render-state arenas and extra simulation stay deferred until terrain is measured on a GPU.
+
+---
+
+## 15. Temporal data ownership
+
+`TemporalPipeline` owns `TemporalFrameData` and the `TemporalBackend`. Color/depth views are borrowed from vanilla `mainRenderTarget`. Native evaluate does not blit. HUD/GUI stay on the vanilla post-world path at native resolution. Motion-vector textures are not allocated until a backend that consumes them exists.
+
+See `ULTIMA_TEMPORAL_ARCHITECTURE.md`.
 

@@ -45,6 +45,8 @@ See `REAL_PERFORMANCE_REPORT.md` for the hardware limits of this VM.
 | E4 | Java mesher packed loop | `BlockPos.betweenClosed` | `java_mesher` default off | visit-order test vs betweenClosed | not measured | n/a | n/a | n/a | n/a | no AbstractIterator | same tessellators | auto-off replacement renderers | **PENDING** |
 | E5 | Task queue compact + park | iterator.remove + onSpinWait | `section_task_queue` default off | same nearest/quota policy | not measured | n/a | n/a | n/a | n/a | fewer shifts | n/a | auto-off replacement renderers | **PENDING** |
 | E6 | RGSS endpoint specialization | always evaluate nearest+RGSS | `rgss_endpoint` default off, separate module | exact at blend 0 and 1 | n/a | reject if <3% | n/a | n/a | n/a | n/a | n/a | auto-off replacement renderers | **PENDING**; reject if GPU <3% |
+| E7 | Temporal Native passthrough | none | `temporal` default on | no pixel change; Native size == output; zero MV when VP unchanged | capture only | n/a | n/a | n/a | n/a | none in Native | n/a | auto-off Sodium/Iris/Canvas; HUD stays vanilla | **KEEP** (architecture; no FPS claim) |
+| E8 | Retained command reuse | refill batches every visible walk | skip recycle when fingerprint matches | same draws if set/mesh stable | not measured | n/a | n/a | n/a | n/a | fewer batch array writes | `commandBatchesReused` | same fail-open | **PENDING GPU A/B** with E2 |
 | — | Restore client_chunk_* micro-Mixins | failed RTX 3090 | not restored | n/a | n/a | n/a | −0.28% | +0.68% | n/a | lower alloc, no FPS | n/a | n/a | **REVERT already done** |
 
-Phase 12 (entity arenas) and Phase 13 (extra simulation) are not started. Collision stack stays as-is.
+Phase 14+ (DLSS/FSR) is not started. Native passthrough exists first. Collision stack stays as-is.

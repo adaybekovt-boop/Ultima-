@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.DeviceInfo;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
+import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import java.io.IOException;
@@ -233,6 +234,8 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         appendTerrainMetrics(json);
         BenchmarkJson.comma(json);
+        appendTemporalMetrics(json);
+        BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
         for (int i = 0; i < FRAME_TIMES.length; i++) {
             if (i != 0) {
@@ -404,7 +407,36 @@ public final class ClientFrameBenchmark {
                 .append("    \"chunkUploads\": ").append(last.chunkUploads()).append(",\n")
                 .append("    \"gpuFrameNs\": ").append(last.gpuFrameNs()).append(",\n")
                 .append("    \"retainedActive\": ").append(terrainRetainedActive).append(",\n")
+                .append("    \"commandBatchesReused\": ").append(last.commandBatchesReused()).append(",\n")
                 .append("    \"submitMode\": ").append(BenchmarkJson.quote(terrainSubmitMode)).append("\n")
+                .append("  }");
+    }
+
+    private static void appendTemporalMetrics(final StringBuilder json) {
+        boolean enabled = UltimaConfig.get().isEnabled("temporal");
+        TemporalPipeline pipeline = TemporalPipeline.get();
+        var frame = pipeline.frame();
+        json.append("  \"temporalMetrics\": {\n")
+                .append("    \"moduleEnabled\": ").append(enabled).append(",\n")
+                .append("    \"requestedMode\": ").append(BenchmarkJson.quote(pipeline.settings().requested().name())).append(",\n")
+                .append("    \"resolvedMode\": ").append(BenchmarkJson.quote(pipeline.settings().resolved().name())).append(",\n")
+                .append("    \"requestedUnsupported\": ").append(pipeline.settings().requestedUnsupported()).append(",\n")
+                .append("    \"nativePassthrough\": ").append(pipeline.settings().resolved().isNative()).append(",\n")
+                .append("    \"renderWidth\": ").append(frame.renderWidth).append(",\n")
+                .append("    \"renderHeight\": ").append(frame.renderHeight).append(",\n")
+                .append("    \"outputWidth\": ").append(frame.outputWidth).append(",\n")
+                .append("    \"outputHeight\": ").append(frame.outputHeight).append(",\n")
+                .append("    \"renderEqualsOutput\": ").append(
+                        frame.renderWidth == frame.outputWidth && frame.renderHeight == frame.outputHeight).append(",\n")
+                .append("    \"jitterX\": ").append(frame.currentJitterX).append(",\n")
+                .append("    \"jitterY\": ").append(frame.currentJitterY).append(",\n")
+                .append("    \"frameIndex\": ").append(frame.frameIndex).append(",\n")
+                .append("    \"resetCount\": ").append(pipeline.resetCount()).append(",\n")
+                .append("    \"lastResetReason\": ").append(BenchmarkJson.quote(
+                        pipeline.lastResetReason() == null ? "" : pipeline.lastResetReason().name())).append(",\n")
+                .append("    \"motionVectorPlan\": ").append(BenchmarkJson.quote(frame.motionVectorPlan.name())).append(",\n")
+                .append("    \"evaluatedThisFrame\": ").append(frame.evaluatedThisFrame).append(",\n")
+                .append("    \"failedOpen\": ").append(pipeline.isFailedOpen()).append("\n")
                 .append("  }");
     }
 

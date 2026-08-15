@@ -77,4 +77,11 @@ public final class OpaqueDrawBatch {
             this.maxIndexCount = indexCount;
         }
     }
+
+    public void patchMetadata(final int index, final int originX, final int originY, final int originZ, final float visibility) {
+        this.originX[index] = originX;
+        this.originY[index] = originY;
+        this.originZ[index] = originZ;
+        this.visibility[index] = visibility;
+    }
 }

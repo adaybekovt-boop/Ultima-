@@ -21,6 +21,13 @@ public final class RetainedSectionRecord {
     public int meshId;
     public int generation;
     public boolean visibleThisFrame;
+    /**
+     * Bit 0: world transform is identical across frames (static terrain). Camera
+     * motion still produces screen-space velocity; do not invent entity motion
+     * from this flag.
+     */
+    public static final int FLAG_STATIC_WORLD_TRANSFORM = 1;
+    public int temporalFlags = FLAG_STATIC_WORLD_TRANSFORM;
     public final LayerSlot solid = new LayerSlot();
     public final LayerSlot cutout = new LayerSlot();
 
@@ -38,6 +45,7 @@ public final class RetainedSectionRecord {
         this.meshId = 0;
         this.generation++;
         this.visibleThisFrame = false;
+        this.temporalFlags = FLAG_STATIC_WORLD_TRANSFORM;
         this.solid.clear();
         this.cutout.clear();
     }
@@ -52,6 +60,8 @@ public final class RetainedSectionRecord {
         public int indexCount;
         public int baseVertex;
         public int commandGeneration;
+        public int batchIndex = -1;
+        public int drawIndex = -1;
 
         public boolean capture(
                 final SectionMesh.SectionDraw draw,
@@ -101,6 +111,8 @@ public final class RetainedSectionRecord {
             this.indexCount = 0;
             this.baseVertex = 0;
             this.commandGeneration++;
+            this.batchIndex = -1;
+            this.drawIndex = -1;
         }
     }
 }

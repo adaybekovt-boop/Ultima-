@@ -24,6 +24,10 @@
     "section_task_queue.SectionTaskDynamicQueueMixin",
     "section_task_queue.CompileTaskMixin",
     "section_task_queue.ResortTransparencyTaskMixin",
-    "rgss_endpoint.CompilationCacheMixin"
+    "rgss_endpoint.CompilationCacheMixin",
+    "temporal.GameRendererMixin",
+    "temporal.MinecraftMixin",
+    "temporal.ShaderManagerMixin",
+    "temporal.LevelRendererMixin"
   ]
 }

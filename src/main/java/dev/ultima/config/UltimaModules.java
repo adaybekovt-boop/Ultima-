@@ -115,6 +115,11 @@ public final class UltimaModules {
             Module.client("rgss_endpoint", false,
                     "Experimental RGSS endpoint specialization. Reject unless GPU frame time improves by at least "
                             + "3% in an RGSS-limited workload. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("temporal", true,
+                    "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
+                            + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
+                            + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY));
 
     private UltimaModules() {

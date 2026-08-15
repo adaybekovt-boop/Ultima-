@@ -251,6 +251,8 @@ Not restored: `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `cl
 | E4 java mesher | betweenClosed | packed loop | visit-order test pass | n/a | n/a | n/a | n/a | n/a | no AbstractIterator | same tessellators | auto-off replacement renderers | **PENDING** |
 | E5 task queue | iterator.remove + spin | compact + park | same nearest/quota | n/a | n/a | n/a | n/a | n/a | fewer shifts | n/a | auto-off replacement renderers | **PENDING** |
 | E6 RGSS | always nearest+RGSS | endpoint early-out | exact at 0 and 1 | n/a | reject <3% | n/a | n/a | n/a | n/a | n/a | auto-off replacement renderers | **PENDING** |
+| E7 temporal Native | none | `temporal` default on | no pixel change; Native size=output | capture only | n/a | n/a | n/a | n/a | none | n/a | auto-off Sodium/Iris/Canvas | **KEEP** (architecture) |
+| E8 retained command reuse | refill every walk | fingerprint skip | same draws if set/mesh stable | n/a | n/a | n/a | n/a | n/a | fewer array writes | `commandBatchesReused` | same fail-open | **PENDING GPU A/B** |
 
 ### Next measurement (GPU host)
 
@@ -258,6 +260,25 @@ Not restored: `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `cl
 2. TERRAIN-SUBMISSION: Fancy, high RD, stationary, `retained_terrain=false` vs `true`.
 3. Keep only if ≥5% avg FPS **or** ≥10% prepare/submit CPU.
 4. If per-draw submission is not the bottleneck, do not expand the prototype; re-profile.
+
+---
+
+## 14. Temporal Native passthrough (architecture; no FPS claim)
+
+Date: 2026-08-15. Still no discrete GPU.
+
+Implemented the required temporal-ready layer **before** any DLSS/FSR work:
+
+- Module `temporal` (client, default on, auto-off Sodium/Iris/Canvas)
+- `TemporalFrameData` + `TemporalBackend` + `NativePassthroughBackend` (`evaluate()` is a no-op)
+- Reset on world load/unload, dimension change, resize, resource reload, renderer close, camera cut (>32 blocks), FOV jump (>5°)
+- Forensic tests: static camera → zero NDC velocity; Native recommended size equals output; unsupported DLSS/FSR modes do not lower resolution
+- Retained opaque batches skip CPU refill when the visible command fingerprint is unchanged (`commandBatchesReused`)
+- `RetainedSectionRecord.temporalFlags` marks static terrain (previous world == current world)
+
+Not implemented: DLSS/FSR backends, jitter, MV textures, Frame Generation, graphics-menu options.
+
+See `ULTIMA_TEMPORAL_ARCHITECTURE.md`.
 
 ---
 
