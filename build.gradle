@@ -17,6 +17,13 @@ loom {
     splitEnvironmentSourceSets()
 
     runs {
+        configureEach {
+            vmArg "-Xmx6G"
+            if (project.hasProperty("ultima.jfr")) {
+                vmArg "-XX:StartFlightRecording=dumponexit=true,filename=${project.property('ultima.jfr')},settings=profile,maxsize=256m"
+                vmArg "-XX:FlightRecorderOptions=stackdepth=128"
+            }
+        }
         client {
             if (project.hasProperty("ultima.gameDir")) {
                 runDir = project.property("ultima.gameDir") as String

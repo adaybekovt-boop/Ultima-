@@ -96,6 +96,7 @@ awk -v span=260 -v mobs=700 -v items=400 'BEGIN {
   print "gamerule random_tick_speed 3";
   print "time set midnight";
   print "difficulty normal";
+  print "kill @e[type=!minecraft:player]";
   split("zombie skeleton cow sheep pig chicken creeper spider", kinds, " ");
   seed = 20260616;
   width = span * 2 + 1;
@@ -110,6 +111,7 @@ awk -v span=260 -v mobs=700 -v items=400 'BEGIN {
       printf "summon minecraft:item %d.5 -59.0 %d.5 {Item:{id:\"minecraft:cobblestone\",count:1}}\n", x, z;
     }
   }
+  print "say ultima-bench-load-complete";
 }' > "${FUNCTIONS}/load_test.mcfunction"
 echo "generated $(wc -l < "${FUNCTIONS}/load_test.mcfunction") load commands"
 
@@ -119,10 +121,21 @@ if [[ ! -f /exec-daemon/tmux.portal.conf ]]; then TMUX_CONF=(); fi
 tmux "${TMUX_CONF[@]}" kill-session -t "=${SESSION}" 2>/dev/null || true
 rm -f "$LOG"
 tmux "${TMUX_CONF[@]}" new-session -d -s "${SESSION}" -c "$PWD" -- bash -l
+GRADLE_CMD="./gradlew --no-daemon --console=plain runServer"
+if [[ -n "${JFR:-}" ]]; then
+  mkdir -p run
+  JFR_PATH="${JFR_PATH:-$PWD/run/ultima-server-${LABEL}.jfr}"
+  GRADLE_CMD+=" -Pultima.jfr=${JFR_PATH}"
+  echo "JFR: ${JFR_PATH}"
+fi
 tmux "${TMUX_CONF[@]}" send-keys -t "${SESSION}:0.0" \
-  "cd $PWD && ./gradlew --no-daemon --console=plain runServer 2>&1 | tee ${LOG}" C-m
+  "source $HOME/.ultima-tools.sh 2>/dev/null; export JAVA_HOME=${JAVA_HOME:-$HOME/tools/jdk-25}; export PATH=\"\$JAVA_HOME/bin:\$PATH\"; cd $PWD && ${GRADLE_CMD} 2>&1 | tee ${LOG}" C-m
 
-send() { tmux "${TMUX_CONF[@]}" send-keys -t "${SESSION}:0.0" "$1" C-m; sleep "${2:-2}"; }
+send() {
+  tmux "${TMUX_CONF[@]}" send-keys -t "${SESSION}:0.0" -l "$1"
+  tmux "${TMUX_CONF[@]}" send-keys -t "${SESSION}:0.0" Enter
+  sleep "${2:-2}"
+}
 wait_for() {
   local pattern="$1" limit="${2:-300}" waited=0
   while (( waited < limit )); do
@@ -165,7 +178,8 @@ for cx in -272 -16 240; do
     send "forceload add ${cx} ${cz} ${x_end} ${z_end}" 4
   done
 done
-send "function ultima:load_test" 45
+send "function ultima:load_test" 8
+wait_for 'ultima-bench-load-complete' 180
 send "tick sprint ${WARMUP_TICKS}" 2
 wait_for_count 'Sprint completed' 1 1800
 send "tick sprint ${TICKS}" 5

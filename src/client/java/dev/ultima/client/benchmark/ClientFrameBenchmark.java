@@ -169,10 +169,6 @@ public final class ClientFrameBenchmark {
         double p99Ns = percentile(sorted, 0.99);
         double onePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.01);
         double pointOnePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.001);
-        long matrixAvoided = ClientOptimizationCounters.chunkMatrixCopiesAvoided();
-        long layerAvoided = ClientOptimizationCounters.chunkLayerArraysAvoided();
-        long dirtyAvoided = ClientOptimizationCounters.sectionDirtyWritesAvoided();
-
         StringBuilder json = new StringBuilder(32_768);
         json.append("{\n");
         BenchmarkJson.field(json, "schemaVersion", 2);
@@ -196,18 +192,6 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.field(json, "p99FrameTimeMs", p99Ns / 1_000_000.0);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "cpuFrameTimeAvailable", false);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "chunkMatrixCopiesAvoided", matrixAvoided);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "chunkLayerArraysAvoided", layerAvoided);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "sectionDirtyWritesAvoided", dirtyAvoided);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "averageChunkMatrixCopiesAvoidedPerFrame", (double)matrixAvoided / SAMPLE_FRAMES);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "averageChunkLayerArraysAvoidedPerFrame", (double)layerAvoided / SAMPLE_FRAMES);
-        BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "averageSectionDirtyWritesAvoidedPerFrame", (double)dirtyAvoided / SAMPLE_FRAMES);
         BenchmarkJson.comma(json);
         appendProtocol(json);
         BenchmarkJson.comma(json);

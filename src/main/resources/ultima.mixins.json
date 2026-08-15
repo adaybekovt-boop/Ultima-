@@ -11,6 +11,8 @@
     "block_collision_shape.BlockCollisionsMixin",
     "collision_shell_skip.BlockCollisionsShellMixin",
     "cursor_step.Cursor3DMixin",
-    "entity_section_lookup.EntitySectionStorageMixin"
+    "entity_section_lookup.EntitySectionStorageMixin",
+    "supporting_block_shape_skip.BlockCollisionsMixin",
+    "supporting_block_shape_skip.CollisionGetterMixin"
   ]
 }

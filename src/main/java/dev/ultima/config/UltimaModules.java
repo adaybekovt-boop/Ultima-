@@ -44,35 +44,39 @@ public final class UltimaModules {
         }
     }
 
+    private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
+
     private static final List<Module> ALL = List.of(
-            new Module("entity_section_lookup", false,
+            new Module("entity_section_lookup", true,
                     "Look up entity sections intersecting a box directly instead of scanning every "
-                            + "loaded section in the same chunk column strip. Opt-in because this replaces "
-                            + "a full query method also targeted by entity optimization mods."),
-            new Module("block_collision_shape", false,
+                            + "loaded section in the same chunk column strip. Automatically disabled when "
+                            + "Lithium or a Lithium fork is loaded because they replace the same query.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("block_collision_shape", true,
                     "Only build the collider's voxel shape when a non-cube block shape actually needs to be "
-                            + "intersected with it. Opt-in because deferral changes constructor-time wrapper "
-                            + "composition around the shape factory."),
-            new Module("collision_shell_skip", false,
+                            + "intersected with it. Automatically disabled when Lithium or a Lithium fork is loaded.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("collision_shell_skip", true,
                     "Reject the one-block shell around a collision query without reading block states when "
                             + "no section it covers can hold a block whose shape reaches outside its own cube. "
-                            + "Opt-in because the palette decision is a snapshot for a lazy iterator.",
-                    List.of("cursor_step")),
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded.",
+                    List.of("cursor_step"),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("supporting_block_shape_skip", true,
+                    "Skip VoxelShape.move for full-cube blocks in findSupportingBlock, which discards the "
+                            + "shape and only keeps the BlockPos. Automatically disabled when Lithium or a "
+                            + "Lithium fork is loaded.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
-            Module.client("client_chunk_matrix_reuse", true,
-                    "Reuse one immutable model-view matrix snapshot for all chunk-section uniforms in a frame. "
-                            + "Automatically disabled when Sodium or Iris is loaded.",
-                    List.of("sodium", "iris")),
-            Module.client("client_chunk_layer_array_reuse", true,
-                    "Reuse one ChunkSectionLayer.values() array during chunk submission preparation. "
-                            + "Automatically disabled when Sodium or Iris is loaded.",
-                    List.of("sodium", "iris")),
-            Module.client("client_chunk_dirty_dedup", true,
-                    "Collapse duplicate section-dirty writes from expanded block ranges. "
-                            + "Automatically disabled when Sodium or Iris is loaded.",
-                    List.of("sodium", "iris")),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()));
