@@ -303,22 +303,26 @@ configurations and predates the Mixins.
 - The corrected harness alternates sides and warms each fresh JVM, but does not randomize order,
   pin CPU frequency/cores, isolate the host, or retain allocation/JFR profiles.
 - The 100-sample `/tick query` P95/P99 output remains too small for tail-latency claims.
-- No benchmark in this branch supports an FPS, shader, frame-time, or 1%-low claim.
+- No benchmark in this branch supports a **reliable** FPS, shader, or 1%-low claim. The RTX 3090
+  stationary A/B is valid hardware data and is inconclusive (−0.28% average FPS). See
+  `CLIENT_PERFORMANCE_REPORT.md`.
 
 ## Remaining real-PC validation needed
 
-1. Current Fabric builds of Sodium, Iris, and Lithium, first with risky modules at their defaults and
-   then explicitly enabled one at a time. Confirm Mixin application and inspect conflict/audit logs.
+1. Current Fabric builds of Sodium, Iris, and Lithium on Minecraft 26.2. Static incompatible-mod
+   gates exist; they have not been runtime-tested because the measured profile's mods folder was
+   empty.
 2. Collision/physics mods and custom dynamic-shape blocks, including fences/walls, moving pistons,
    world-border-adjacent movement, vehicles, step-up, suffocation, supporting-block selection, and
    blocks that mutate collision state from callbacks.
-3. Client testing with shaders off/on. Measure FPS, 1% lows, frame-time distribution, entity-heavy
-   scenes, view distance 32, and chunk loading. The expected shader result is “no visual change,”
-   but it has not been observed here.
+3. Client scenes the first RTX 3090 A/B did not cover: moving camera, update-heavy/redstone, high
+   render distance / 1440p, entities, block entities, particles, water/transparency, and shader
+   OFF/ON visual captures. Repeat with at least 6 balanced disabled-vs-default pairs.
 4. Long dedicated-server and integrated-server runs across overworld/nether/end unload/reload, with
    heap/GC and tick percentiles. No cache leak is expected, but allocation savings must be profiled.
 5. Isolated JMH or equivalent forked benchmarks checked into the repository for section lookup,
    shape allocation, and cursor stepping, followed by async-profiler/JFR confirmation in the game.
+6. Do not treat the pair-1 0.1% low (−17.63%) as noise; investigate it on a repeat run.
 
 ## Final merge recommendation
 
@@ -330,9 +334,12 @@ With these fixes, merge is reasonable only as a guarded experimental release:
 - keep `entity_section_lookup`, `block_collision_shape`, and `collision_shell_skip` disabled by
   default;
 - keep the client chunk preparation modules enabled only on the vanilla renderer and automatically
-  disabled with Sodium/Iris pending real-PC A/B evidence;
+  disabled with Sodium/Iris; the first real GPU A/B is inconclusive (−0.28% average FPS) and is not
+  a performance claim;
 - do not publish the historic 13.7%/15.9% figures as results for the reviewed code;
-- do not claim shader/FPS gains.
+- do not claim shader/FPS gains, 2× FPS, or a noticeable client FPS improvement;
+- do not treat visual equivalence as PASS until water/transparency, block-entity, particle, and
+  shader captures exist.
 
 Promoting either opt-in module to default should require the real-modpack tests above and new,
 reproducible per-module evidence.

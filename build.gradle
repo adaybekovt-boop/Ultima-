@@ -16,6 +16,14 @@ repositories {
 loom {
     splitEnvironmentSourceSets()
 
+    runs {
+        client {
+            if (project.hasProperty("ultima.gameDir")) {
+                runDir = project.property("ultima.gameDir") as String
+            }
+        }
+    }
+
     mods {
         "ultima" {
             sourceSet sourceSets.main
@@ -39,6 +47,29 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
+}
+
+afterEvaluate {
+    def runClient = tasks.findByName("runClient")
+    if (runClient != null && project.hasProperty("ultima.bench")) {
+        def jvmFile = file("run/bench-client.jvm.properties")
+        if (jvmFile.exists()) {
+            def props = new Properties()
+            jvmFile.withReader("UTF-8") { reader -> props.load(reader) }
+            props.each { key, value ->
+                runClient.jvmArgs("-D${key}=${value}")
+            }
+        }
+        def argFile = file("run/bench-client.program.args")
+        if (argFile.exists()) {
+            argFile.readLines("UTF-8").findAll { line ->
+                def trimmed = line.trim()
+                !trimmed.isEmpty() && !trimmed.startsWith("#")
+            }.each { line ->
+                runClient.args(line)
+            }
+        }
+    }
 }
 
 tasks.register("forensicRegressionTest", JavaExec) {

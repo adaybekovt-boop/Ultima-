@@ -293,6 +293,31 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("client_chunk_matrix_reuse").incompatibleMods().contains("sodium"),
                     "terrain optimization must declare Sodium incompatibility");
+
+            UltimaConfig dependencyConfig = constructor.newInstance(modules);
+            UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
+            assertEquals(1L, shell.requested() ? 1L : 0L, "shell skip was requested");
+            assertFalse(shell.enabled(), "requested shell skip remains inactive without cursor step");
+            assertTrue("dependency_disabled".equals(shell.reason()), "shell skip must report the missing dependency");
+            assertTrue("cursor_step".equals(shell.blockingDependency()), "blocking dependency must be cursor_step");
+            assertTrue("disabled_by_config".equals(dependencyConfig.resolve("cursor_step").reason()),
+                    "default-on module requested false is disabled_by_config");
+            assertTrue("unknown_module".equals(dependencyConfig.resolve("misspelled_module").reason()),
+                    "unknown module reason");
+
+            Map<String, Boolean> defaultStates = new LinkedHashMap<>();
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                defaultStates.put(module.key(), module.enabledByDefault());
+            }
+            UltimaConfig defaultConfig = constructor.newInstance(defaultStates);
+            String benchmarkReason = defaultConfig.resolve("client_benchmark").reason();
+            assertTrue(
+                    "disabled_by_default".equals(benchmarkReason) || "not_client_environment".equals(benchmarkReason),
+                    "benchmark instrumentation remains inactive, not " + benchmarkReason);
+            assertTrue("disabled_by_default".equals(defaultConfig.resolve("entity_section_lookup").reason()),
+                    "entity section lookup remains opt-in");
+            assertTrue("enabled".equals(defaultConfig.resolve("cursor_step").reason()),
+                    "cursor step remains enabled by default");
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not exercise config guards", e);
         }

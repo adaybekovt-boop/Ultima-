@@ -25,8 +25,12 @@ Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26
 The common/server default is `cursor_step` only. A vanilla client additionally enables the three
 client modules; Sodium/Iris clients automatically keep them off. “All modules enabled” is an
 experimental configuration used to bound the synthetic workload's potential, not the behavior users
-receive. See `CLIENT_PERFORMANCE_REPORT.md`. No configuration currently supports a measured FPS or
-normal-TPS claim.
+receive. See `CLIENT_PERFORMANCE_REPORT.md`.
+
+A real RTX 3090 client A/B of disabled versus default measured **−0.28% average FPS** in a
+stationary Fancy RD16 scene. That result is inconclusive (pair deltas flip sign; n=3; paired SD
+4.45 pp) and is **not** a release FPS claim. Visual equivalence is FAIL. Compatibility on that
+vanilla profile is PASS. Ready for release: **NO**.
 
 ## Historical summary (superseded)
 

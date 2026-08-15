@@ -103,6 +103,128 @@ public final class UltimaConfig {
         return known;
     }
 
+    /**
+     * @return whether {@code ultima.properties} requested the module, before environment,
+     *         incompatibility, and dependency gates.
+     */
+    public boolean isRequested(final String module) {
+        return Boolean.TRUE.equals(this.modules.get(module));
+    }
+
+    public List<ResolvedModule> resolvedModules() {
+        List<ResolvedModule> resolved = new ArrayList<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            resolved.add(this.resolve(module.key()));
+        }
+        return List.copyOf(resolved);
+    }
+
+    public ResolvedModule resolve(final String module) {
+        UltimaModules.Module definition = UltimaModules.byKey(module);
+        boolean requested = this.isRequested(module);
+        boolean enabled = this.isEnabled(module);
+        if (definition == null) {
+            return new ResolvedModule(
+                    module,
+                    requested,
+                    false,
+                    false,
+                    false,
+                    "unknown_module",
+                    "Unknown module names fail closed to vanilla.",
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    null);
+        }
+
+        List<String> loadedIncompatible = loadedIncompatibleMods(definition);
+        String blockingDependency = null;
+        for (String dependency : definition.dependencies()) {
+            if (!this.isEnabled(dependency)) {
+                blockingDependency = dependency;
+                break;
+            }
+        }
+
+        String reason;
+        String detail;
+        if (enabled) {
+            reason = "enabled";
+            detail = "Mixins for this module are applied.";
+        } else if (!isApplicableInCurrentEnvironment(definition)) {
+            reason = "not_client_environment";
+            detail = "Client-only module on a dedicated server.";
+        } else if (requested && !loadedIncompatible.isEmpty()) {
+            reason = "incompatible_mod";
+            detail = "Disabled because incompatible mod(s) are loaded: "
+                    + String.join(", ", loadedIncompatible) + ".";
+        } else if (!requested) {
+            if (definition.enabledByDefault()) {
+                reason = "disabled_by_config";
+                detail = "Requested false in ultima.properties; the module default is true.";
+            } else {
+                reason = "disabled_by_default";
+                detail = "Module is opt-in and was not requested.";
+            }
+        } else if (blockingDependency != null) {
+            reason = "dependency_disabled";
+            detail = "Required dependency '" + blockingDependency + "' is not enabled.";
+        } else {
+            reason = "dependency_cycle";
+            detail = "Module was requested but remains inactive due to a dependency cycle.";
+        }
+
+        return new ResolvedModule(
+                module,
+                requested,
+                enabled,
+                definition.enabledByDefault(),
+                definition.clientOnly(),
+                reason,
+                detail,
+                definition.dependencies(),
+                definition.incompatibleMods(),
+                loadedIncompatible,
+                blockingDependency);
+    }
+
+    public String describe(final String module) {
+        ResolvedModule resolved = this.resolve(module);
+        return resolved.reason() + ": " + resolved.detail();
+    }
+
+    public void logResolvedModules() {
+        for (ResolvedModule module : this.resolvedModules()) {
+            LOGGER.info(
+                    "Ultima module {} requested={} enabled={} reason={} ({})",
+                    module.key(),
+                    module.requested(),
+                    module.enabled(),
+                    module.reason(),
+                    module.detail());
+        }
+    }
+
+    public record ResolvedModule(
+            String key,
+            boolean requested,
+            boolean enabled,
+            boolean enabledByDefault,
+            boolean clientOnly,
+            String reason,
+            String detail,
+            List<String> dependencies,
+            List<String> incompatibleMods,
+            List<String> loadedIncompatibleMods,
+            @org.jspecify.annotations.Nullable String blockingDependency) {
+        public ResolvedModule {
+            dependencies = List.copyOf(dependencies);
+            incompatibleMods = List.copyOf(incompatibleMods);
+            loadedIncompatibleMods = List.copyOf(loadedIncompatibleMods);
+        }
+    }
+
     private static UltimaConfig load() {
         Map<String, Boolean> modules = new LinkedHashMap<>();
         for (UltimaModules.Module module : UltimaModules.all()) {
@@ -199,15 +321,34 @@ public final class UltimaConfig {
     }
 
     private static boolean isApplicableInCurrentEnvironment(final UltimaModules.Module module) {
-        return !module.clientOnly() || FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT;
+        if (!module.clientOnly()) {
+            return true;
+        }
+        try {
+            return FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean hasLoadedIncompatibility(final UltimaModules.Module module) {
-        for (String modId : module.incompatibleMods()) {
-            if (FabricLoader.getInstance().isModLoaded(modId)) {
-                return true;
-            }
+        return !loadedIncompatibleMods(module).isEmpty();
+    }
+
+    private static List<String> loadedIncompatibleMods(final UltimaModules.Module module) {
+        List<String> loaded = new ArrayList<>();
+        if (module.incompatibleMods().isEmpty()) {
+            return loaded;
         }
-        return false;
+        try {
+            for (String modId : module.incompatibleMods()) {
+                if (FabricLoader.getInstance().isModLoaded(modId)) {
+                    loaded.add(modId);
+                }
+            }
+        } catch (Throwable ignored) {
+            return loaded;
+        }
+        return loaded;
     }
 }

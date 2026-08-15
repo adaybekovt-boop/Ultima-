@@ -35,7 +35,11 @@ public final class UltimaMixinPlugin implements IMixinConfigPlugin {
 
         boolean enabled = UltimaConfig.get().isEnabled(module);
         if (!enabled) {
-            LOGGER.info("Skipping {} because the '{}' module is disabled.", mixinClassName, module);
+            LOGGER.info(
+                    "Skipping {} because the '{}' module is inactive ({})",
+                    mixinClassName,
+                    module,
+                    UltimaConfig.get().describe(module));
         }
 
         return enabled;

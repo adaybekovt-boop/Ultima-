@@ -24,7 +24,9 @@ all-enabled benchmark are experimental and must not be presented as default-inst
 
 The later client-priority pass adds three vanilla-renderer modules for same-frame chunk matrix/enum
 array reuse and duplicate dirty-write elimination. They are client-only and automatically disabled
-for Sodium/Iris; details and measurement protocol are in `CLIENT_PERFORMANCE_REPORT.md`.
+for Sodium/Iris. A real RTX 3090 disabled-vs-default A/B in a stationary Fancy scene was
+inconclusive (−0.28% average FPS); details are in `CLIENT_PERFORMANCE_REPORT.md`. Do not present
+those modules as a measured FPS win.
 
 ## Workload bias
 

@@ -46,7 +46,8 @@ Ultima's modules are configured in `config/ultima.properties`.
 Client terrain modules automatically disable when Sodium or Iris is loaded. The other disabled
 modules are expert opt-ins because they replace common mod targets, defer a wrapped constructor
 operation, or snapshot lazy collision state. See `REVIEW_GPT56.md`, `ARCHITECTURAL_AUDIT.md`, and
-`CLIENT_PERFORMANCE_REPORT.md` before changing defaults in a modpack.
+`CLIENT_PERFORMANCE_REPORT.md` before changing defaults in a modpack. The first real GPU A/B did
+not show a reliable FPS gain; do not advertise one.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 

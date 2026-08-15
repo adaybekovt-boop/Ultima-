@@ -13,5 +13,6 @@ public final class Ultima implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Ultima initialized with {} of {} optimization modules enabled.",
                 UltimaConfig.get().enabledModuleCount(), UltimaConfig.get().knownModuleCount());
+        UltimaConfig.get().logResolvedModules();
     }
 }
