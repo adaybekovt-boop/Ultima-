@@ -38,16 +38,21 @@ Built mod JARs appear in `build/libs/`.
 
 Ultima's modules are configured in `config/ultima.properties`.
 
-- Enabled by default everywhere: `cursor_step`
-- Enabled by default on the vanilla client renderer:
-  `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
-- Disabled by default: `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`
+- Enabled by default (dedicated server, integrated server, and client physics):
+  `cursor_step`, `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
+  `supporting_block_shape_skip`, `full_cube_move`
+- Opt-in instrumentation only: `client_benchmark`
+- Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
+  `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
 
-Client terrain modules automatically disable when Sodium or Iris is loaded. The other disabled
-modules are expert opt-ins because they replace common mod targets, defer a wrapped constructor
-operation, or snapshot lazy collision state. See `REVIEW_GPT56.md`, `ARCHITECTURAL_AUDIT.md`, and
-`CLIENT_PERFORMANCE_REPORT.md` before changing defaults in a modpack. The first real GPU A/B did
-not show a reliable FPS gain; do not advertise one.
+Lithium, Canary, and Radium automatically disable the overlapping collision/entity-index modules.
+There is no production vanilla-renderer Mixin left to conflict with Sodium or Iris.
+
+A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
+integrated-server / hitch work, not a GPU FPS claim. The only RTX 3090 FPS A/B on this project
+was of the three deleted client modules and was inconclusive (−0.28% average FPS). Do not
+advertise a client FPS gain until a GPU A/B of the current defaults exists. See
+`REAL_PERFORMANCE_REPORT.md`.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 
