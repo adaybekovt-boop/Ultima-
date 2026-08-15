@@ -3,6 +3,7 @@ package dev.ultima.client.benchmark;
 import com.mojang.blaze3d.systems.DeviceInfo;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import java.io.IOException;
@@ -77,6 +78,17 @@ public final class ClientFrameBenchmark {
     private static Pose sampleEndPose;
     private static String sampleStartScreenshot;
     private static String sampleEndScreenshot;
+    private static long terrainPrepareNsTotal;
+    private static long terrainCommandNsTotal;
+    private static long terrainSubmitNsTotal;
+    private static long terrainDrawsTotal;
+    private static long terrainVisibleSectionsTotal;
+    private static long terrainSectionLayersTotal;
+    private static long terrainUniformRecordsTotal;
+    private static long terrainCommandRebuildsTotal;
+    private static long terrainMetadataUpdatesTotal;
+    private static boolean terrainRetainedActive;
+    private static String terrainSubmitMode = "vanilla";
 
     private ClientFrameBenchmark() {
     }
@@ -101,11 +113,24 @@ public final class ClientFrameBenchmark {
         if (readyFrames++ < WARMUP_FRAMES) {
             if (readyFrames == WARMUP_FRAMES) {
                 ClientOptimizationCounters.reset();
+                TerrainFrameMetrics.resetLifetime();
             }
             return;
         }
 
         FRAME_TIMES[samples++] = elapsed;
+        TerrainFrameMetrics.Snapshot terrain = TerrainFrameMetrics.snapshot(elapsed, 0L);
+        terrainPrepareNsTotal += terrain.prepareNsAccum();
+        terrainCommandNsTotal += terrain.commandNsAccum();
+        terrainSubmitNsTotal += terrain.submitNsAccum();
+        terrainDrawsTotal += terrain.terrainDraws();
+        terrainVisibleSectionsTotal += terrain.visibleSections();
+        terrainSectionLayersTotal += terrain.visibleSectionLayers();
+        terrainUniformRecordsTotal += terrain.uniformRecords();
+        terrainCommandRebuildsTotal += terrain.commandRebuilds();
+        terrainMetadataUpdatesTotal += terrain.metadataUpdates();
+        terrainRetainedActive = terrain.retainedActive();
+        terrainSubmitMode = terrain.submitMode();
         if (samples == 1) {
             sampleStartPose = capturePose();
             sampleStartScreenshot = captureScreenshot("sample_start", false);
@@ -205,6 +230,8 @@ public final class ClientFrameBenchmark {
         appendEnvironment(json);
         BenchmarkJson.comma(json);
         appendModules(json);
+        BenchmarkJson.comma(json);
+        appendTerrainMetrics(json);
         BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
         for (int i = 0; i < FRAME_TIMES.length; i++) {
@@ -358,6 +385,27 @@ public final class ClientFrameBenchmark {
             json.append('\n');
         }
         json.append("  ]");
+    }
+
+    private static void appendTerrainMetrics(final StringBuilder json) {
+        int n = Math.max(1, SAMPLE_FRAMES);
+        TerrainFrameMetrics.Snapshot last = TerrainFrameMetrics.snapshot(0L, 0L);
+        json.append("  \"terrainMetrics\": {\n")
+                .append("    \"prepareNsAvg\": ").append((double)terrainPrepareNsTotal / n).append(",\n")
+                .append("    \"commandNsAvg\": ").append((double)terrainCommandNsTotal / n).append(",\n")
+                .append("    \"submitNsAvg\": ").append((double)terrainSubmitNsTotal / n).append(",\n")
+                .append("    \"terrainDrawsAvg\": ").append((double)terrainDrawsTotal / n).append(",\n")
+                .append("    \"visibleSectionsAvg\": ").append((double)terrainVisibleSectionsTotal / n).append(",\n")
+                .append("    \"visibleSectionLayersAvg\": ").append((double)terrainSectionLayersTotal / n).append(",\n")
+                .append("    \"uniformRecordsAvg\": ").append((double)terrainUniformRecordsTotal / n).append(",\n")
+                .append("    \"commandRebuildsAvg\": ").append((double)terrainCommandRebuildsTotal / n).append(",\n")
+                .append("    \"metadataUpdatesAvg\": ").append((double)terrainMetadataUpdatesTotal / n).append(",\n")
+                .append("    \"chunkRebuilds\": ").append(last.chunkRebuilds()).append(",\n")
+                .append("    \"chunkUploads\": ").append(last.chunkUploads()).append(",\n")
+                .append("    \"gpuFrameNs\": ").append(last.gpuFrameNs()).append(",\n")
+                .append("    \"retainedActive\": ").append(terrainRetainedActive).append(",\n")
+                .append("    \"submitMode\": ").append(BenchmarkJson.quote(terrainSubmitMode)).append("\n")
+                .append("  }");
     }
 
     private static void appendQuotedArrayInline(final StringBuilder json, final Iterable<String> values) {

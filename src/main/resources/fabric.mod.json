@@ -6,7 +6,8 @@
   "description": "Compatibility-first Minecraft performance mod.",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.ultima.Ultima"]
+    "main": ["dev.ultima.Ultima"],
+    "client": ["dev.ultima.client.UltimaClient"]
   },
   "mixins": [
     "ultima.mixins.json",

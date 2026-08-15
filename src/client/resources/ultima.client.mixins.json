@@ -8,6 +8,22 @@
     "defaultRequire": 1
   },
   "client": [
-    "client_benchmark.MinecraftMixin"
+    "client_benchmark.MinecraftMixin",
+    "terrain_metrics.MinecraftMixin",
+    "terrain_metrics.LevelRendererMixin",
+    "terrain_metrics.ChunkSectionsToRenderMixin",
+    "terrain_metrics.SectionTaskDynamicQueueMixin",
+    "terrain_metrics.RenderSectionMixin",
+    "retained_terrain.LevelRendererMixin",
+    "retained_terrain.ChunkSectionsToRenderMixin",
+    "retained_terrain.ShaderManagerMixin",
+    "render_snapshot.RenderRegionCacheMixin",
+    "render_snapshot.SectionCopyMixin",
+    "java_mesher.SectionCompilerMixin",
+    "section_task_queue.SectionTaskAccessor",
+    "section_task_queue.SectionTaskDynamicQueueMixin",
+    "section_task_queue.CompileTaskMixin",
+    "section_task_queue.ResortTransparencyTaskMixin",
+    "rgss_endpoint.CompilationCacheMixin"
   ]
 }

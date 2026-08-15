@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.TreeSet;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.phys.AABB;
@@ -36,6 +37,8 @@ public final class ForensicRegressionTest {
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
         testOffsetCubeMatchesVanillaMove();
+        testPackedSectionVisitOrder();
+        testSectionVisibilityBits();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -248,6 +251,18 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("full_cube_move"), "full-cube move replacement is default-on");
             assertTrue(defaults.get("cursor_step"), "cursor step remains enabled by default");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
+            assertTrue(defaults.get("terrain_metrics"), "terrain metrics are default-on for the client");
+            assertFalse(defaults.get("retained_terrain"), "retained terrain must remain opt-in");
+            assertFalse(defaults.get("render_snapshot"), "render snapshots must remain opt-in");
+            assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
+            assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
+            assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
+            assertTrue(
+                    UltimaModules.byKey("retained_terrain").incompatibleMods().contains("sodium"),
+                    "retained terrain must declare Sodium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("terrain_metrics").incompatibleMods().contains("iris"),
+                    "terrain metrics must declare Iris incompatibility");
             assertTrue(
                     UltimaModules.byKey("collision_shell_skip").dependencies().contains("cursor_step"),
                     "shell dependency must be declared in the registry");
@@ -287,6 +302,14 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(benchmarkReason) || "not_client_environment".equals(benchmarkReason),
                     "benchmark instrumentation remains inactive, not " + benchmarkReason);
+            String retainedReason = defaultConfig.resolve("retained_terrain").reason();
+            assertTrue(
+                    "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
+                    "retained terrain remains inactive, not " + retainedReason);
+            String metricsReason = defaultConfig.resolve("terrain_metrics").reason();
+            assertTrue(
+                    "enabled".equals(metricsReason) || "not_client_environment".equals(metricsReason),
+                    "terrain metrics default is on in a client environment, not " + metricsReason);
             assertTrue("enabled".equals(defaultConfig.resolve("entity_section_lookup").reason()),
                     "entity section lookup is enabled by default");
             assertTrue("enabled".equals(defaultConfig.resolve("cursor_step").reason()),
@@ -371,6 +394,38 @@ public final class ForensicRegressionTest {
         assertTrue(OffsetCubeVoxelShape.isExactInt(-12.0), "-12 is an exact int");
         assertFalse(OffsetCubeVoxelShape.isExactInt(0.5), "0.5 is not an exact int");
         assertFalse(OffsetCubeVoxelShape.isExactInt(Double.NaN), "NaN is not an exact int");
+    }
+
+    private static void testPackedSectionVisitOrder() {
+        BlockPos min = new BlockPos(-32, 64, 16);
+        BlockPos max = min.offset(15, 15, 15);
+        int index = 0;
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            int x = index % 16;
+            int slice = index / 16;
+            int y = slice % 16;
+            int z = slice / 16;
+            if (pos.getX() != min.getX() + x || pos.getY() != min.getY() + y || pos.getZ() != min.getZ() + z) {
+                throw new AssertionError("packed section visit order diverges from BlockPos.betweenClosed at index "
+                        + index + " vanilla=" + pos.getX() + "," + pos.getY() + "," + pos.getZ()
+                        + " packed=" + (min.getX() + x) + "," + (min.getY() + y) + "," + (min.getZ() + z));
+            }
+            index++;
+        }
+        assertEquals(4096L, index, "16^3 visits");
+    }
+
+    private static void testSectionVisibilityBits() {
+        float[] values = {0.0F, 1.0F, 0.5F, 0.00390625F, Float.MIN_VALUE, -0.0F};
+        for (float value : values) {
+            int bits = Float.floatToIntBits(value);
+            if (Float.intBitsToFloat(bits) != value && !(value == 0.0F && Float.intBitsToFloat(bits) == 0.0F)) {
+                throw new AssertionError("visibility bit round-trip failed for " + value);
+            }
+            if (bits != Float.floatToIntBits(Float.intBitsToFloat(bits)) && !Float.isNaN(value)) {
+                throw new AssertionError("floatToIntBits was not stable for " + value);
+            }
+        }
     }
 
     private static int invokeFindIndex(final VoxelShape shape, final Direction.Axis axis, final double coord) {

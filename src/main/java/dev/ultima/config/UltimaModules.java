@@ -45,6 +45,7 @@ public final class UltimaModules {
     }
 
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
+    private static final List<String> RENDERER_FAMILY = List.of("sodium", "iris", "canvas");
 
     private static final List<Module> ALL = List.of(
             new Module("entity_section_lookup", true,
@@ -86,7 +87,35 @@ public final class UltimaModules {
                             + "index by the volume's width and height at every position."),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
-                    List.of()));
+                    List.of()),
+            Module.client("terrain_metrics", true,
+                    "Record independent terrain prepare/submit CPU, draw counts, and rebuild/upload counters. "
+                            + "Does not change rendering. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("retained_terrain", false,
+                    "Experimental retained opaque terrain: section metadata table, persistent command slots, "
+                            + "and multi-draw/indirect submission. Vanilla path remains the fallback. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("render_snapshot", false,
+                    "Share immutable block-entity snapshots across SectionCopy objects of the same chunk "
+                            + "inside one extract. Does not share palettes. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("java_mesher", false,
+                    "Packed x-fastest section compile loop matching BlockPos.betweenClosed, with worker-owned "
+                            + "scratch and tessellator reuse. Exact visit order. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("section_task_queue", false,
+                    "Compact cancelled section compile tasks in one pass and park workers on upload backpressure "
+                            + "instead of spinning. Preserves vanilla nearest-task and recompile-quota policy. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("rgss_endpoint", false,
+                    "Experimental RGSS endpoint specialization. Reject unless GPU frame time improves by at least "
+                            + "3% in an RGSS-limited workload. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY));
 
     private UltimaModules() {
     }
