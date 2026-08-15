@@ -2,6 +2,7 @@ package dev.ultima.review;
 
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
+import dev.ultima.phys.OffsetCubeVoxelShape;
 import dev.ultima.util.CursorMath;
 import dev.ultima.util.SectionRangeMath;
 import java.lang.reflect.Constructor;
@@ -12,7 +13,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.TreeSet;
+import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * Dependency-free differential checks for arithmetic used by the optimization Mixins.
@@ -30,6 +35,7 @@ public final class ForensicRegressionTest {
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
+        testOffsetCubeMatchesVanillaMove();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -239,6 +245,7 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("block_collision_shape"), "deferred collider voxelisation is default-on");
             assertTrue(defaults.get("collision_shell_skip"), "shell skip is default-on");
             assertTrue(defaults.get("supporting_block_shape_skip"), "supporting-block shape skip is default-on");
+            assertTrue(defaults.get("full_cube_move"), "full-cube move replacement is default-on");
             assertTrue(defaults.get("cursor_step"), "cursor step remains enabled by default");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
             assertTrue(
@@ -256,6 +263,9 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("supporting_block_shape_skip").incompatibleMods().contains("lithium"),
                     "supporting-block skip must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
+                    "full-cube move must declare Lithium incompatibility");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
@@ -283,8 +293,93 @@ public final class ForensicRegressionTest {
                     "cursor step remains enabled by default");
             assertTrue("enabled".equals(defaultConfig.resolve("supporting_block_shape_skip").reason()),
                     "supporting-block skip is enabled by default");
+            assertTrue("enabled".equals(defaultConfig.resolve("full_cube_move").reason()),
+                    "full-cube move is enabled by default");
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not exercise config guards", e);
+        }
+    }
+
+    private static void testOffsetCubeMatchesVanillaMove() {
+        int[][] positions = {
+                {0, 0, 0},
+                {1, -60, 4},
+                {-12, 64, 255},
+                {30000000, 319, -30000000},
+                {-1, -64, 1},
+        };
+        double[] probes = {
+                Double.NEGATIVE_INFINITY,
+                -2.0,
+                -1.0,
+                -1.0E-7,
+                0.0,
+                1.0E-7,
+                0.5,
+                1.0 - 1.0E-7,
+                1.0,
+                1.0 + 1.0E-7,
+                2.0,
+                Double.POSITIVE_INFINITY,
+        };
+        double[] distances = {-2.0, -0.08, -1.0E-8, 0.0, 1.0E-8, 0.08, 1.5};
+
+        for (int[] pos : positions) {
+            int x = pos[0];
+            int y = pos[1];
+            int z = pos[2];
+            VoxelShape vanilla = Shapes.block().move(x, y, z);
+            VoxelShape ultima = new OffsetCubeVoxelShape(x, y, z);
+            for (Direction.Axis axis : Direction.Axis.VALUES) {
+                assertEquals(vanilla.getCoords(axis).size(), ultima.getCoords(axis).size(), "coord count");
+                for (int index = 0; index < vanilla.getCoords(axis).size(); index++) {
+                    if (vanilla.getCoords(axis).getDouble(index) != ultima.getCoords(axis).getDouble(index)) {
+                        throw new AssertionError("coord mismatch at " + axis + "[" + index + "] pos="
+                                + x + "," + y + "," + z);
+                    }
+                }
+                for (double probe : probes) {
+                    double world = probe == Double.NEGATIVE_INFINITY || probe == Double.POSITIVE_INFINITY
+                            ? probe
+                            : (axis == Direction.Axis.X ? x : axis == Direction.Axis.Y ? y : z) + probe;
+                    int vanillaIndex = invokeFindIndex(vanilla, axis, world);
+                    int ultimaIndex = invokeFindIndex(ultima, axis, world);
+                    if (vanillaIndex != ultimaIndex) {
+                        throw new AssertionError("findIndex mismatch axis=" + axis + " world=" + world
+                                + " vanilla=" + vanillaIndex + " ultima=" + ultimaIndex);
+                    }
+                }
+            }
+
+            AABB standing = new AABB(x + 0.3, y, z + 0.3, x + 0.7, y + 1.8, z + 0.7);
+            AABB straddling = new AABB(x - 0.2, y - 0.1, z - 0.2, x + 1.2, y + 0.4, z + 1.2);
+            for (AABB box : List.of(standing, straddling)) {
+                for (Direction.Axis axis : Direction.Axis.VALUES) {
+                    for (double distance : distances) {
+                        double vanillaHit = vanilla.collide(axis, box, distance);
+                        double ultimaHit = ultima.collide(axis, box, distance);
+                        if (vanillaHit != ultimaHit) {
+                            throw new AssertionError("collide mismatch axis=" + axis + " distance=" + distance
+                                    + " vanilla=" + vanillaHit + " ultima=" + ultimaHit);
+                        }
+                    }
+                }
+            }
+        }
+
+        assertTrue(OffsetCubeVoxelShape.isExactInt(0.0), "0 is an exact int");
+        assertTrue(OffsetCubeVoxelShape.isExactInt(-12.0), "-12 is an exact int");
+        assertFalse(OffsetCubeVoxelShape.isExactInt(0.5), "0.5 is not an exact int");
+        assertFalse(OffsetCubeVoxelShape.isExactInt(Double.NaN), "NaN is not an exact int");
+    }
+
+    private static int invokeFindIndex(final VoxelShape shape, final Direction.Axis axis, final double coord) {
+        try {
+            Method findIndex = VoxelShape.class.getDeclaredMethod("findIndex", Direction.Axis.class, double.class);
+            findIndex.setAccessible(true);
+            return (Integer)findIndex.invoke(shape, axis, coord);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not invoke VoxelShape.findIndex", e);
         }
     }
 

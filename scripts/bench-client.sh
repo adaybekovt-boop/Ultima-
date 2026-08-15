@@ -15,10 +15,11 @@
 #   WIDTH/HEIGHT       Window size (default 1280x720)
 #   WARMUP_FRAMES      Default 1200
 #   SAMPLE_FRAMES      Default 12000
-#   CAMERA_MODE        stationary (default) or yaw_sweep
+#   CAMERA_MODE        stationary (default), yaw_sweep, or chunk_flight
 #   CAMERA_X/Y/Z       Optional held/start position
 #   CAMERA_YAW/PITCH   Optional look angles
-#   CAMERA_YAW_PER_FRAME  Degrees per frame for yaw_sweep (default 0.25)
+#   CAMERA_YAW_PER_FRAME  Degrees per frame for yaw_sweep/chunk_flight (default 0.25)
+#   CAMERA_Z_PER_FRAME    Blocks per frame for chunk_flight (default 0.8)
 #   SCENE              Label recorded in JSON
 #   PAIR_LABEL         Label recorded in JSON
 #   CAPTURE_SCREENSHOTS  Set to 1 to grab sample_start/sample_end screenshots
@@ -149,6 +150,9 @@ write_jvm_prop() {
   if [[ -n "${CAMERA_PITCH:-}" ]]; then write_jvm_prop "ultima.clientBenchmark.cameraPitch" "$CAMERA_PITCH"; fi
   if [[ -n "${CAMERA_YAW_PER_FRAME:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.cameraYawDegreesPerFrame" "$CAMERA_YAW_PER_FRAME"
+  fi
+  if [[ -n "${CAMERA_Z_PER_FRAME:-}" ]]; then
+    write_jvm_prop "ultima.clientBenchmark.cameraZPerFrame" "$CAMERA_Z_PER_FRAME"
   fi
   if [[ -n "${HOLD_POSITION:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.holdPosition" "$([[ "$HOLD_POSITION" == 1 ]] && echo true || echo false)"

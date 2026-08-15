@@ -82,7 +82,23 @@ SERVER_DEFAULT_ENABLED="$(
     printf '%s=%s\n' "$key" "$state"
   done
 } > run/config/ultima.properties
-echo "== module states (${MODE}) =="
+if [[ -n "${MODULE_OVERRIDES:-}" ]]; then
+  IFS=',' read -ra _ultima_overrides <<< "$MODULE_OVERRIDES"
+  for _ov in "${_ultima_overrides[@]}"; do
+    _key="${_ov%%=*}"
+    _val="${_ov#*=}"
+    if [[ ! "$_key" =~ ^[a-z_]+$ || ! "$_val" =~ ^(true|false)$ ]]; then
+      echo "invalid MODULE_OVERRIDES entry: ${_ov}" >&2
+      exit 2
+    fi
+    if ! grep -q "^${_key}=" run/config/ultima.properties; then
+      echo "MODULE_OVERRIDES unknown module: ${_key}" >&2
+      exit 2
+    fi
+    sed -i "s/^${_key}=.*/${_key}=${_val}/" run/config/ultima.properties
+  done
+fi
+echo "== module states (${MODE}${MODULE_OVERRIDES:+ overrides ${MODULE_OVERRIDES}}) =="
 cat run/config/ultima.properties
 
 # The entity load is generated rather than committed, from a fixed seed and an explicit linear
@@ -157,11 +173,27 @@ wait_for_count() {
 }
 
 wait_for 'Done ([0-9.]*s)!' 600
-case "$MODE" in
-  enabled) EXPECTED_ENABLED=$SERVER_MODULE_COUNT ;;
-  disabled) EXPECTED_ENABLED=0 ;;
-  default) EXPECTED_ENABLED=$SERVER_DEFAULT_ENABLED ;;
-esac
+EXPECTED_ENABLED="$(python3 - <<'PY'
+from pathlib import Path
+states = {}
+for line in Path("run/config/ultima.properties").read_text().splitlines():
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    states[key] = value.strip() == "true"
+source = Path("src/main/java/dev/ultima/config/UltimaModules.java").read_text()
+enabled = 0
+for key, requested in states.items():
+    if not requested:
+        continue
+    if f'Module.client("{key}"' in source:
+        continue
+    enabled += 1
+    if key == "collision_shell_skip" and not states.get("cursor_step"):
+        enabled -= 1
+print(enabled)
+PY
+)"
 wait_for "Ultima initialized with ${EXPECTED_ENABLED} of ${SERVER_MODULE_COUNT} optimization modules enabled" 30
 mkdir -p "run/${WORLD}/datapacks"
 cp -r bench/ultima_bench "run/${WORLD}/datapacks/"

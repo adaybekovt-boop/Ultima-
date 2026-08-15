@@ -8,26 +8,35 @@ ON_MODE="${ON_MODE:-default}"
 PREFIX="${PREFIX:-server}"
 TICKS="${TICKS:-800}"
 WARMUP_TICKS="${WARMUP_TICKS:-250}"
+OFF_OVERRIDES="${OFF_OVERRIDES:-}"
+ON_OVERRIDES="${ON_OVERRIDES:-}"
 
 cd "$(dirname "$0")/.."
 source "$HOME/.ultima-tools.sh" 2>/dev/null || true
 export JAVA_HOME="${JAVA_HOME:-$HOME/tools/jdk-25}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
+run_side() {
+  local label="$1" mode="$2" overrides="$3"
+  TICKS="$TICKS" WARMUP_TICKS="$WARMUP_TICKS" MODULE_OVERRIDES="$overrides" \
+    bash scripts/bench-server.sh "$label" "$mode"
+}
+
 for (( pair = 1; pair <= PAIRS; pair++ )); do
   if (( pair % 2 == 1 )); then
-    TICKS="$TICKS" WARMUP_TICKS="$WARMUP_TICKS" bash scripts/bench-server.sh "${PREFIX}_pair${pair}_off" "$OFF_MODE"
-    TICKS="$TICKS" WARMUP_TICKS="$WARMUP_TICKS" bash scripts/bench-server.sh "${PREFIX}_pair${pair}_on" "$ON_MODE"
+    run_side "${PREFIX}_pair${pair}_off" "$OFF_MODE" "$OFF_OVERRIDES"
+    run_side "${PREFIX}_pair${pair}_on" "$ON_MODE" "$ON_OVERRIDES"
   else
-    TICKS="$TICKS" WARMUP_TICKS="$WARMUP_TICKS" bash scripts/bench-server.sh "${PREFIX}_pair${pair}_on" "$ON_MODE"
-    TICKS="$TICKS" WARMUP_TICKS="$WARMUP_TICKS" bash scripts/bench-server.sh "${PREFIX}_pair${pair}_off" "$OFF_MODE"
+    run_side "${PREFIX}_pair${pair}_on" "$ON_MODE" "$ON_OVERRIDES"
+    run_side "${PREFIX}_pair${pair}_off" "$OFF_MODE" "$OFF_OVERRIDES"
   fi
 done
 
 echo "===== ${PREFIX} ${PAIRS} pairs ====="
-python3 - <<'PY'
-import glob, re, statistics
-logs = sorted(glob.glob("/tmp/ultima-bench-*_pair*_*.log"))
+PREFIX="$PREFIX" python3 - <<'PY'
+import glob, os, re, statistics
+prefix = os.environ.get("PREFIX", "server")
+logs = sorted(glob.glob(f"/tmp/ultima-bench-{prefix}_pair*_*.log"))
 pair_re = re.compile(r"ultima-bench-(?P<pre>.*_pair)(?P<n>\d+)_(?P<side>off|on)\.log$")
 sprints = {}
 kills = {}
@@ -35,7 +44,7 @@ for path in logs:
     m = pair_re.search(path)
     if not m:
         continue
-    key = (int(m.group("n")), m.group("side"))
+    key = (m.group("pre"), int(m.group("n")), m.group("side"))
     times = []
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -49,19 +58,19 @@ for path in logs:
         sprints[key] = times[-1]
     elif times:
         sprints[key] = times[-1]
-pairs = sorted({n for n, _ in sprints})
+pairs = sorted({(pre, n) for pre, n, _ in sprints})
 offs, ons, deltas = [], [], []
 print("pair  off_ms  on_ms   delta%")
-for n in pairs:
-    off = sprints.get((n, "off"))
-    on = sprints.get((n, "on"))
+for pre, n in pairs:
+    off = sprints.get((pre, n, "off"))
+    on = sprints.get((pre, n, "on"))
     if off is None or on is None:
         continue
     delta = 100.0 * (on - off) / off
     offs.append(off)
     ons.append(on)
     deltas.append(delta)
-    print(f"{n:4d}  {off:6.2f}  {on:6.2f}  {delta:+6.2f}%  cows off={kills.get((n,'off'))} on={kills.get((n,'on'))}")
+    print(f"{pre}{n:d}  {off:6.2f}  {on:6.2f}  {delta:+6.2f}%  cows off={kills.get((pre,n,'off'))} on={kills.get((pre,n,'on'))}")
 if deltas:
     print(f"mean off {statistics.mean(offs):.3f} ms  on {statistics.mean(ons):.3f} ms  paired {statistics.mean(deltas):+.2f}%")
 PY

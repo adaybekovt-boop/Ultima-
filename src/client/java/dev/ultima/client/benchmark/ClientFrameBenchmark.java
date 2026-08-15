@@ -54,7 +54,10 @@ public final class ClientFrameBenchmark {
     private static final Double CAMERA_PITCH = doubleProperty("ultima.clientBenchmark.cameraPitch");
     private static final double CAMERA_YAW_PER_FRAME = doubleProperty(
             "ultima.clientBenchmark.cameraYawDegreesPerFrame",
-            "yaw_sweep".equals(CAMERA_MODE) ? 0.25 : 0.0);
+            "yaw_sweep".equals(CAMERA_MODE) || "chunk_flight".equals(CAMERA_MODE) ? 0.25 : 0.0);
+    private static final double CAMERA_Z_PER_FRAME = doubleProperty(
+            "ultima.clientBenchmark.cameraZPerFrame",
+            "chunk_flight".equals(CAMERA_MODE) ? 0.8 : 0.0);
     private static final boolean HOLD_POSITION = booleanProperty(
             "ultima.clientBenchmark.holdPosition",
             "yaw_sweep".equals(CAMERA_MODE) || hasFixedPosition());
@@ -138,13 +141,17 @@ public final class ClientFrameBenchmark {
         }
 
         boolean yawSweep = "yaw_sweep".equals(CAMERA_MODE);
-        if (!yawSweep && !HOLD_POSITION && CAMERA_YAW == null && CAMERA_PITCH == null) {
+        boolean chunkFlight = "chunk_flight".equals(CAMERA_MODE);
+        if (!yawSweep && !chunkFlight && !HOLD_POSITION && CAMERA_YAW == null && CAMERA_PITCH == null) {
             return;
         }
 
         float yaw = startYaw + (float)(CAMERA_YAW_PER_FRAME * readyFrames);
         float pitch = startPitch;
-        if (HOLD_POSITION || hasFixedPosition()) {
+        if (chunkFlight) {
+            player.snapTo(startX, startY, startZ + CAMERA_Z_PER_FRAME * readyFrames, yaw, pitch);
+            player.setDeltaMovement(Vec3.ZERO);
+        } else if (HOLD_POSITION || hasFixedPosition()) {
             player.snapTo(startX, startY, startZ, yaw, pitch);
             player.setDeltaMovement(Vec3.ZERO);
         } else {
@@ -306,6 +313,7 @@ public final class ClientFrameBenchmark {
                 .append("      \"mode\": ").append(BenchmarkJson.quote(CAMERA_MODE)).append(",\n")
                 .append("      \"holdPosition\": ").append(HOLD_POSITION).append(",\n")
                 .append("      \"yawDegreesPerFrame\": ").append(CAMERA_YAW_PER_FRAME).append(",\n")
+                .append("      \"zPerFrame\": ").append(CAMERA_Z_PER_FRAME).append(",\n")
                 .append("      \"requested\": ");
         appendPose(json, requested);
         json.append(",\n      \"actual\": ");

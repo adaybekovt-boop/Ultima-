@@ -74,6 +74,13 @@ public final class UltimaModules {
                     List.of(),
                     LITHIUM_FAMILY,
                     false),
+            new Module("full_cube_move", true,
+                    "Replace Shapes.block().move(integer offset) with a compact world-space cube that has "
+                            + "the same coordinates and collision as vanilla's allocating ArrayVoxelShape. "
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
