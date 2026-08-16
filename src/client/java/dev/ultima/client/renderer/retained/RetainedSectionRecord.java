@@ -3,6 +3,7 @@ package dev.ultima.client.renderer.retained;
 import com.mojang.blaze3d.IndexType;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import dev.ultima.retained.IndexedCommandOwner;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.SectionMesh;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
@@ -50,7 +51,7 @@ public final class RetainedSectionRecord {
         this.cutout.clear();
     }
 
-    public static final class LayerSlot {
+    public static final class LayerSlot implements IndexedCommandOwner {
         public boolean alive;
         public int meshId;
         public @Nullable GpuBuffer vertexBuffer;
@@ -116,6 +117,28 @@ public final class RetainedSectionRecord {
             this.indexCount = 0;
             this.baseVertex = 0;
             this.commandGeneration++;
+            this.instanceCount = 0;
+        }
+
+        @Override
+        public int getCommandIndex() {
+            return this.commandIndex;
+        }
+
+        @Override
+        public void onCommandAttached(final int commandIndex, final int instanceCount) {
+            this.commandIndex = commandIndex;
+            this.instanceCount = instanceCount;
+        }
+
+        @Override
+        public void onCommandMoved(final int newCommandIndex) {
+            this.commandIndex = newCommandIndex;
+        }
+
+        @Override
+        public void onCommandDetached() {
+            this.commandIndex = -1;
             this.instanceCount = 0;
         }
     }

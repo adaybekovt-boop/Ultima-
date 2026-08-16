@@ -123,7 +123,7 @@ Minecraft 26.2 already has extraction, a frame graph, uber buffers, staged uploa
 - persistent section metadata (stable identity + generation)
 - one metadata table; commands store `sectionMetadataIndex`
 - persistent command slots; camera motion does not rebuild Java draws
-- compact GPU table; `gl_DrawID` / `gl_BaseInstance` fetch origin + fade
+- compact GPU table; `gl_BaseInstanceARB` fetch origin + fade (unsuffixed `gl_BaseInstance` is undeclared in 26.2 shaderc)
 - grouped indirect / multi-draw on the existing backends
 - vanilla `prepareChunkRenders` fallback
 

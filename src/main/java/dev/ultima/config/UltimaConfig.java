@@ -135,7 +135,8 @@ public final class UltimaConfig {
                     List.of(),
                     List.of(),
                     List.of(),
-                    null);
+                    null,
+                    "unknown");
         }
 
         List<String> loadedIncompatible = loadedIncompatibleMods(definition);
@@ -186,7 +187,8 @@ public final class UltimaConfig {
                 definition.dependencies(),
                 definition.incompatibleMods(),
                 loadedIncompatible,
-                blockingDependency);
+                blockingDependency,
+                UltimaModules.kindKey(definition));
     }
 
     public String describe(final String module) {
@@ -217,11 +219,13 @@ public final class UltimaConfig {
             List<String> dependencies,
             List<String> incompatibleMods,
             List<String> loadedIncompatibleMods,
-            @org.jspecify.annotations.Nullable String blockingDependency) {
+            @org.jspecify.annotations.Nullable String blockingDependency,
+            String moduleClass) {
         public ResolvedModule {
             dependencies = List.copyOf(dependencies);
             incompatibleMods = List.copyOf(incompatibleMods);
             loadedIncompatibleMods = List.copyOf(loadedIncompatibleMods);
+            moduleClass = moduleClass == null ? "unknown" : moduleClass;
         }
     }
 

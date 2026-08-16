@@ -9,15 +9,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(ChunkSectionsToRender.class)
+@Mixin(value = ChunkSectionsToRender.class, priority = 900)
 public abstract class ChunkSectionsToRenderMixin {
-    @Inject(method = "renderGroup", at = @At("HEAD"))
+    @Inject(method = "renderGroup", at = @At("HEAD"), order = 100)
     private void ultimaBeginSubmit(final ChunkSectionLayerGroup group, final GpuSampler sampler, final CallbackInfo ci) {
-        TerrainFrameMetrics.beginSubmit();
+        TerrainFrameMetrics.beginSubmit(group);
     }
 
-    @Inject(method = "renderGroup", at = @At("RETURN"))
+    @Inject(method = "renderGroup", at = @At("RETURN"), order = 100)
     private void ultimaEndSubmit(final ChunkSectionLayerGroup group, final GpuSampler sampler, final CallbackInfo ci) {
-        TerrainFrameMetrics.endSubmit();
+        TerrainFrameMetrics.endSubmit(group);
     }
 }

@@ -11,6 +11,12 @@ import java.util.List;
  * disabled module.
  */
 public final class UltimaModules {
+    public enum Kind {
+        SHIPPED_DEFAULT,
+        OPT_IN_EXPERIMENT,
+        INSTRUMENTATION
+    }
+
     public record Module(
             String key,
             boolean enabledByDefault,
@@ -136,5 +142,29 @@ public final class UltimaModules {
             }
         }
         return null;
+    }
+
+    public static boolean isInstrumentation(final String key) {
+        return "client_benchmark".equals(key) || "terrain_metrics".equals(key);
+    }
+
+    public static boolean isOptInExperiment(final String key) {
+        Module module = byKey(key);
+        return module != null && kind(module) == Kind.OPT_IN_EXPERIMENT;
+    }
+
+    public static Kind kind(final Module module) {
+        if (isInstrumentation(module.key())) {
+            return Kind.INSTRUMENTATION;
+        }
+        return module.enabledByDefault() ? Kind.SHIPPED_DEFAULT : Kind.OPT_IN_EXPERIMENT;
+    }
+
+    public static String kindKey(final Module module) {
+        return switch (kind(module)) {
+            case SHIPPED_DEFAULT -> "shipped_default";
+            case OPT_IN_EXPERIMENT -> "opt_in_experiment";
+            case INSTRUMENTATION -> "instrumentation";
+        };
     }
 }

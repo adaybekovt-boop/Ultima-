@@ -85,13 +85,30 @@ def pair_key(path: Path) -> tuple[str, str] | None:
     return match.group("pair"), match.group("side").lower()
 
 
+INSTRUMENTATION_KEYS = frozenset({"client_benchmark", "terrain_metrics"})
+SHIPPED_DEFAULT_KEYS_MUST_INCLUDE = (
+    "entity_section_lookup",
+    "block_collision_shape",
+    "collision_shell_skip",
+)
+
+
+def module_class(module: dict) -> str:
+    explicit = module.get("moduleClass")
+    if explicit:
+        return explicit
+    key = module.get("key")
+    if key in INSTRUMENTATION_KEYS:
+        return "instrumentation"
+    if module.get("enabledByDefault"):
+        return "shipped_default"
+    return "opt_in_experiment"
+
+
 def experimental_on(data: dict) -> bool:
+    """True when the ON side enabled an opt-in experiment, not a shipped default."""
     for module in data.get("modules", []):
-        if module.get("key") in {
-            "entity_section_lookup",
-            "block_collision_shape",
-            "collision_shell_skip",
-        } and module.get("enabled"):
+        if module.get("enabled") and module_class(module) == "opt_in_experiment":
             return True
     role = data.get("abProtocol", {}).get("requestedRole")
     return role == "enabled"
@@ -127,6 +144,27 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
         entry["deltaPct"] = deltas
         if abs(deltas.get("pointOnePercentLowFps", 0.0)) >= 10.0:
             entry["outlier"] = "0.1% low |delta| >= 10 percentage points; do not hide by averaging"
+        off_terrain = off.get("terrainMetrics") or {}
+        on_terrain = on.get("terrainMetrics") or {}
+        if off_terrain or on_terrain:
+            entry["terrain"] = {
+                "offTotalCpuNsAvg": off_terrain.get("terrainTotalCpuNsAvg", off_terrain.get("prepareNsAvg")),
+                "onTotalCpuNsAvg": on_terrain.get("terrainTotalCpuNsAvg", on_terrain.get("prepareNsAvg")),
+                "offOpaqueSubmitCpuNsAvg": off_terrain.get("terrainOpaqueSubmitCpuNsAvg"),
+                "onOpaqueSubmitCpuNsAvg": on_terrain.get("terrainOpaqueSubmitCpuNsAvg"),
+                "offTranslucentSubmitCpuNsAvg": off_terrain.get("terrainTranslucentSubmitCpuNsAvg"),
+                "onTranslucentSubmitCpuNsAvg": on_terrain.get("terrainTranslucentSubmitCpuNsAvg"),
+                "onWriteToBufferCallsAvg": on_terrain.get("writeToBufferCallsAvg"),
+                "onWriteToBufferBytesAvg": on_terrain.get("writeToBufferBytesAvg"),
+                "onGpuTerrainNsAvg": on_terrain.get("gpuTerrainNsAvg"),
+                "onUltimaIssuedFenceWaitNsAvg": on_terrain.get("ultimaIssuedFenceWaitNsAvg", on_terrain.get("fenceWaitNsAvg")),
+                "syncCountersScope": on_terrain.get("syncCountersScope", "ultima_issued_only"),
+                "commandPopulationGrewWhileLiveBounded": on_terrain.get("commandPopulationGrewWhileLiveBounded"),
+                "firstSampleTotalCommands": on_terrain.get("firstSampleTotalCommands"),
+                "lastSampleTotalCommands": on_terrain.get("lastSampleTotalCommands"),
+                "firstSampleLiveCommands": on_terrain.get("firstSampleLiveCommands"),
+                "lastSampleLiveCommands": on_terrain.get("lastSampleLiveCommands"),
+            }
         report["pairs"].append(entry)
 
     for metric, label, higher in METRICS:
@@ -187,6 +225,35 @@ def format_report(report: dict) -> str:
             lines.append(f"  {label}: {off:.4f} -> {on:.4f} ({delta:+.2f}%)")
         if pair.get("outlier"):
             lines.append(f"  OUTLIER: {pair['outlier']}")
+        terrain = pair.get("terrain")
+        if terrain:
+            lines.append(
+                "  Terrain CPU total (A/B comparable): "
+                f"{_fmt(terrain.get('offTotalCpuNsAvg'))} ns -> {_fmt(terrain.get('onTotalCpuNsAvg'))} ns"
+            )
+            lines.append(
+                "  Opaque submit CPU: "
+                f"{_fmt(terrain.get('offOpaqueSubmitCpuNsAvg'))} ns -> {_fmt(terrain.get('onOpaqueSubmitCpuNsAvg'))} ns"
+            )
+            lines.append(
+                "  WriteToBuffer (Ultima-issued, not driver stall proof): "
+                f"calls={_fmt(terrain.get('onWriteToBufferCallsAvg'))} "
+                f"bytes={_fmt(terrain.get('onWriteToBufferBytesAvg'))} "
+                f"gpuTerrainNs={_fmt(terrain.get('onGpuTerrainNsAvg'))} "
+                f"ultimaIssuedFenceWaitNs={_fmt(terrain.get('onUltimaIssuedFenceWaitNsAvg'))}"
+            )
+            if terrain.get("onUltimaIssuedFenceWaitNsAvg") == 0:
+                lines.append(
+                    "  NOTE: ultimaIssuedFenceWaitNs=0 means Ultima issued no fence wait; "
+                    "it does not prove the driver/GPU never synchronized."
+                )
+            if terrain.get("commandPopulationGrewWhileLiveBounded"):
+                lines.append(
+                    "  COMMAND GROWTH: total records grew while live draws stayed relatively bounded "
+                    f"({terrain.get('firstSampleTotalCommands')} -> {terrain.get('lastSampleTotalCommands')} total, "
+                    f"live {terrain.get('firstSampleLiveCommands')} -> {terrain.get('lastSampleLiveCommands')}). "
+                    "Compaction is not applied; this is observability only."
+                )
         lines.append("")
     for metric, _, _ in METRICS:
         stats = report["metrics"].get(metric)
@@ -215,6 +282,14 @@ def format_report(report: dict) -> str:
         )
     lines.append("Do not claim 2x FPS or a noticeable FPS gain from these data.")
     return "\n".join(lines) + "\n"
+
+
+def _fmt(value) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
 
 
 RTX3090_FIXTURES = [
@@ -275,8 +350,72 @@ def self_test() -> None:
         raise SystemExit("pair 1 0.1% low must be flagged as an outlier")
     if not any("at least 6" in warning for warning in report["warnings"]):
         raise SystemExit("n=3 must warn that 6 pairs are required")
+    test_module_classification()
     print(format_report(report), end="")
     print("self-test passed")
+
+
+def parse_java_module_defaults() -> dict[str, bool]:
+    text = Path("src/main/java/dev/ultima/config/UltimaModules.java").read_text(encoding="utf-8")
+    defaults: dict[str, bool] = {}
+    for match in re.finditer(
+            r'(?:new Module|Module\.client)\("([a-z_]+)", (true|false),',
+            text):
+        defaults[match.group(1)] = match.group(2) == "true"
+    if not defaults:
+        raise SystemExit("failed to parse UltimaModules.java defaults")
+    return defaults
+
+
+def test_module_classification() -> None:
+    defaults = parse_java_module_defaults()
+    for key in SHIPPED_DEFAULT_KEYS_MUST_INCLUDE:
+        if key not in defaults or defaults[key] is not True:
+            raise SystemExit(f"{key} must remain enabledByDefault=true in UltimaModules.java")
+    if defaults.get("retained_terrain") is not False:
+        raise SystemExit("retained_terrain must remain opt-in")
+    if defaults.get("client_benchmark") is not False:
+        raise SystemExit("client_benchmark must remain opt-in instrumentation")
+    if defaults.get("terrain_metrics") is not True:
+        raise SystemExit("terrain_metrics must remain default-on instrumentation")
+
+    default_on = {
+        "modules": [
+            {"key": key, "enabled": True, "enabledByDefault": True, "moduleClass": "shipped_default"}
+            for key in SHIPPED_DEFAULT_KEYS_MUST_INCLUDE
+        ] + [
+            {"key": "client_benchmark", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
+            {"key": "terrain_metrics", "enabled": True, "enabledByDefault": True, "moduleClass": "instrumentation"},
+            {"key": "retained_terrain", "enabled": False, "enabledByDefault": False, "moduleClass": "opt_in_experiment"},
+        ],
+        "abProtocol": {"requestedRole": "default"},
+    }
+    if experimental_on(default_on):
+        raise SystemExit("disabled-vs-default A/B must not warn because shipped defaults are enabled")
+
+    retained_on = {
+        "modules": [
+            {"key": "retained_terrain", "enabled": True, "enabledByDefault": False, "moduleClass": "opt_in_experiment"},
+            {"key": "client_benchmark", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
+        ],
+        "abProtocol": {"requestedRole": "default"},
+    }
+    if not experimental_on(retained_on):
+        raise SystemExit("retained_terrain ON must be classified as an experimental opt-in")
+
+    enabled_role = {"modules": [], "abProtocol": {"requestedRole": "enabled"}}
+    if not experimental_on(enabled_role):
+        raise SystemExit("requestedRole=enabled must remain an experimental warning")
+
+    stale_hardcoded = {
+        "modules": [
+            {"key": "entity_section_lookup", "enabled": True, "enabledByDefault": True},
+            {"key": "block_collision_shape", "enabled": True, "enabledByDefault": True},
+            {"key": "collision_shell_skip", "enabled": True, "enabledByDefault": True},
+        ]
+    }
+    if experimental_on(stale_hardcoded):
+        raise SystemExit("shipped defaults without moduleClass must not be treated as experimental")
 
 
 def main(argv: list[str]) -> int:

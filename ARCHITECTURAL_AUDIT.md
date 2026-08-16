@@ -3,6 +3,13 @@
 Date: 2026-08-14  
 Target: Minecraft Java 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26.2, Java 25
 
+**Current code (2026-08-16) supersedes the module-default table below.**
+`entity_section_lookup`, `block_collision_shape`, and `collision_shell_skip` are now
+**enabled by default** (Lithium-family auto-off). `terrain_metrics` and `temporal` are
+default-on client instrumentation/passthrough. Treat the table in "Release-candidate
+portfolio" as the historical audit snapshot, not live defaults. Live defaults live in
+`UltimaModules.java` and `README.md`.
+
 This document records the useful system-level findings from the independent Opus pass after manual
 integration into `cursor/forensic-review-9efc`. It does not replace the adversarial correctness
 record in `REVIEW_GPT56.md`; the two reports are complementary.

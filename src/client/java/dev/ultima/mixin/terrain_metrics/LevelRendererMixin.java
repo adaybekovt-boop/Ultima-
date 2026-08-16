@@ -19,18 +19,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(LevelRenderer.class)
+@Mixin(value = LevelRenderer.class, priority = 900)
 public abstract class LevelRendererMixin {
     @Shadow
     @Final
     private ObjectArrayList<SectionRenderDispatcher.RenderSection> visibleSections;
 
-    @Inject(method = "prepareChunkRenders", at = @At("HEAD"))
+    @Inject(method = "prepareChunkRenders", at = @At("HEAD"), order = 100)
     private void ultimaBeginPrepare(final Matrix4fc modelViewMatrix, final CallbackInfoReturnable<ChunkSectionsToRender> cir) {
         TerrainFrameMetrics.beginPrepare();
     }
 
-    @Inject(method = "prepareChunkRenders", at = @At("RETURN"))
+    @Inject(method = "prepareChunkRenders", at = @At("RETURN"), order = 100)
     private void ultimaEndPrepare(final Matrix4fc modelViewMatrix, final CallbackInfoReturnable<ChunkSectionsToRender> cir) {
         TerrainFrameMetrics.endPrepare();
         if (TerrainFrameMetrics.isRetainedActive()) {

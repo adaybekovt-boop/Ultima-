@@ -130,6 +130,8 @@ All six are simulation/collision. They run on dedicated servers, the integrated 
 
 No production client-renderer Mixin remains except opt-in `client_benchmark`.
 
+**Later correction (code, 2026-08-16):** `terrain_metrics` and `temporal` are now default-on client Mixins. They auto-disable with Sodium/Iris/Canvas and do not change pixels. `retained_terrain` is still opt-in. See `README.md` and `ULTIMA_AUDIT_FIXES_STAGE1.md`.
+
 ## 8. Per-patch A/B results
 
 Tick times are the **second** `/tick sprint` line (measured 800 ticks). Lower is better.
@@ -202,7 +204,7 @@ This is the integrated-server / entity-farm hitch path. In singleplayer the same
 | Gate | Status |
 |---|---|
 | Lithium / Canary / Radium | Declared `incompatibleMods`; modules auto-disable. Not runtime-tested against those jars on 26.2. |
-| Sodium / Iris | No production client-renderer Mixins left to conflict. Collision modules are independent of Sodium’s terrain path. Not runtime-tested on 26.2. |
+| Sodium / Iris | Default-on client Mixins (`terrain_metrics`, `temporal`) auto-off with Sodium/Iris/Canvas. Collision modules are independent of Sodium’s terrain path. Not runtime-tested on 26.2. |
 | Shaders | No render-stage / frame-graph / material change. |
 | Dedicated server | Client Mixins are in `ultima.client.mixins.json` with `"environment": "client"`. |
 | World format / protocol / RNG / game rules | Untouched. |
@@ -289,7 +291,7 @@ Date: 2026-08-16. Still no discrete GPU.
 
 The prior RTX 3090 retained path is **not** this code. That path mapped a 256-record UBO, fence-waited a ring buffer, rewrote indirect commands every frame, and used `gl_DrawIDARB` (Vulkan compile failed). Stationary AVG FPS 328.86 → 213.60 (−34.50%); yaw n=6 381.33 → 202.77 (−46.70%).
 
-This rework replaces that with a persistent texel section table, persistent indirect commands, `writeToBuffer` dirty ranges, and `gl_BaseInstance` / `gl_BaseInstanceARB`. See `ULTIMA_FOUNDATION_REWORK_REPORT.md`.
+This rework replaces that with a persistent texel section table, persistent indirect commands, `writeToBuffer` dirty ranges, and `gl_BaseInstanceARB` (unsuffixed `gl_BaseInstance` is undeclared in Minecraft 26.2 shaderc). See `ULTIMA_FOUNDATION_REWORK_REPORT.md`.
 
 Verdict remains **REWORK** until a GPU host repeats the OpenGL and Vulkan A/Bs. No FPS number from this VM.
 

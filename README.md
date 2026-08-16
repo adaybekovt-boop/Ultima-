@@ -49,7 +49,9 @@ Ultima's modules are configured in `config/ultima.properties`.
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
 
 Lithium, Canary, and Radium automatically disable the overlapping collision/entity-index modules.
-There is no production vanilla-renderer Mixin left to conflict with Sodium or Iris.
+Default-on client Mixins (`terrain_metrics`, `temporal`) auto-disable when Sodium, Iris, or Canvas
+is loaded. They do not change pixels. `retained_terrain` remains opt-in and also auto-off with those
+renderer mods.
 
 A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
 integrated-server / hitch work, not a GPU FPS claim. The only RTX 3090 FPS A/B on this project

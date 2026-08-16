@@ -7,6 +7,9 @@ import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
+import dev.ultima.retained.RetainedOpaqueSubmitDecision;
+import dev.ultima.retained.SectionSlotIdentity;
+import dev.ultima.retained.SubmitCommandList;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.ArrayList;
@@ -65,6 +68,7 @@ public final class RetainedTerrainRenderer {
     }
 
     public void failOpen(final String reason, final @Nullable Throwable error) {
+        TerrainFrameMetrics.recordFailOpen();
         if (!this.failedOpen) {
             if (error != null) {
                 LOGGER.warn("Retained terrain failed open to vanilla: {}", reason, error);
@@ -109,9 +113,11 @@ public final class RetainedTerrainRenderer {
             return null;
         }
 
+        TerrainFrameMetrics.beginPrepare();
         TerrainFrameMetrics.beginCommand();
         try {
             this.gpu.beginFrame();
+            this.resetGroupFrameCounters();
             this.blockAtlas = textureManager.getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView();
             this.headerModelView.set(modelView);
             int atlasW = this.blockAtlas.getWidth(0);
@@ -163,26 +169,46 @@ public final class RetainedTerrainRenderer {
                     2 + translucentInfos.size());
             TerrainFrameMetrics.addCommandRebuilds(this.frameCommandRebuilds);
             TerrainFrameMetrics.addMetadataUpdates(this.frameMetadataUpdates);
+            this.publishCommandMetrics();
             return new ChunkSectionsToRender(this.blockAtlas, translucent, largestIndexCount, translucentUbos);
         } catch (RuntimeException e) {
             this.failOpen("prepare", e);
+            this.publishCommandMetrics();
             return null;
         } finally {
             TerrainFrameMetrics.endCommand();
+            TerrainFrameMetrics.endPrepare();
         }
     }
 
-    public void submitOpaque(final GpuSampler sampler) {
+    /**
+     * @return {@code true} only when retained opaque submission completed.
+     *         Vanilla {@code renderGroup(OPAQUE)} must run when this returns
+     *         {@code false}, including after a partial GPU submit. If prepare
+     *         already replaced vanilla opaque draw lists, vanilla may draw
+     *         nothing this frame; later frames stay fail-open. Prefer one frame
+     *         of overdraw over cancelling vanilla after a failed submit.
+     */
+    public boolean submitOpaque(final GpuSampler sampler) {
         if (!this.isOpaqueReady() || this.blockAtlas == null) {
-            return;
+            TerrainFrameMetrics.recordOpaqueSubmitOutcome(false, this.failedOpen);
+            return RetainedOpaqueSubmitDecision.shouldCancelVanillaOpaque(false);
         }
+        TerrainFrameMetrics.beginOpaqueSubmit();
+        boolean succeeded = false;
         try {
             OpaqueTerrainSubmitter.submit(this.groups, this.gpu, this.blockAtlas, sampler);
-            TerrainFrameMetrics.recordRetainedUploads(this.gpu.metrics);
+            succeeded = true;
+            return RetainedOpaqueSubmitDecision.shouldCancelVanillaOpaque(true);
         } catch (RuntimeException e) {
             this.failOpen("submit", e);
+            return RetainedOpaqueSubmitDecision.shouldCancelVanillaOpaque(false);
         } finally {
+            this.publishCommandMetrics();
+            TerrainFrameMetrics.recordRetainedUploads(this.gpu.metrics);
             this.opaqueReady = false;
+            TerrainFrameMetrics.recordOpaqueSubmitOutcome(succeeded, this.failedOpen);
+            TerrainFrameMetrics.endOpaqueSubmit();
         }
     }
 
@@ -353,7 +379,7 @@ public final class RetainedTerrainRenderer {
                     section.getRenderOrigin().getZ());
             this.gpu.markSection(slot, record.originX, record.originY, record.originZ, record.visibility);
             this.frameMetadataUpdates++;
-        } else if (record.sectionNode != section.getSectionNode()) {
+        } else if (SectionSlotIdentity.mustReset(record.sectionNode, section.getSectionNode())) {
             record.resetIdentity(
                     slot,
                     section.getSectionNode(),
@@ -386,7 +412,7 @@ public final class RetainedTerrainRenderer {
             SubmitGroup group = this.groups.get(i);
             boolean closed = group.vertexBuffer.isClosed()
                     || (group.indexBuffer != null && group.indexBuffer.isClosed());
-            if (!closed && group.count > 0) {
+            if (!closed && group.count() > 0) {
                 continue;
             }
             group.close();
@@ -404,5 +430,49 @@ public final class RetainedTerrainRenderer {
         }
         this.groups.clear();
         this.groupsByLayer.clear();
+    }
+
+    private void resetGroupFrameCounters() {
+        for (int i = 0; i < this.groups.size(); i++) {
+            this.groups.get(i).commands.resetFrameCounters();
+        }
+    }
+
+    private void publishCommandMetrics() {
+        int groupCount = this.groups.size();
+        int total = 0;
+        int live = 0;
+        int largest = 0;
+        int arrayCapacity = 0;
+        long bufferBytes = 0L;
+        int arrayReallocs = 0;
+        int added = 0;
+        int removed = 0;
+        int toggles = 0;
+        for (int i = 0; i < this.groups.size(); i++) {
+            SubmitGroup group = this.groups.get(i);
+            SubmitCommandList commands = group.commands;
+            total += commands.count();
+            live += commands.liveDraws();
+            largest = Math.max(largest, commands.count());
+            arrayCapacity += commands.capacity();
+            bufferBytes += group.commandBufferBytes();
+            arrayReallocs += commands.frameArrayReallocs();
+            added += commands.commandsAdded();
+            removed += commands.commandsRemoved();
+            toggles += commands.visibilityToggles();
+        }
+        TerrainFrameMetrics.recordCommandPopulation(
+                groupCount,
+                total,
+                live,
+                total - live,
+                largest,
+                arrayCapacity,
+                bufferBytes,
+                arrayReallocs,
+                added,
+                removed,
+                toggles);
     }
 }

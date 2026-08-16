@@ -6,18 +6,21 @@ import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.retained.SubmitCommandList;
 import dev.ultima.util.BitSetRuns;
 import dev.ultima.util.IndirectCommandPacking;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Arrays;
-import java.util.BitSet;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import org.jspecify.annotations.Nullable;
 
 /**
  * One persistent submit group: same layer, vertex buffer, and index buffer.
  * Indirect commands live on the GPU and are patched in place.
+ *
+ * <p>CPU swap-remove lives in {@link SubmitCommandList}. This class owns the
+ * GPU command buffer. Hidden {@code instanceCount=0} records are kept; this
+ * pass does not compact them.
  */
 final class SubmitGroup {
     static final int COMMAND_STRIDE = IndirectCommandPacking.STRIDE;
@@ -26,18 +29,7 @@ final class SubmitGroup {
     final GpuBuffer vertexBuffer;
     final @Nullable GpuBuffer indexBuffer;
     final @Nullable IndexType indexType;
-
-    int count;
-    int[] firstIndex = new int[16];
-    int[] indexCount = new int[16];
-    int[] baseVertex = new int[16];
-    int[] sectionSlot = new int[16];
-    int[] instanceCount = new int[16];
-    RetainedSectionRecord.LayerSlot[] owners = new RetainedSectionRecord.LayerSlot[16];
-    final BitSet dirty = new BitSet();
-    boolean structureDirty;
-    int maxIndexCount;
-    int liveDraws;
+    final SubmitCommandList commands = new SubmitCommandList();
     @Nullable GpuBuffer gpuCommands;
 
     SubmitGroup(
@@ -63,119 +55,66 @@ final class SubmitGroup {
     }
 
     int add(final RetainedSectionRecord.LayerSlot slot, final int sectionSlot) {
-        this.ensureCapacity(this.count + 1);
-        int index = this.count++;
-        this.firstIndex[index] = slot.firstIndex;
-        this.indexCount[index] = slot.indexCount;
-        this.baseVertex[index] = slot.baseVertex;
-        this.sectionSlot[index] = sectionSlot;
-        this.instanceCount[index] = 1;
-        this.owners[index] = slot;
-        this.dirty.set(index);
-        this.structureDirty = true;
-        if (slot.indexCount > this.maxIndexCount) {
-            this.maxIndexCount = slot.indexCount;
-        }
+        int index = this.commands.add(slot, slot.firstIndex, slot.indexCount, slot.baseVertex, sectionSlot);
         slot.group = this;
-        slot.commandIndex = index;
-        slot.instanceCount = 1;
-        this.liveDraws++;
         return index;
     }
 
     void updateImmutable(final RetainedSectionRecord.LayerSlot slot) {
-        int index = slot.commandIndex;
-        if (index < 0 || index >= this.count) {
-            return;
-        }
-        this.firstIndex[index] = slot.firstIndex;
-        this.indexCount[index] = slot.indexCount;
-        this.baseVertex[index] = slot.baseVertex;
-        this.dirty.set(index);
-        this.structureDirty = true;
-        if (slot.indexCount > this.maxIndexCount) {
-            this.maxIndexCount = slot.indexCount;
-        }
+        this.commands.updateImmutable(slot, slot.firstIndex, slot.indexCount, slot.baseVertex);
     }
 
     void setVisible(final RetainedSectionRecord.LayerSlot slot, final boolean visible) {
-        int index = slot.commandIndex;
-        if (index < 0 || index >= this.count) {
-            return;
-        }
-        int value = visible ? 1 : 0;
-        if (this.instanceCount[index] == value) {
-            slot.instanceCount = value;
-            return;
-        }
-        this.instanceCount[index] = value;
-        slot.instanceCount = value;
-        this.liveDraws += visible ? 1 : -1;
-        this.dirty.set(index);
+        this.commands.setVisible(slot, visible);
     }
 
     void remove(final RetainedSectionRecord.LayerSlot slot) {
-        int index = slot.commandIndex;
-        if (index < 0 || index >= this.count) {
-            slot.group = null;
-            slot.commandIndex = -1;
-            slot.instanceCount = 0;
-            return;
-        }
-        if (this.instanceCount[index] > 0) {
-            this.liveDraws--;
-        }
-        int last = this.count - 1;
-        if (index != last) {
-            this.firstIndex[index] = this.firstIndex[last];
-            this.indexCount[index] = this.indexCount[last];
-            this.baseVertex[index] = this.baseVertex[last];
-            this.sectionSlot[index] = this.sectionSlot[last];
-            this.instanceCount[index] = this.instanceCount[last];
-            this.owners[index] = this.owners[last];
-            if (this.owners[index] != null) {
-                this.owners[index].commandIndex = index;
-            }
-            this.dirty.set(index);
-        }
-        this.owners[last] = null;
-        this.count--;
-        this.structureDirty = true;
-        this.dirty.clear(last);
+        this.commands.remove(slot);
         slot.group = null;
-        slot.commandIndex = -1;
-        slot.instanceCount = 0;
     }
 
     boolean hasLiveDraws() {
-        return this.liveDraws > 0;
+        return this.commands.liveDraws() > 0;
+    }
+
+    int count() {
+        return this.commands.count();
+    }
+
+    int maxIndexCount() {
+        return this.commands.maxIndexCount();
+    }
+
+    long commandBufferBytes() {
+        return this.gpuCommands == null ? 0L : this.gpuCommands.size();
     }
 
     void flushCommands(final CommandEncoder encoder, final RetainedUploadMetrics metrics) {
-        if (this.count == 0) {
+        if (this.commands.count() == 0) {
             return;
         }
         this.ensureGpu(metrics);
         if (this.gpuCommands == null) {
             return;
         }
-        BitSetRuns.forEachRun(this.dirty, this.count, (from, to) -> {
-            this.writeRange(encoder, from, to, metrics);
-            metrics.dirtyRanges++;
+        boolean structureDirty = this.commands.structureDirty();
+        BitSetRuns.forEachRun(this.commands.dirty(), this.commands.count(), (from, to) -> {
+            this.writeRange(encoder, from, to, metrics, structureDirty);
+            metrics.commandDirtyRanges++;
         });
-        this.dirty.clear();
-        this.structureDirty = false;
+        this.commands.dirty().clear();
+        this.commands.clearStructureDirty();
     }
 
     @Nullable GpuBufferSlice commandSlice() {
-        if (this.gpuCommands == null || this.count <= 0) {
+        if (this.gpuCommands == null || this.commands.count() <= 0) {
             return null;
         }
-        return this.gpuCommands.slice(0L, (long)this.count * COMMAND_STRIDE);
+        return this.gpuCommands.slice(0L, (long)this.commands.count() * COMMAND_STRIDE);
     }
 
     @Nullable GpuBufferSlice commandSlice(final int index) {
-        if (this.gpuCommands == null || index < 0 || index >= this.count) {
+        if (this.gpuCommands == null || index < 0 || index >= this.commands.count()) {
             return null;
         }
         return this.gpuCommands.slice((long)index * COMMAND_STRIDE, COMMAND_STRIDE);
@@ -185,21 +124,21 @@ final class SubmitGroup {
             final CommandEncoder encoder,
             final int from,
             final int to,
-            final RetainedUploadMetrics metrics) {
-        int commands = to - from;
-        int bytes = commands * COMMAND_STRIDE;
+            final RetainedUploadMetrics metrics,
+            final boolean structureDirty) {
+        int commandCount = to - from;
+        int bytes = commandCount * COMMAND_STRIDE;
         ByteBuffer data = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder());
-        boolean anyImmutable = this.structureDirty;
         for (int i = from; i < to; i++) {
             IndirectCommandPacking.write(
                     data,
-                    this.indexCount[i],
-                    this.instanceCount[i],
-                    this.firstIndex[i],
-                    this.baseVertex[i],
-                    this.sectionSlot[i]);
+                    this.commands.indexCountAt(i),
+                    this.commands.instanceCountAt(i),
+                    this.commands.firstIndexAt(i),
+                    this.commands.baseVertexAt(i),
+                    this.commands.sectionSlotAt(i));
             metrics.commandRecordsChanged++;
-            if (anyImmutable) {
+            if (structureDirty) {
                 metrics.immutableCommandWrites++;
             } else {
                 metrics.visibilityCommandWrites++;
@@ -208,24 +147,12 @@ final class SubmitGroup {
         data.flip();
         encoder.writeToBuffer(this.gpuCommands.slice((long)from * COMMAND_STRIDE, bytes), data);
         metrics.writeToBufferCalls++;
+        metrics.writeToBufferBytes += bytes;
         metrics.commandBytesWritten += bytes;
     }
 
-    private void ensureCapacity(final int needed) {
-        if (needed <= this.firstIndex.length) {
-            return;
-        }
-        int size = Integer.highestOneBit(needed - 1) << 1;
-        this.firstIndex = Arrays.copyOf(this.firstIndex, size);
-        this.indexCount = Arrays.copyOf(this.indexCount, size);
-        this.baseVertex = Arrays.copyOf(this.baseVertex, size);
-        this.sectionSlot = Arrays.copyOf(this.sectionSlot, size);
-        this.instanceCount = Arrays.copyOf(this.instanceCount, size);
-        this.owners = Arrays.copyOf(this.owners, size);
-    }
-
     private void ensureGpu(final RetainedUploadMetrics metrics) {
-        int neededBytes = Math.max(1, this.count) * COMMAND_STRIDE;
+        int neededBytes = Math.max(1, this.commands.count()) * COMMAND_STRIDE;
         if (this.gpuCommands != null && this.gpuCommands.size() >= neededBytes) {
             return;
         }
@@ -239,25 +166,18 @@ final class SubmitGroup {
                 GpuBuffer.USAGE_INDIRECT_PARAMETERS | GpuBuffer.USAGE_COPY_DST,
                 alloc);
         metrics.bufferReallocs++;
-        this.dirty.set(0, this.count);
-        this.structureDirty = true;
+        metrics.commandBufferReallocs++;
+        this.commands.markAllDirty();
     }
 
     void detachOwners() {
-        for (int i = 0; i < this.count; i++) {
-            RetainedSectionRecord.LayerSlot owner = this.owners[i];
-            if (owner != null) {
-                owner.group = null;
-                owner.commandIndex = -1;
-                owner.instanceCount = 0;
-                owner.alive = false;
-                this.owners[i] = null;
+        for (int i = 0; i < this.commands.count(); i++) {
+            if (this.commands.ownerAt(i) instanceof RetainedSectionRecord.LayerSlot slot) {
+                slot.group = null;
+                slot.alive = false;
             }
         }
-        this.count = 0;
-        this.liveDraws = 0;
-        this.dirty.clear();
-        this.structureDirty = true;
+        this.commands.detachAll();
     }
 
     void close() {

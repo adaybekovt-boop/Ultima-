@@ -9,9 +9,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(ChunkSectionsToRender.class)
+@Mixin(value = ChunkSectionsToRender.class, priority = 1100)
 public abstract class ChunkSectionsToRenderMixin {
-    @Inject(method = "renderGroup", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "renderGroup", at = @At("HEAD"), cancellable = true, order = 1000)
     private void ultimaRetainedOpaque(final ChunkSectionLayerGroup group, final GpuSampler sampler, final CallbackInfo ci) {
         if (group != ChunkSectionLayerGroup.OPAQUE) {
             return;
@@ -20,7 +20,8 @@ public abstract class ChunkSectionsToRenderMixin {
         if (!renderer.isOpaqueReady()) {
             return;
         }
-        renderer.submitOpaque(sampler);
-        ci.cancel();
+        if (renderer.submitOpaque(sampler)) {
+            ci.cancel();
+        }
     }
 }

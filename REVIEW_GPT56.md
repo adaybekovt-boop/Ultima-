@@ -4,6 +4,10 @@ Review date: 2026-08-14
 Target: Minecraft Java 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26.2, Java 25  
 Reviewed range: `main..782ecca`, plus the corrective commits on this review branch
 
+**Current defaults (2026-08-16):** this review's "keep opt-in" guidance for
+`entity_section_lookup` / `block_collision_shape` / `collision_shell_skip` is historical.
+Those three are now default-on in code. See `UltimaModules.java` and `ULTIMA_AUDIT_FIXES_STAGE1.md`.
+
 ## Executive summary
 
 The optimization branch was not safe to merge as reviewed. Two implementation claims were false in

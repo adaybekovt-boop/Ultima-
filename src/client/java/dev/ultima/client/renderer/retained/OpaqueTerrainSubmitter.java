@@ -92,7 +92,7 @@ final class OpaqueTerrainSubmitter {
             GpuBuffer indexBuffer = group.indexBuffer;
             if (indexBuffer == null) {
                 RenderSystem.AutoStorageIndexBuffer sequential = RenderSystem.getSequentialBuffer(PrimitiveTopology.QUADS);
-                indexBuffer = sequential.getBuffer(group.maxIndexCount);
+                indexBuffer = sequential.getBuffer(group.maxIndexCount());
                 indexType = sequential.type();
             }
             renderPass.setIndexBuffer(indexBuffer, indexType);
@@ -108,11 +108,11 @@ final class OpaqueTerrainSubmitter {
         if (("indirect".equals(mode) || "indirect_single".equals(mode)) && features.drawIndirect()) {
             GpuBufferSlice commands = group.commandSlice();
             if (commands != null) {
-                if (group.count == 1 || features.multiDrawIndirect()) {
-                    renderPass.drawIndexedIndirect(commands, group.count);
+                if (group.count() == 1 || features.multiDrawIndirect()) {
+                    renderPass.drawIndexedIndirect(commands, group.count());
                     return;
                 }
-                for (int i = 0; i < group.count; i++) {
+                for (int i = 0; i < group.count(); i++) {
                     GpuBufferSlice one = group.commandSlice(i);
                     if (one != null) {
                         renderPass.drawIndexedIndirect(one, 1);
@@ -121,16 +121,16 @@ final class OpaqueTerrainSubmitter {
                 return;
             }
         }
-        for (int i = 0; i < group.count; i++) {
-            if (group.instanceCount[i] <= 0) {
+        for (int i = 0; i < group.count(); i++) {
+            if (group.commands.instanceCountAt(i) <= 0) {
                 continue;
             }
             renderPass.drawIndexed(
-                    group.indexCount[i],
-                    group.instanceCount[i],
-                    group.firstIndex[i],
-                    group.baseVertex[i],
-                    group.sectionSlot[i]);
+                    group.commands.indexCountAt(i),
+                    group.commands.instanceCountAt(i),
+                    group.commands.firstIndexAt(i),
+                    group.commands.baseVertexAt(i),
+                    group.commands.sectionSlotAt(i));
         }
     }
 }

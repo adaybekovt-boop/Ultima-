@@ -70,7 +70,7 @@ Inspected against Minecraft 26.2 generated sources. The old path was not retaine
 | `instanceCount` 0/1 for frustum occupancy | Visibility is a one-int patch |
 | Shared `ChunkSection` header UBO | One camera/atlas write, skipped when unchanged |
 | `writeToBuffer` dirty ranges only | Replaces map/unmap + 256-record padding |
-| `firstInstance = RenderSection.index` | Shader indexes with `gl_BaseInstance` / `gl_BaseInstanceARB` |
+| `firstInstance = RenderSection.index` | Shader indexes with `gl_BaseInstanceARB` (unsuffixed `gl_BaseInstance` is undeclared in 26.2 shaderc) |
 | OpenGL compile define `ULTIMA_GL_DRAW_PARAMETERS` | ARB suffix only on OpenGL |
 | Drop multi-draw-direct-only modes | Those APIs cannot supply per-draw base instance |
 | One encoder; uploads before `createRenderPass` | Same single opaque pass as vanilla |
@@ -92,7 +92,7 @@ Inspected against Minecraft 26.2 generated sources. The old path was not retaine
 
 CPU shadows: `int[]` section table, SoA command arrays, `BitSet` dirty runs coalesced by `BitSetRuns`.
 
-Happy-path stationary after warmup: header write 0, table writes 0, immutable command writes 0, map/unmap 0, fence wait 0.
+Happy-path stationary after warmup: header write 0, table writes 0, immutable command writes 0, Ultima-issued map/unmap 0, Ultima-issued fence wait 0. Those zeros do **not** prove the GL/Vulkan driver inserted no barriers inside `writeToBuffer`.
 
 ---
 
@@ -133,9 +133,9 @@ Same files. LWJGL shaderc 3.4.1 (Vulkan 1.2 env, same stack Minecraft uses) was 
 
 Automated checks (when shaderc natives load):
 
-- Vulkan 1.2 snippet using `gl_BaseInstance` + `isamplerBuffer` must compile
-- `gl_DrawIDARB` must fail
-- `gl_BaseInstanceARB` must fail (proves ARB suffixes are not portable)
+- Vulkan 1.2 snippet using `gl_BaseInstanceARB` + `isamplerBuffer` must compile
+- unsuffixed `gl_BaseInstance` must fail (undeclared in Minecraft 26.2's shaderc)
+- `gl_DrawID` / `gl_DrawIDARB` are banned in shipped shader sources
 
 Runtime: `device.precompilePipeline` on the Vulkan backend. Failure → fail-open. This host did not run a Minecraft Vulkan device.
 
@@ -163,7 +163,7 @@ Happy path does not call `GpuBuffer.map` and does not wait on a ring fence. `wri
 
 **Measured on this host:** n/a.
 
-**Expected:** `renderPasses=1`, `encoders=1` per opaque submit (same as vanilla opaque `renderGroup`). `fenceWaitNs=0`, `mapWaitNs=0`.
+**Expected:** `renderPasses=1`, `encoders=1` per opaque submit (same as vanilla opaque `renderGroup`). `ultimaIssuedFenceWaitNs=0` and `ultimaIssuedMapWaitNs=0` mean Ultima issued no map/fence wait. Driver/backend synchronization must be inferred from `gpuTerrainNs`, frame P99, and a GPU profiler.
 
 ---
 

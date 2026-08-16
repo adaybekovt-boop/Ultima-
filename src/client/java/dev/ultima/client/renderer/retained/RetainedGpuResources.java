@@ -18,9 +18,13 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Persistent GPU section table and shared ChunkSection header.
- * Updates use {@code writeToBuffer} dirty ranges — no map/unmap, no ring fences.
+ * Updates use {@code writeToBuffer} dirty ranges. Ultima does not issue
+ * map/unmap or ring-fence waits; the GL/Vulkan backend may still insert
+ * copies or barriers inside {@code writeToBuffer}.
  */
 final class RetainedGpuResources implements AutoCloseable {
+    // Must stay equal to vanilla ChunkSection UBO size. Field offsets are
+    // locked in RetainedHeaderLayout and AuditStage1Checks.testHeaderLayout.
     static final int HEADER_BYTES = DynamicUniforms.CHUNK_SECTION_UBO_SIZE;
     static final int SLOT_BYTES = 16;
     static final GpuFormat TABLE_FORMAT = GpuFormat.RGBA32_SINT;
@@ -122,6 +126,7 @@ final class RetainedGpuResources implements AutoCloseable {
         data.flip();
         encoder.writeToBuffer(this.header.slice(0L, HEADER_BYTES), data);
         this.metrics.writeToBufferCalls++;
+        this.metrics.writeToBufferBytes += HEADER_BYTES;
         this.metrics.metadataBytesWritten += HEADER_BYTES;
         this.metrics.headerWrites++;
         this.headerDirty = false;
@@ -139,9 +144,10 @@ final class RetainedGpuResources implements AutoCloseable {
             data.limit(bytes);
             encoder.writeToBuffer(this.sectionTable.slice((long)from * SLOT_BYTES, bytes), data);
             this.metrics.writeToBufferCalls++;
+            this.metrics.writeToBufferBytes += bytes;
             this.metrics.metadataBytesWritten += bytes;
             this.metrics.sectionTableSlotsWritten += slots;
-            this.metrics.dirtyRanges++;
+            this.metrics.metadataDirtyRanges++;
         });
         this.tableDirty.clear();
     }

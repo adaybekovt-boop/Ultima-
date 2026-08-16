@@ -134,7 +134,7 @@ Fail-open: if pipelines fail to compile or a prepare/submit exception occurs, va
 
 ## 10. Fallback behavior
 
-Any throwable in prepare or submit: log, set `failedOpen=true`, return control to vanilla for that frame and subsequent frames until renderer reset. Never mutate world state. Never leave a half-bound render pass: submit uses try-with-resources `RenderPass` like vanilla.
+Any throwable in prepare or submit: log, set `failedOpen=true`, return control to vanilla for that frame and subsequent frames until renderer reset. The opaque `renderGroup` mixin cancels vanilla **only** when retained submit returns success. A failed submit (before any draw or after partial GPU work) leaves vanilla runnable that same frame. If prepare already replaced vanilla opaque draw lists, vanilla may have nothing to draw this frame (prefer overdraw over a cancelled empty pass); later frames are full vanilla prepare. Never mutate world state. Never leave a half-bound render pass: submit uses try-with-resources `RenderPass` like vanilla.
 
 ---
 

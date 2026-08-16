@@ -6,7 +6,9 @@
 > its force-load commands covered 2304 chunks rather than the claimed 1089. The implementation and
 > harness have since been hardened, but the measurements below describe the pre-review revision and
 > must not be attributed to the reviewed code. See `REVIEW_GPT56.md` for the accepted findings,
-> rerun results, and merge recommendation.
+> **Current defaults (2026-08-16):** `entity_section_lookup`, `block_collision_shape`, and
+> `collision_shell_skip` are shipped enabled-by-default in `UltimaModules.java`. The module table
+> in this file is historical. Live classification is `UltimaModules.Kind` / benchmark `moduleClass`.
 
 Target: Minecraft Java Edition 26.2, Fabric Loader 0.19.3, Fabric API 0.156.0+26.2, Java 25.
 

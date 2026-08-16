@@ -5,7 +5,8 @@ import java.nio.ByteBuffer;
 /**
  * CPU-side layout of {@code VkDrawIndexedIndirectCommand} / OpenGL
  * {@code DrawElementsIndirectCommand}. {@code firstInstance} is the section-table
- * slot consumed as {@code gl_BaseInstance} / {@code gl_BaseInstanceARB}.
+ * slot consumed as {@code gl_BaseInstanceARB} in the retained shader.
+ * Unsuffixed {@code gl_BaseInstance} is undeclared in Minecraft 26.2's Vulkan shaderc.
  */
 public final class IndirectCommandPacking {
     public static final int STRIDE = 20;

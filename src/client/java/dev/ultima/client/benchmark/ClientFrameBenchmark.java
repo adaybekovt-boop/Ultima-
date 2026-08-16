@@ -81,6 +81,9 @@ public final class ClientFrameBenchmark {
     private static String sampleEndScreenshot;
     private static long terrainPrepareNsTotal;
     private static long terrainCommandNsTotal;
+    private static long terrainOpaqueSubmitNsTotal;
+    private static long terrainTranslucentSubmitNsTotal;
+    private static long terrainTotalCpuNsTotal;
     private static long terrainSubmitNsTotal;
     private static long terrainDrawsTotal;
     private static long terrainVisibleSectionsTotal;
@@ -93,9 +96,12 @@ public final class ClientFrameBenchmark {
     private static long terrainMapCallsTotal;
     private static long terrainUnmapCallsTotal;
     private static long terrainWriteToBufferCallsTotal;
+    private static long terrainWriteToBufferBytesTotal;
     private static long terrainMetadataBytesTotal;
     private static long terrainCommandBytesTotal;
     private static long terrainDirtyRangesTotal;
+    private static long terrainMetadataDirtyRangesTotal;
+    private static long terrainCommandDirtyRangesTotal;
     private static long terrainCommandRecordsChangedTotal;
     private static long terrainImmutableCommandWritesTotal;
     private static long terrainVisibilityCommandWritesTotal;
@@ -108,6 +114,20 @@ public final class ClientFrameBenchmark {
     private static long terrainSectionTableSlotsWrittenTotal;
     private static long terrainGpuTerrainNsTotal;
     private static boolean terrainGpuTimingSupported;
+    private static long terrainSubmitGroupCountTotal;
+    private static long terrainTotalCommandRecordsTotal;
+    private static long terrainLiveCommandRecordsTotal;
+    private static long terrainHiddenCommandsTotal;
+    private static long terrainLargestGroupCommandsTotal;
+    private static long terrainCommandArrayCapacityTotal;
+    private static long terrainCommandBufferBytesTotal;
+    private static long terrainCommandBufferReallocsTotal;
+    private static long terrainCommandArrayReallocsTotal;
+    private static long terrainCommandsAddedTotal;
+    private static long terrainCommandsRemovedTotal;
+    private static long terrainVisibilityTogglesTotal;
+    private static long terrainFailOpenFrames;
+    private static long terrainPairingImbalanceFrames;
 
     private ClientFrameBenchmark() {
     }
@@ -138,9 +158,13 @@ public final class ClientFrameBenchmark {
         }
 
         FRAME_TIMES[samples++] = elapsed;
+        TerrainFrameMetrics.markSampledFrame();
         TerrainFrameMetrics.Snapshot terrain = TerrainFrameMetrics.snapshot(elapsed, 0L);
         terrainPrepareNsTotal += terrain.prepareNsAccum();
         terrainCommandNsTotal += terrain.commandNsAccum();
+        terrainOpaqueSubmitNsTotal += terrain.opaqueSubmitNsAccum();
+        terrainTranslucentSubmitNsTotal += terrain.translucentSubmitNsAccum();
+        terrainTotalCpuNsTotal += terrain.totalCpuNsAccum();
         terrainSubmitNsTotal += terrain.submitNsAccum();
         terrainDrawsTotal += terrain.terrainDraws();
         terrainVisibleSectionsTotal += terrain.visibleSections();
@@ -153,9 +177,12 @@ public final class ClientFrameBenchmark {
         terrainMapCallsTotal += terrain.mapCalls();
         terrainUnmapCallsTotal += terrain.unmapCalls();
         terrainWriteToBufferCallsTotal += terrain.writeToBufferCalls();
+        terrainWriteToBufferBytesTotal += terrain.writeToBufferBytes();
         terrainMetadataBytesTotal += terrain.metadataBytesWritten();
         terrainCommandBytesTotal += terrain.commandBytesWritten();
-        terrainDirtyRangesTotal += terrain.dirtyRanges();
+        terrainDirtyRangesTotal += terrain.metadataDirtyRanges() + terrain.commandDirtyRanges();
+        terrainMetadataDirtyRangesTotal += terrain.metadataDirtyRanges();
+        terrainCommandDirtyRangesTotal += terrain.commandDirtyRanges();
         terrainCommandRecordsChangedTotal += terrain.commandRecordsChanged();
         terrainImmutableCommandWritesTotal += terrain.immutableCommandWrites();
         terrainVisibilityCommandWritesTotal += terrain.visibilityCommandWrites();
@@ -168,6 +195,24 @@ public final class ClientFrameBenchmark {
         terrainSectionTableSlotsWrittenTotal += terrain.sectionTableSlotsWritten();
         terrainGpuTerrainNsTotal += terrain.gpuTerrainNs();
         terrainGpuTimingSupported = terrain.gpuTimingSupported();
+        terrainSubmitGroupCountTotal += terrain.submitGroupCount();
+        terrainTotalCommandRecordsTotal += terrain.totalCommandRecords();
+        terrainLiveCommandRecordsTotal += terrain.liveCommandRecords();
+        terrainHiddenCommandsTotal += terrain.hiddenZeroInstanceCommands();
+        terrainLargestGroupCommandsTotal += terrain.largestSubmitGroupCommands();
+        terrainCommandArrayCapacityTotal += terrain.commandArrayCapacity();
+        terrainCommandBufferBytesTotal += terrain.commandBufferCapacityBytes();
+        terrainCommandBufferReallocsTotal += terrain.commandBufferReallocs();
+        terrainCommandArrayReallocsTotal += terrain.commandArrayReallocs();
+        terrainCommandsAddedTotal += terrain.commandsAdded();
+        terrainCommandsRemovedTotal += terrain.commandsRemoved();
+        terrainVisibilityTogglesTotal += terrain.visibilityToggles();
+        if (terrain.failOpenThisFrame()) {
+            terrainFailOpenFrames++;
+        }
+        if (!terrain.timingPairingBalanced()) {
+            terrainPairingImbalanceFrames++;
+        }
         if (samples == 1) {
             sampleStartPose = capturePose();
             sampleStartScreenshot = captureScreenshot("sample_start", false);
@@ -240,7 +285,7 @@ public final class ClientFrameBenchmark {
         double pointOnePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.001);
         StringBuilder json = new StringBuilder(32_768);
         json.append("{\n");
-        BenchmarkJson.field(json, "schemaVersion", 2);
+        BenchmarkJson.field(json, "schemaVersion", 3);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "warmupFrames", WARMUP_FRAMES);
         BenchmarkJson.comma(json);
@@ -417,6 +462,7 @@ public final class ClientFrameBenchmark {
             appendQuotedArrayInline(json, module.incompatibleMods());
             json.append(",\n      \"loadedIncompatibleMods\": ");
             appendQuotedArrayInline(json, module.loadedIncompatibleMods());
+            json.append(",\n      \"moduleClass\": ").append(BenchmarkJson.quote(module.moduleClass()));
             json.append("\n    }");
             if (i + 1 < modules.size()) {
                 json.append(',');
@@ -430,6 +476,12 @@ public final class ClientFrameBenchmark {
         int n = Math.max(1, SAMPLE_FRAMES);
         TerrainFrameMetrics.Snapshot last = TerrainFrameMetrics.snapshot(0L, 0L);
         json.append("  \"terrainMetrics\": {\n")
+                .append("    \"timingModel\": \"ultima_stage1_symmetric_v1\",\n")
+                .append("    \"terrainPrepareCpuNsAvg\": ").append((double)terrainPrepareNsTotal / n).append(",\n")
+                .append("    \"terrainOpaqueSubmitCpuNsAvg\": ").append((double)terrainOpaqueSubmitNsTotal / n).append(",\n")
+                .append("    \"terrainTranslucentSubmitCpuNsAvg\": ").append((double)terrainTranslucentSubmitNsTotal / n).append(",\n")
+                .append("    \"terrainCommandCpuNsAvg\": ").append((double)terrainCommandNsTotal / n).append(",\n")
+                .append("    \"terrainTotalCpuNsAvg\": ").append((double)terrainTotalCpuNsTotal / n).append(",\n")
                 .append("    \"prepareNsAvg\": ").append((double)terrainPrepareNsTotal / n).append(",\n")
                 .append("    \"commandNsAvg\": ").append((double)terrainCommandNsTotal / n).append(",\n")
                 .append("    \"submitNsAvg\": ").append((double)terrainSubmitNsTotal / n).append(",\n")
@@ -445,25 +497,75 @@ public final class ClientFrameBenchmark {
                 .append("    \"retainedActive\": ").append(terrainRetainedActive).append(",\n")
                 .append("    \"commandBatchesReused\": ").append(last.commandBatchesReused()).append(",\n")
                 .append("    \"submitMode\": ").append(BenchmarkJson.quote(terrainSubmitMode)).append(",\n")
-                .append("    \"mapCallsAvg\": ").append((double)terrainMapCallsTotal / n).append(",\n")
-                .append("    \"unmapCallsAvg\": ").append((double)terrainUnmapCallsTotal / n).append(",\n")
+                .append("    \"timingPairingBalancedFrames\": ").append(SAMPLE_FRAMES - terrainPairingImbalanceFrames).append(",\n")
+                .append("    \"failOpenFrames\": ").append(terrainFailOpenFrames).append(",\n")
+                .append("    \"syncCountersScope\": \"ultima_issued_only\",\n")
+                .append("    \"driverImplicitSyncObserved\": false,\n")
+                .append("    \"writeToBufferMayInsertBackendBarriers\": true,\n")
+                .append("    \"ultimaIssuedMapCallsAvg\": ").append((double)terrainMapCallsTotal / n).append(",\n")
+                .append("    \"ultimaIssuedUnmapCallsAvg\": ").append((double)terrainUnmapCallsTotal / n).append(",\n")
+                .append("    \"ultimaIssuedFenceWaitNsAvg\": ").append((double)terrainFenceWaitNsTotal / n).append(",\n")
+                .append("    \"ultimaIssuedMapWaitNsAvg\": ").append((double)terrainMapWaitNsTotal / n).append(",\n")
                 .append("    \"writeToBufferCallsAvg\": ").append((double)terrainWriteToBufferCallsTotal / n).append(",\n")
+                .append("    \"writeToBufferBytesAvg\": ").append((double)terrainWriteToBufferBytesTotal / n).append(",\n")
                 .append("    \"metadataBytesWrittenAvg\": ").append((double)terrainMetadataBytesTotal / n).append(",\n")
                 .append("    \"commandBytesWrittenAvg\": ").append((double)terrainCommandBytesTotal / n).append(",\n")
-                .append("    \"dirtyRangesAvg\": ").append((double)terrainDirtyRangesTotal / n).append(",\n")
+                .append("    \"metadataDirtyRangesAvg\": ").append((double)terrainMetadataDirtyRangesTotal / n).append(",\n")
+                .append("    \"commandDirtyRangesAvg\": ").append((double)terrainCommandDirtyRangesTotal / n).append(",\n")
                 .append("    \"commandRecordsChangedAvg\": ").append((double)terrainCommandRecordsChangedTotal / n).append(",\n")
                 .append("    \"immutableCommandWritesAvg\": ").append((double)terrainImmutableCommandWritesTotal / n).append(",\n")
                 .append("    \"visibilityCommandWritesAvg\": ").append((double)terrainVisibilityCommandWritesTotal / n).append(",\n")
                 .append("    \"bufferReallocsAvg\": ").append((double)terrainBufferReallocsTotal / n).append(",\n")
-                .append("    \"fenceWaitNsAvg\": ").append((double)terrainFenceWaitNsTotal / n).append(",\n")
-                .append("    \"mapWaitNsAvg\": ").append((double)terrainMapWaitNsTotal / n).append(",\n")
                 .append("    \"renderPassesAvg\": ").append((double)terrainRenderPassesTotal / n).append(",\n")
                 .append("    \"encodersAvg\": ").append((double)terrainEncodersTotal / n).append(",\n")
                 .append("    \"headerWritesAvg\": ").append((double)terrainHeaderWritesTotal / n).append(",\n")
-                .append("    \"sectionTableSlotsWrittenAvg\": ").append((double)terrainSectionTableSlotsWrittenTotal / n).append(",\n")
+                .append("    \"sectionTableSlotsWrittenAvg\": ").append((double)terrainSectionTableSlotsWrittenAvg()).append(",\n")
                 .append("    \"gpuTerrainNsAvg\": ").append((double)terrainGpuTerrainNsTotal / n).append(",\n")
-                .append("    \"gpuTimingSupported\": ").append(terrainGpuTimingSupported).append("\n")
+                .append("    \"gpuTimingSupported\": ").append(terrainGpuTimingSupported).append(",\n")
+                .append("    \"submitGroupCountAvg\": ").append((double)terrainSubmitGroupCountTotal / n).append(",\n")
+                .append("    \"totalCommandRecordsAvg\": ").append((double)terrainTotalCommandRecordsTotal / n).append(",\n")
+                .append("    \"liveCommandRecordsAvg\": ").append((double)terrainLiveCommandRecordsTotal / n).append(",\n")
+                .append("    \"hiddenZeroInstanceCommandsAvg\": ").append((double)terrainHiddenCommandsTotal / n).append(",\n")
+                .append("    \"liveToTotalRatioAvg\": ").append(liveToTotalAvg()).append(",\n")
+                .append("    \"largestSubmitGroupCommandsAvg\": ").append((double)terrainLargestGroupCommandsTotal / n).append(",\n")
+                .append("    \"commandArrayCapacityAvg\": ").append((double)terrainCommandArrayCapacityTotal / n).append(",\n")
+                .append("    \"commandBufferCapacityBytesAvg\": ").append((double)terrainCommandBufferBytesTotal / n).append(",\n")
+                .append("    \"commandBufferReallocsAvg\": ").append((double)terrainCommandBufferReallocsTotal / n).append(",\n")
+                .append("    \"commandArrayReallocsAvg\": ").append((double)terrainCommandArrayReallocsTotal / n).append(",\n")
+                .append("    \"commandsAddedAvg\": ").append((double)terrainCommandsAddedTotal / n).append(",\n")
+                .append("    \"commandsRemovedAvg\": ").append((double)terrainCommandsRemovedTotal / n).append(",\n")
+                .append("    \"visibilityTogglesAvg\": ").append((double)terrainVisibilityTogglesTotal / n).append(",\n")
+                .append("    \"maxTotalCommandRecords\": ").append(last.maxTotalCommandRecords()).append(",\n")
+                .append("    \"maxHiddenCommands\": ").append(last.maxHiddenCommands()).append(",\n")
+                .append("    \"minLiveRatio\": ").append(last.minLiveRatio()).append(",\n")
+                .append("    \"firstSampleTotalCommands\": ").append(last.firstSampleTotalCommands()).append(",\n")
+                .append("    \"firstSampleLiveCommands\": ").append(last.firstSampleLiveCommands()).append(",\n")
+                .append("    \"lastSampleTotalCommands\": ").append(last.lastSampleTotalCommands()).append(",\n")
+                .append("    \"lastSampleLiveCommands\": ").append(last.lastSampleLiveCommands()).append(",\n")
+                .append("    \"commandPopulationGrewWhileLiveBounded\": ").append(commandPopulationGrew(last)).append("\n")
                 .append("  }");
+    }
+
+    private static double terrainSectionTableSlotsWrittenAvg() {
+        return (double)terrainSectionTableSlotsWrittenTotal / Math.max(1, SAMPLE_FRAMES);
+    }
+
+    private static double liveToTotalAvg() {
+        return terrainTotalCommandRecordsTotal == 0L
+                ? 1.0
+                : (double)terrainLiveCommandRecordsTotal / (double)terrainTotalCommandRecordsTotal;
+    }
+
+    private static boolean commandPopulationGrew(final TerrainFrameMetrics.Snapshot last) {
+        int first = last.firstSampleTotalCommands();
+        int lastTotal = last.lastSampleTotalCommands();
+        int firstLive = last.firstSampleLiveCommands();
+        int lastLive = last.lastSampleLiveCommands();
+        if (first < 0 || lastTotal <= first) {
+            return false;
+        }
+        int liveDelta = Math.abs(lastLive - Math.max(0, firstLive));
+        return lastTotal > first && liveDelta * 4 < (lastTotal - first);
     }
 
     private static void appendTemporalMetrics(final StringBuilder json) {

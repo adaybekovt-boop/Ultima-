@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(LevelRenderer.class)
+@Mixin(value = LevelRenderer.class, priority = 1100)
 public abstract class LevelRendererMixin {
     @Shadow
     @Final
@@ -29,7 +29,7 @@ public abstract class LevelRendererMixin {
     @Final
     private TextureManager textureManager;
 
-    @Inject(method = "prepareChunkRenders", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "prepareChunkRenders", at = @At("HEAD"), cancellable = true, order = 1000)
     private void ultimaRetainedPrepare(final Matrix4fc modelViewMatrix, final CallbackInfoReturnable<ChunkSectionsToRender> cir) {
         ChunkSectionsToRender built = RetainedTerrainRenderer.get().prepare(
                 (LevelRenderer)(Object)this,

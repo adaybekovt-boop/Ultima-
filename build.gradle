@@ -57,6 +57,12 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 afterEvaluate {
+    def client = sourceSets.findByName("client")
+    if (client != null) {
+        sourceSets.test.compileClasspath += client.output + client.compileClasspath
+        sourceSets.test.runtimeClasspath += client.output + client.runtimeClasspath
+    }
+
     def runClient = tasks.findByName("runClient")
     if (runClient != null && project.hasProperty("ultima.bench")) {
         def jvmFile = file("run/bench-client.jvm.properties")
