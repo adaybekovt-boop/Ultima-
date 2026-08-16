@@ -103,6 +103,7 @@ tasks.register("commandCompactionRecoveryTest", JavaExec) {
 
 test {
     failOnNoDiscoveredTests = false
+    dependsOn forensicRegressionTest
 }
 
 check.dependsOn forensicRegressionTest

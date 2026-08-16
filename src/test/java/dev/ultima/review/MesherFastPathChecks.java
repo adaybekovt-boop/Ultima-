@@ -1,0 +1,680 @@
+package dev.ultima.review;
+
+import dev.ultima.client.renderer.meshing.CubeModelCache;
+import dev.ultima.client.renderer.meshing.HybridSectionMesher;
+import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
+import dev.ultima.meshing.BlockRenderFlags;
+import dev.ultima.meshing.CpuMeshingBenchmark;
+import dev.ultima.meshing.FastPathCriteria;
+import dev.ultima.meshing.FastPathCubeMesher;
+import dev.ultima.meshing.FullCubeTemplates;
+import dev.ultima.meshing.MeshEquivalence;
+import dev.ultima.meshing.MeshVisit;
+import dev.ultima.meshing.MesherMetrics;
+import dev.ultima.meshing.OcclusionMask;
+import dev.ultima.meshing.PackedLightVolume;
+import dev.ultima.meshing.PackedSectionVolume;
+import dev.ultima.meshing.PackedVisitScanner;
+import dev.ultima.meshing.SectionFixtures;
+import dev.ultima.meshing.SectionIndex;
+import dev.ultima.meshing.VanillaBlockSeed;
+import dev.ultima.meshing.VanillaCubeOracle;
+import dev.ultima.meshing.VanillaVisitOracle;
+import java.lang.reflect.Constructor;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import net.minecraft.client.renderer.FaceInfo;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.CardinalLighting;
+import org.joml.Vector3f;
+
+final class MesherFastPathChecks {
+    private static final List<String> CASE_RESULTS = new ArrayList<>();
+
+    private MesherFastPathChecks() {
+    }
+
+    static void run() {
+        CASE_RESULTS.clear();
+        testGateDefaultOffAndIsolated();
+        testIndexBoundaries();
+        testVisitOrderMatchesBetweenClosed();
+        testDefaultSeedMatchesVanilla();
+        testRepresentativeVisitPlans();
+        testNegativeCoordinatesAndHalo();
+        testOcclusionAdjacency();
+        testOcclusionMaskMatchesVanillaShouldRenderFace();
+        testFastPathCriteria();
+        testTemplatesMatchVanillaFaceInfo();
+        testProductionPathUsesVanillaCullingAndLighting();
+        testIsolatedFullCubeGeometry();
+        testAdjacentFullCubesCullSharedFace();
+        testSectionEdgeHaloOcclusion();
+        testNegativeWorldOriginGeometry();
+        testFarCornerGeometry();
+        testTwoByTwoCluster();
+        testCheckerboard();
+        testTintedAndGlowstoneAndGlass();
+        testFallbackNeverEmitsFastGeometry();
+        testFrozenVolumeRejectsWrites();
+        testMetricsRecord();
+        testCpuMeshingTime();
+        testCubeCacheInvalidatesOnModelSetReload();
+        System.out.println("Mesher fast-path equivalence cases:");
+        for (String line : CASE_RESULTS) {
+            System.out.println("  " + line);
+        }
+        System.out.println("Mesher fast-path checks passed.");
+    }
+
+    private static void testGateDefaultOffAndIsolated() {
+        UltimaModules.Module module = UltimaModules.byKey("mesher_fast_path");
+        if (module == null || module.enabledByDefault() || !module.clientOnly()) {
+            throw new AssertionError("mesher_fast_path must be a client opt-in module");
+        }
+        if (!module.dependencies().isEmpty()) {
+            throw new AssertionError("mesher_fast_path must not depend on retained_terrain");
+        }
+        for (String renderer : List.of("sodium", "iris", "canvas")) {
+            if (!module.incompatibleMods().contains(renderer)) {
+                throw new AssertionError("mesher_fast_path must auto-disable with " + renderer);
+            }
+        }
+        try {
+            Constructor<UltimaConfig> constructor = UltimaConfig.class.getDeclaredConstructor(Map.class);
+            constructor.setAccessible(true);
+            Map<String, Boolean> requested = new LinkedHashMap<>();
+            for (UltimaModules.Module item : UltimaModules.all()) {
+                requested.put(item.key(), false);
+            }
+            requested.put("mesher_fast_path", true);
+            requested.put("retained_terrain", false);
+            requested.put("java_mesher", true);
+            UltimaConfig config = constructor.newInstance(requested);
+            boolean enabled = config.isEnabled("mesher_fast_path");
+            String reason = config.resolve("mesher_fast_path").reason();
+            if (enabled) {
+                if (!"enabled".equals(reason)) {
+                    throw new AssertionError("enabled mesher_fast_path reason: " + reason);
+                }
+            } else if (!"not_client_environment".equals(reason)) {
+                throw new AssertionError("mesher_fast_path should enable without retained_terrain, got " + reason);
+            }
+            if (config.isEnabled("retained_terrain")) {
+                throw new AssertionError("retained_terrain must stay off");
+            }
+            pass("gate_default_off_isolated");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not construct UltimaConfig", e);
+        }
+    }
+
+    private static void testIndexBoundaries() {
+        if (SectionIndex.VOLUME != 18 * 18 * 18) {
+            throw new AssertionError("18³ volume");
+        }
+        if (SectionIndex.interior(0, 0, 0) != SectionIndex.packed(1, 1, 1)) {
+            throw new AssertionError("interior origin mapping");
+        }
+        if (SectionIndex.interior(15, 15, 15) != SectionIndex.packed(16, 16, 16)) {
+            throw new AssertionError("interior far corner");
+        }
+        if (SectionIndex.neighbor(0, 0, 0, -1, 0, 0) != SectionIndex.packed(0, 1, 1)) {
+            throw new AssertionError("negative-X halo neighbor");
+        }
+        if (SectionIndex.neighbor(15, 7, 3, 1, 0, 0) != SectionIndex.packed(17, 8, 4)) {
+            throw new AssertionError("positive-X halo neighbor at section edge");
+        }
+        if (!SectionIndex.inExtent(0, 0, 0) || SectionIndex.inExtent(-1, 0, 0) || SectionIndex.inExtent(18, 0, 0)) {
+            throw new AssertionError("extent bounds");
+        }
+        if (SectionIndex.haloWorldX(-32, 0) != -33 || SectionIndex.worldX(-32, 0) != -32) {
+            throw new AssertionError("negative origin world mapping");
+        }
+        pass("index_boundaries");
+    }
+
+    private static void testVisitOrderMatchesBetweenClosed() {
+        BlockPos min = new BlockPos(-48, -64, 16);
+        int index = 0;
+        for (BlockPos pos : BlockPos.betweenClosed(min, min.offset(15, 15, 15))) {
+            int x = index % 16;
+            int slice = index / 16;
+            int y = slice % 16;
+            int z = slice / 16;
+            if (pos.getX() != min.getX() + x || pos.getY() != min.getY() + y || pos.getZ() != min.getZ() + z) {
+                throw new AssertionError("betweenClosed order at " + index);
+            }
+            index++;
+        }
+        if (index != 4096) {
+            throw new AssertionError("16³ visits");
+        }
+        pass("visit_order_betweenClosed");
+    }
+
+    private static void testDefaultSeedMatchesVanilla() {
+        int[][] samples = {
+                {0, 0, 0},
+                {1, 64, -1},
+                {-30000000, -64, 30000000},
+                {15, 319, -32},
+                {-33, 70, -17},
+        };
+        for (int[] sample : samples) {
+            long vanilla = Mth.getSeed(sample[0], sample[1], sample[2]);
+            long ultima = VanillaBlockSeed.defaultSeed(sample[0], sample[1], sample[2]);
+            if (vanilla != ultima) {
+                throw new AssertionError("default seed mismatch at " + sample[0] + "," + sample[1] + "," + sample[2]);
+            }
+        }
+        pass("vanilla_block_seed");
+    }
+
+    private static void testRepresentativeVisitPlans() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 1, 1, 1, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(states, 2, 1, 1, SectionFixtures.CUTOUT);
+        SectionFixtures.setInterior(states, 3, 1, 1, SectionFixtures.LEAVES);
+        SectionFixtures.setInterior(states, 4, 1, 1, SectionFixtures.PLANT);
+        SectionFixtures.setInterior(states, 5, 1, 1, SectionFixtures.STAIRS);
+        SectionFixtures.setInterior(states, 6, 1, 1, SectionFixtures.SLAB);
+        SectionFixtures.setInterior(states, 7, 1, 1, SectionFixtures.FENCE);
+        SectionFixtures.setInterior(states, 8, 1, 1, SectionFixtures.FLUID);
+        SectionFixtures.setInterior(states, 9, 1, 1, SectionFixtures.TRANSPARENT);
+        SectionFixtures.setInterior(states, 10, 1, 1, SectionFixtures.TINT);
+        SectionFixtures.setInterior(states, 11, 1, 1, SectionFixtures.LIGHT);
+        SectionFixtures.setInterior(states, 12, 1, 1, SectionFixtures.BLOCK_ENTITY);
+        SectionFixtures.setInterior(states, 13, 1, 1, SectionFixtures.RANDOM);
+        SectionFixtures.setHalo(states, 0, 2, 2, SectionFixtures.FULL_CUBE);
+        List<MeshVisit> visits = assertPlansMatch(-32, 64, 16, states);
+        boolean sawFluid = false;
+        boolean sawModel = false;
+        boolean sawEntity = false;
+        for (MeshVisit visit : visits) {
+            sawFluid |= BlockRenderFlags.hasFluid(visit.flags());
+            sawModel |= BlockRenderFlags.model(visit.flags());
+            sawEntity |= visit.blockEntitySlot() >= 0;
+        }
+        if (!sawFluid || !sawModel || !sawEntity) {
+            throw new AssertionError("representative section must include fluid, model, and block entity visits");
+        }
+        pass("representative_visit_plan");
+    }
+
+    private static void testNegativeCoordinatesAndHalo() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 0, 0, 0, SectionFixtures.FENCE);
+        SectionFixtures.setHalo(states, 0, 1, 1, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(states, 15, 15, 15, SectionFixtures.FLUID);
+        SectionFixtures.setHalo(states, 17, 16, 16, SectionFixtures.TRANSPARENT);
+        assertPlansMatch(-320, -64, -16, states);
+        PackedSectionVolume volume = SectionFixtures.pack(-320, -64, -16, states);
+        MeshVisit first = PackedVisitScanner.walk(volume).getFirst();
+        if (first.neighborNegX() != SectionFixtures.FULL_CUBE) {
+            throw new AssertionError("chunk-boundary -X neighbor must come from the halo");
+        }
+        MeshVisit last = PackedVisitScanner.walk(volume).getLast();
+        if (last.neighborPosX() != SectionFixtures.TRANSPARENT) {
+            throw new AssertionError("chunk-boundary +X neighbor must come from the halo");
+        }
+        if (first.worldX() != -320 || first.worldY() != -64 || first.worldZ() != -16) {
+            throw new AssertionError("negative world coordinates on first visit");
+        }
+        pass("negative_coords_and_halo");
+    }
+
+    private static void testOcclusionAdjacency() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 4, 4, 4, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(states, 5, 4, 4, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(states, 4, 4, 5, SectionFixtures.TRANSPARENT);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        int mask = OcclusionMask.visibleFaces(volume, 4, 4, 4);
+        if (OcclusionMask.visible(mask, Direction.EAST)) {
+            throw new AssertionError("full-cube pair must not emit the occluded +X face");
+        }
+        if (!OcclusionMask.visible(mask, Direction.SOUTH)) {
+            throw new AssertionError("empty-occluder (glass) neighbor must keep the +Z face");
+        }
+        pass("occlusion_adjacency");
+    }
+
+    private static void testOcclusionMaskMatchesVanillaShouldRenderFace() {
+        int self = SectionFixtures.flags(SectionFixtures.FULL_CUBE);
+        if (OcclusionMask.simpleShouldRenderFace(self, SectionFixtures.flags(SectionFixtures.FULL_CUBE)) != 0) {
+            throw new AssertionError("full-block occluder must cull, matching Block.shouldRenderFace first branch");
+        }
+        if (OcclusionMask.simpleShouldRenderFace(self, SectionFixtures.flags(SectionFixtures.AIR)) != 1) {
+            throw new AssertionError("air/empty occluder must render");
+        }
+        if (OcclusionMask.simpleShouldRenderFace(self, SectionFixtures.flags(SectionFixtures.TRANSPARENT)) != 1) {
+            throw new AssertionError("glass empty occluder must render");
+        }
+        if (OcclusionMask.simpleShouldRenderFace(self, SectionFixtures.flags(SectionFixtures.SLAB)) != -1) {
+            throw new AssertionError("slab neighbor is not a simple pair and must force fallback");
+        }
+        pass("occlusion_matches_shouldRenderFace_branches");
+    }
+
+    private static void testFastPathCriteria() {
+        expectCriteria(SectionFixtures.FULL_CUBE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.TINT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.LIGHT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.TRANSPARENT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.AIR, false, FastPathCriteria.Reason.AIR);
+        expectCriteria(SectionFixtures.FLUID, false, FastPathCriteria.Reason.HAS_FLUID);
+        expectCriteria(SectionFixtures.LEAVES, false, FastPathCriteria.Reason.SKIP_RENDERING);
+        expectCriteria(SectionFixtures.RANDOM, false, FastPathCriteria.Reason.NOT_SINGLE_VARIANT);
+        expectCriteria(SectionFixtures.STAIRS, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        expectCriteria(SectionFixtures.SLAB, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        expectCriteria(SectionFixtures.FENCE, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        expectCriteria(SectionFixtures.PLANT, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        pass("fast_path_criteria");
+    }
+
+    private static void testTemplatesMatchVanillaFaceInfo() {
+        Vector3f from = new Vector3f(0.0F, 0.0F, 0.0F);
+        Vector3f to = new Vector3f(1.0F, 1.0F, 1.0F);
+        for (Direction direction : Direction.values()) {
+            FaceInfo info = FaceInfo.fromFacing(direction);
+            for (int vertex = 0; vertex < 4; vertex++) {
+                Vector3f expected = info.getVertexInfo(vertex).select(from, to);
+                if (expected.x() != FullCubeTemplates.x(direction, vertex)
+                        || expected.y() != FullCubeTemplates.y(direction, vertex)
+                        || expected.z() != FullCubeTemplates.z(direction, vertex)) {
+                    throw new AssertionError("FaceInfo winding mismatch " + direction + " vertex " + vertex
+                            + " expected=" + expected.x() + "," + expected.y() + "," + expected.z()
+                            + " template=" + FullCubeTemplates.x(direction, vertex) + ","
+                            + FullCubeTemplates.y(direction, vertex) + ","
+                            + FullCubeTemplates.z(direction, vertex));
+                }
+            }
+        }
+        pass("templates_match_vanilla_FaceInfo");
+    }
+
+    private static void testProductionPathUsesVanillaCullingAndLighting() {
+        String hybrid = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/meshing/HybridSectionMesher.java"));
+        String cache = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/meshing/CubeModelCache.java"));
+        if (!hybrid.contains("Block.shouldRenderFace")) {
+            throw new AssertionError("production fast path must cull with Block.shouldRenderFace");
+        }
+        if (!hybrid.contains("prepareQuadAmbientOcclusion") || !hybrid.contains("prepareQuadFlat")) {
+            throw new AssertionError("production fast path must light with BlockModelLighter");
+        }
+        if (!hybrid.contains("tesselateBlock") || !hybrid.contains("fluidRenderer.tesselate")) {
+            throw new AssertionError("fallback must remain vanilla ModelBlockRenderer/FluidRenderer");
+        }
+        if (!cache.contains("instanceof SingleVariant") || !cache.contains("instanceof LeavesBlock")) {
+            throw new AssertionError("cube cache must require SingleVariant and reject LeavesBlock");
+        }
+        if (!cache.contains("isUnitCubeFace")) {
+            throw new AssertionError("cube cache must reject non-unit-cube quads");
+        }
+        pass("production_uses_vanilla_cull_light_fallback");
+    }
+
+    private static void testIsolatedFullCubeGeometry() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 8, 8, 8, SectionFixtures.FULL_CUBE);
+        assertGeometry("isolated_full_cube", 0, 64, 0, states, 6 * 4);
+    }
+
+    private static void testAdjacentFullCubesCullSharedFace() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 3, 3, 3, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(states, 4, 3, 3, SectionFixtures.FULL_CUBE);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        assertGeometry("adjacent_full_cubes", volume, 10 * 4);
+    }
+
+    private static void testSectionEdgeHaloOcclusion() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 0, 7, 7, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setHalo(states, 0, 8, 8, SectionFixtures.FULL_CUBE);
+        PackedSectionVolume volume = SectionFixtures.pack(16, 0, 16, states);
+        int mask = OcclusionMask.visibleFaces(volume, 0, 7, 7);
+        if (OcclusionMask.visible(mask, Direction.WEST)) {
+            throw new AssertionError("halo full-cube at -X must cull the west face");
+        }
+        assertGeometry("section_edge_negx_halo", volume, 5 * 4);
+        int[][][] pos = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(pos, 15, 0, 0, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setHalo(pos, 17, 1, 1, SectionFixtures.FULL_CUBE);
+        assertGeometry("section_edge_posx_halo", 0, 0, 0, pos, 5 * 4);
+        int[][][] up = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(up, 8, 15, 8, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setHalo(up, 9, 17, 9, SectionFixtures.FULL_CUBE);
+        assertGeometry("section_edge_posy_halo", 0, 0, 0, up, 5 * 4);
+        int[][][] south = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(south, 8, 8, 15, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setHalo(south, 9, 9, 17, SectionFixtures.FULL_CUBE);
+        assertGeometry("section_edge_posz_halo", 0, 0, 0, south, 5 * 4);
+    }
+
+    private static void testNegativeWorldOriginGeometry() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 0, 0, 0, SectionFixtures.FULL_CUBE);
+        assertGeometry("negative_world_origin", -32, -64, -16, states, 6 * 4);
+    }
+
+    private static void testFarCornerGeometry() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 15, 15, 15, SectionFixtures.FULL_CUBE);
+        assertGeometry("far_corner", 48, 320, -48, states, 6 * 4);
+    }
+
+    private static void testTwoByTwoCluster() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        for (int x = 4; x <= 5; x++) {
+            for (int y = 4; y <= 5; y++) {
+                for (int z = 4; z <= 5; z++) {
+                    SectionFixtures.setInterior(states, x, y, z, SectionFixtures.FULL_CUBE);
+                }
+            }
+        }
+        assertGeometry("cube_2x2x2_cluster", 0, 0, 0, states, 24 * 4);
+    }
+
+    private static void testCheckerboard() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        for (int z = 0; z < 16; z++) {
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    if (((x + y + z) & 1) == 0) {
+                        SectionFixtures.setInterior(states, x, y, z, SectionFixtures.FULL_CUBE);
+                    }
+                }
+            }
+        }
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        List<MeshEquivalence.TerrainVertex> oracle = meshOracle(volume);
+        assertIdentical("checkerboard", oracle, fast.vertices());
+        if (fast.fastPathBlocks() != 2048) {
+            throw new AssertionError("checkerboard should fast-path 2048 cubes, got " + fast.fastPathBlocks());
+        }
+    }
+
+    private static void testTintedAndGlowstoneAndGlass() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 2, 2, 2, SectionFixtures.TINT);
+        SectionFixtures.setInterior(states, 4, 2, 2, SectionFixtures.LIGHT);
+        SectionFixtures.setInterior(states, 6, 2, 2, SectionFixtures.TRANSPARENT);
+        SectionFixtures.setInterior(states, 8, 2, 2, SectionFixtures.FULL_CUBE);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        List<MeshEquivalence.TerrainVertex> oracle = meshOracle(volume);
+        assertIdentical("tinted_glowstone_glass_stone", oracle, fast.vertices());
+        boolean sawTint = fast.vertices().stream().anyMatch(v -> v.color() != 0 && (v.color() & 0x00FF00) != 0);
+        if (!sawTint) {
+            throw new AssertionError("tinted cube must multiply grass tint into AO color");
+        }
+        boolean sawGlassLayer = fast.vertices().stream().anyMatch(v -> v.layer() == 1);
+        if (!sawGlassLayer) {
+            throw new AssertionError("glass fixture must keep a distinct layer id");
+        }
+    }
+
+    private static void testFallbackNeverEmitsFastGeometry() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 1, 1, 1, SectionFixtures.STAIRS);
+        SectionFixtures.setInterior(states, 2, 1, 1, SectionFixtures.SLAB);
+        SectionFixtures.setInterior(states, 3, 1, 1, SectionFixtures.FENCE);
+        SectionFixtures.setInterior(states, 4, 1, 1, SectionFixtures.FLUID);
+        SectionFixtures.setInterior(states, 5, 1, 1, SectionFixtures.LEAVES);
+        SectionFixtures.setInterior(states, 6, 1, 1, SectionFixtures.PLANT);
+        SectionFixtures.setInterior(states, 7, 1, 1, SectionFixtures.RANDOM);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        if (!fast.vertices().isEmpty()) {
+            throw new AssertionError("fallback-only section must not emit fast-path vertices");
+        }
+        if (fast.fallbackBlocks() != 7) {
+            throw new AssertionError("expected 7 fallback cells, got " + fast.fallbackBlocks());
+        }
+        int[][][] mixed = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(mixed, 8, 8, 8, SectionFixtures.FULL_CUBE);
+        SectionFixtures.setInterior(mixed, 9, 8, 8, SectionFixtures.SLAB);
+        PackedSectionVolume mixedVolume = SectionFixtures.pack(0, 0, 0, mixed);
+        FastPathCubeMesher.MeshResult mixedMesh = meshFast(mixedVolume);
+        if (mixedMesh.fastPathBlocks() != 0) {
+            throw new AssertionError("stone next to a slab must fallback; occlusion is not a simple pair");
+        }
+        pass("fallback_never_emits");
+    }
+
+    private static void testFrozenVolumeRejectsWrites() {
+        PackedSectionVolume volume = new PackedSectionVolume();
+        volume.begin(0, 0, 0);
+        volume.freeze();
+        try {
+            volume.setCell(0, 1, (byte)0);
+            throw new AssertionError("frozen volume must reject writes");
+        } catch (IllegalStateException expected) {
+            pass("frozen_volume");
+        }
+    }
+
+    private static void testMetricsRecord() {
+        MesherMetrics.reset();
+        MesherMetrics.recordCompile(10L, 20L, 3L, 2L, 1L, 1L, 1L, 8L, 224L, 5L, 7L);
+        MesherMetrics.Snapshot snapshot = MesherMetrics.snapshot();
+        if (snapshot.snapshotBuildNs() != 10L
+                || snapshot.meshBuildNs() != 20L
+                || snapshot.blocksVisited() != 3L
+                || snapshot.fastPathBlocks() != 2L
+                || snapshot.fallbackBlocks() != 1L
+                || snapshot.modelCalls() != 1L
+                || snapshot.fluidCalls() != 1L
+                || snapshot.verticesEmitted() != 8L
+                || snapshot.bytesEmitted() != 224L
+                || snapshot.temporaryAllocationProxy() != 5L
+                || snapshot.rebuildCount() != 1L
+                || snapshot.workerQueueLatencyNs() != 7L) {
+            throw new AssertionError("mesher metrics snapshot");
+        }
+        pass("mesher_metrics");
+    }
+
+    private static void testCpuMeshingTime() {
+        int[][][] solid = SectionFixtures.emptyHalo();
+        for (int z = 0; z < 16; z++) {
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    SectionFixtures.setInterior(solid, x, y, z, SectionFixtures.FULL_CUBE);
+                }
+            }
+        }
+        int[][][] checker = SectionFixtures.emptyHalo();
+        for (int z = 0; z < 16; z++) {
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    if (((x + y + z) & 1) == 0) {
+                        SectionFixtures.setInterior(checker, x, y, z, SectionFixtures.FULL_CUBE);
+                    }
+                }
+            }
+        }
+        CpuMeshingBenchmark.Sample solidSample = CpuMeshingBenchmark.run(
+                "solid_16cubed", SectionFixtures.pack(0, 0, 0, solid), 40);
+        CpuMeshingBenchmark.Sample checkerSample = CpuMeshingBenchmark.run(
+                "checkerboard", SectionFixtures.pack(0, 0, 0, checker), 40);
+        System.out.println(CpuMeshingBenchmark.format(solidSample));
+        System.out.println(CpuMeshingBenchmark.format(checkerSample));
+        if (solidSample.vertices() <= 0 || checkerSample.vertices() <= 0) {
+            throw new AssertionError("CPU benchmark produced empty meshes");
+        }
+        pass("cpu_meshing_time_not_a_perf_claim");
+    }
+
+    private static void expectCriteria(final int stateId, final boolean fast, final FastPathCriteria.Reason reason) {
+        FastPathCriteria.Result result = FastPathCriteria.fromFixtureState(stateId);
+        if (result.fastPath() != fast || result.reason() != reason) {
+            throw new AssertionError("criteria for " + stateId + ": expected fast=" + fast + " reason=" + reason
+                    + " got " + result);
+        }
+    }
+
+    private static List<MeshEquivalence.TerrainVertex> assertGeometry(
+            final String name,
+            final int originX,
+            final int originY,
+            final int originZ,
+            final int[][][] states,
+            final int expectedVertices) {
+        return assertGeometry(name, SectionFixtures.pack(originX, originY, originZ, states), expectedVertices);
+    }
+
+    private static List<MeshEquivalence.TerrainVertex> assertGeometry(
+            final String name,
+            final PackedSectionVolume volume,
+            final int expectedVertices) {
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        List<MeshEquivalence.TerrainVertex> oracle = meshOracle(volume);
+        assertIdentical(name, oracle, fast.vertices());
+        if (fast.vertices().size() != expectedVertices) {
+            throw new AssertionError(name + " expected " + expectedVertices + " vertices, got " + fast.vertices().size());
+        }
+        return fast.vertices();
+    }
+
+    private static void assertIdentical(
+            final String name,
+            final List<MeshEquivalence.TerrainVertex> oracle,
+            final List<MeshEquivalence.TerrainVertex> fast) {
+        MeshEquivalence.Result result = MeshEquivalence.compareExactGeometry(oracle, fast);
+        if (result != MeshEquivalence.Result.IDENTICAL_ORDERED) {
+            throw new AssertionError(name + " geometry mismatch: " + describeMismatch(oracle, fast));
+        }
+        pass(name);
+    }
+
+    private static String describeMismatch(
+            final List<MeshEquivalence.TerrainVertex> oracle,
+            final List<MeshEquivalence.TerrainVertex> fast) {
+        if (oracle.size() != fast.size()) {
+            return "size oracle=" + oracle.size() + " fast=" + fast.size();
+        }
+        for (int i = 0; i < oracle.size(); i++) {
+            if (!oracle.get(i).equals(fast.get(i))) {
+                return "vertex " + i + " oracle=" + oracle.get(i) + " fast=" + fast.get(i);
+            }
+        }
+        return "unknown";
+    }
+
+    private static FastPathCubeMesher.MeshResult meshFast(final PackedSectionVolume volume) {
+        PackedLightVolume lights = new PackedLightVolume();
+        lights.fill(LightCoordsUtil.pack(15, 15));
+        return FastPathCubeMesher.mesh(volume, lights, true, CardinalLighting.DEFAULT);
+    }
+
+    private static List<MeshEquivalence.TerrainVertex> meshOracle(final PackedSectionVolume volume) {
+        PackedLightVolume lights = new PackedLightVolume();
+        lights.fill(LightCoordsUtil.pack(15, 15));
+        return VanillaCubeOracle.mesh(volume, lights, true, CardinalLighting.DEFAULT);
+    }
+
+    private static List<MeshVisit> assertPlansMatch(
+            final int originX,
+            final int originY,
+            final int originZ,
+            final int[][][] states) {
+        byte[][][] flags = SectionFixtures.flagsOf(states);
+        int[][][] entities = SectionFixtures.entitySlots(states);
+        List<MeshVisit> oracle = VanillaVisitOracle.walk(originX, originY, originZ, states, flags, entities);
+        PackedSectionVolume volume = SectionFixtures.pack(originX, originY, originZ, states);
+        List<MeshVisit> packed = PackedVisitScanner.walk(volume);
+        if (!oracle.equals(packed)) {
+            throw new AssertionError("visit plan mismatch origin=" + originX + "," + originY + "," + originZ
+                    + " oracle=" + oracle + " packed=" + packed);
+        }
+        if (oracle.isEmpty()) {
+            throw new AssertionError("representative case produced no visits");
+        }
+        return oracle;
+    }
+
+    private static void testCubeCacheInvalidatesOnModelSetReload() {
+        CubeModelCache cache = new CubeModelCache();
+        Object generationA = new Object();
+        Object generationB = new Object();
+        cache.bindModelSet(generationA);
+        seedCacheOccupant(cache);
+        if (cache.isEmpty() || cache.cachedEntryCount() == 0) {
+            throw new AssertionError("seeded cubeCache must be occupied");
+        }
+        if (cache.boundModelSet() != generationA) {
+            throw new AssertionError("cubeCache must remember the bound model-set identity");
+        }
+        cache.bindModelSet(generationA);
+        if (cache.isEmpty() || cache.cachedEntryCount() == 0) {
+            throw new AssertionError("same BlockStateModelSet identity must keep cached quads");
+        }
+        cache.bindModelSet(generationB);
+        if (!cache.isEmpty() || cache.cachedEntryCount() != 0) {
+            throw new AssertionError("resource reload must clear cubeCache");
+        }
+        if (cache.boundModelSet() != generationB) {
+            throw new AssertionError("cubeCache must rebind to the new model-set identity");
+        }
+        cache.bindModelSet(generationB);
+        if (!cache.isEmpty()) {
+            throw new AssertionError("rebind to the same generation must not resurrect entries");
+        }
+
+        Object workerA = new Object();
+        Object workerB = new Object();
+        CubeModelCache worker = HybridSectionMesher.bindWorkerCubeCache(workerA);
+        seedCacheOccupant(worker);
+        if (worker.isEmpty()) {
+            throw new AssertionError("worker ThreadLocal cubeCache must keep entries for one model set");
+        }
+        CubeModelCache sameWorker = HybridSectionMesher.bindWorkerCubeCache(workerA);
+        if (sameWorker != worker || sameWorker.isEmpty()) {
+            throw new AssertionError("same model-set identity must reuse the occupied worker cache");
+        }
+        CubeModelCache reloaded = HybridSectionMesher.bindWorkerCubeCache(workerB);
+        if (reloaded != worker) {
+            throw new AssertionError("reload must clear the existing worker cache, not allocate a different one");
+        }
+        if (!reloaded.isEmpty() || reloaded.cachedEntryCount() != 0) {
+            throw new AssertionError("F3+T / resource reload must empty the worker ThreadLocal cubeCache");
+        }
+        pass("cube_cache_resource_reload");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void seedCacheOccupant(final CubeModelCache cache) {
+        try {
+            var misses = CubeModelCache.class.getDeclaredField("misses");
+            misses.setAccessible(true);
+            ((Map<Object, Boolean>) misses.get(cache)).put(new Object(), Boolean.TRUE);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not seed cubeCache occupant", e);
+        }
+    }
+
+    private static void pass(final String name) {
+        CASE_RESULTS.add("PASS  " + name);
+    }
+
+    private static String readUtf8(final Path path) {
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new AssertionError("could not read " + path, e);
+        }
+    }
+}

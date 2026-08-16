@@ -1,5 +1,12 @@
 # Changelog
 
+## mesher_fast_path (draft, isolated from main / PR #3)
+
+Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,
+cached vanilla cube quads, vanilla occlusion/lighting, vanilla fallback.
+Equivalence tests PASS. CPU meshing-time microbench only. **No FPS/GPU claim.**
+See `MESHER_FAST_PATH.md`. `gradlew test` / `gradlew build` PASS on this branch.
+
 ## Prompt #2.5 — provenance recovery (P0)
 
 The previous KEEP documentation referenced hardware-tested commit

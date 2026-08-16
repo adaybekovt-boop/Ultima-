@@ -20,6 +20,7 @@
     "render_snapshot.RenderRegionCacheMixin",
     "render_snapshot.SectionCopyMixin",
     "java_mesher.SectionCompilerMixin",
+    "mesher_fast_path.SectionCompilerMixin",
     "section_task_queue.SectionTaskAccessor",
     "section_task_queue.SectionTaskDynamicQueueMixin",
     "section_task_queue.CompileTaskMixin",
