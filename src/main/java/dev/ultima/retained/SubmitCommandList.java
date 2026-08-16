@@ -2,16 +2,22 @@ package dev.ultima.retained;
 
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.function.Consumer;
 
 /**
  * SoA indirect-command list with swap-remove. No GPU objects; {@code SubmitGroup}
  * owns the device buffer and copies these CPU records on dirty runs.
  *
- * <p>{@code instanceCount} 0/1 is visibility. Hidden commands stay in the list
- * until the owner is removed. Compaction is intentionally not implemented.
+ * <p>{@code instanceCount} 0/1 is visibility. Hidden commands normally stay in the list
+ * until the owner is removed, but the retained renderer may compact them after an opaque
+ * render pass when the bounded-growth policy fires.
  */
 public final class SubmitCommandList {
     public static final int INITIAL_CAPACITY = 16;
+    public static final int BOUNDED_TOTAL_TRIGGER = 4096;
+
+    public record CompactionResult(int commandsBefore, int commandsAfter, int hiddenRemoved, boolean compacted) {
+    }
 
     private int count;
     private int[] firstIndex = new int[INITIAL_CAPACITY];
@@ -121,6 +127,82 @@ public final class SubmitCommandList {
         this.dirty.clear(last);
         owner.onCommandDetached();
         this.commandsRemoved++;
+    }
+
+    /**
+     * Prompt #2.4 bounded-growth trigger: compact only when hidden commands exist and
+     * either more than half the list is hidden or the list has grown beyond 4096 records.
+     */
+    public boolean shouldCompactBounded() {
+        int hidden = this.hiddenZeroInstanceCommands();
+        if (hidden <= 0 || this.count <= 0) {
+            return false;
+        }
+        return (long)hidden * 2L > (long)this.count || this.count > BOUNDED_TOTAL_TRIGGER;
+    }
+
+    /**
+     * Remove hidden zero-instance records while preserving live-command order and
+     * rewriting owner indices. The caller is notified for dropped owners so renderer-
+     * specific ownership (for example {@code LayerSlot.group}) can be detached too.
+     *
+     * <p>This method only mutates CPU state. {@code SubmitGroup} performs the GPU-buffer
+     * replacement after the render pass, so the command buffer used by the just-finished
+     * pass is never rewritten in place by compaction.
+     */
+    public CompactionResult compactHidden(final Consumer<IndexedCommandOwner> onDropped) {
+        int before = this.count;
+        if (!this.shouldCompactBounded()) {
+            return new CompactionResult(before, before, 0, false);
+        }
+
+        int write = 0;
+        int removed = 0;
+        int newMaxIndexCount = 0;
+        for (int read = 0; read < before; read++) {
+            IndexedCommandOwner owner = this.owners[read];
+            if (this.instanceCount[read] <= 0) {
+                if (owner != null) {
+                    owner.onCommandDetached();
+                    if (onDropped != null) {
+                        onDropped.accept(owner);
+                    }
+                }
+                this.owners[read] = null;
+                removed++;
+                continue;
+            }
+
+            if (write != read) {
+                this.firstIndex[write] = this.firstIndex[read];
+                this.indexCount[write] = this.indexCount[read];
+                this.baseVertex[write] = this.baseVertex[read];
+                this.sectionSlot[write] = this.sectionSlot[read];
+                this.instanceCount[write] = this.instanceCount[read];
+                this.owners[write] = owner;
+                this.owners[read] = null;
+                if (owner != null) {
+                    owner.onCommandMoved(write);
+                }
+            }
+            if (this.indexCount[write] > newMaxIndexCount) {
+                newMaxIndexCount = this.indexCount[write];
+            }
+            write++;
+        }
+
+        Arrays.fill(this.owners, write, before, null);
+        Arrays.fill(this.instanceCount, write, before, 0);
+        this.count = write;
+        this.liveDraws = write;
+        this.maxIndexCount = newMaxIndexCount;
+        this.dirty.clear();
+        if (write > 0) {
+            this.dirty.set(0, write);
+        }
+        this.structureDirty = true;
+        this.commandsRemoved += removed;
+        return new CompactionResult(before, write, removed, removed > 0);
     }
 
     public void detachAll() {
