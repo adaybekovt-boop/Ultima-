@@ -1,5 +1,7 @@
 package dev.ultima.review;
 
+import dev.ultima.client.renderer.meshing.CubeModelCache;
+import dev.ultima.client.renderer.meshing.HybridSectionMesher;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.meshing.BlockRenderFlags;
@@ -66,6 +68,7 @@ final class MesherFastPathChecks {
         testFrozenVolumeRejectsWrites();
         testMetricsRecord();
         testCpuMeshingTime();
+        testCubeCacheInvalidatesOnModelSetReload();
         System.out.println("Mesher fast-path equivalence cases:");
         for (String line : CASE_RESULTS) {
             System.out.println("  " + line);
@@ -601,6 +604,66 @@ final class MesherFastPathChecks {
             throw new AssertionError("representative case produced no visits");
         }
         return oracle;
+    }
+
+    private static void testCubeCacheInvalidatesOnModelSetReload() {
+        CubeModelCache cache = new CubeModelCache();
+        Object generationA = new Object();
+        Object generationB = new Object();
+        cache.bindModelSet(generationA);
+        seedCacheOccupant(cache);
+        if (cache.isEmpty() || cache.cachedEntryCount() == 0) {
+            throw new AssertionError("seeded cubeCache must be occupied");
+        }
+        if (cache.boundModelSet() != generationA) {
+            throw new AssertionError("cubeCache must remember the bound model-set identity");
+        }
+        cache.bindModelSet(generationA);
+        if (cache.isEmpty() || cache.cachedEntryCount() == 0) {
+            throw new AssertionError("same BlockStateModelSet identity must keep cached quads");
+        }
+        cache.bindModelSet(generationB);
+        if (!cache.isEmpty() || cache.cachedEntryCount() != 0) {
+            throw new AssertionError("resource reload must clear cubeCache");
+        }
+        if (cache.boundModelSet() != generationB) {
+            throw new AssertionError("cubeCache must rebind to the new model-set identity");
+        }
+        cache.bindModelSet(generationB);
+        if (!cache.isEmpty()) {
+            throw new AssertionError("rebind to the same generation must not resurrect entries");
+        }
+
+        Object workerA = new Object();
+        Object workerB = new Object();
+        CubeModelCache worker = HybridSectionMesher.bindWorkerCubeCache(workerA);
+        seedCacheOccupant(worker);
+        if (worker.isEmpty()) {
+            throw new AssertionError("worker ThreadLocal cubeCache must keep entries for one model set");
+        }
+        CubeModelCache sameWorker = HybridSectionMesher.bindWorkerCubeCache(workerA);
+        if (sameWorker != worker || sameWorker.isEmpty()) {
+            throw new AssertionError("same model-set identity must reuse the occupied worker cache");
+        }
+        CubeModelCache reloaded = HybridSectionMesher.bindWorkerCubeCache(workerB);
+        if (reloaded != worker) {
+            throw new AssertionError("reload must clear the existing worker cache, not allocate a different one");
+        }
+        if (!reloaded.isEmpty() || reloaded.cachedEntryCount() != 0) {
+            throw new AssertionError("F3+T / resource reload must empty the worker ThreadLocal cubeCache");
+        }
+        pass("cube_cache_resource_reload");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void seedCacheOccupant(final CubeModelCache cache) {
+        try {
+            var misses = CubeModelCache.class.getDeclaredField("misses");
+            misses.setAccessible(true);
+            ((Map<Object, Boolean>) misses.get(cache)).put(new Object(), Boolean.TRUE);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not seed cubeCache occupant", e);
+        }
     }
 
     private static void pass(final String name) {
