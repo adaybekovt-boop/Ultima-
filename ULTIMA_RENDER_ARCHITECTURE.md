@@ -103,7 +103,7 @@ Each alive layer slot belongs to one persistent `SubmitGroup` (same layer + vert
 Persistent device-local buffers, updated with `CommandEncoder.writeToBuffer` dirty ranges. No `MappableRingBuffer`, no per-frame map/unmap, no fence wait on the happy path.
 
 1. **`ChunkSection` header** (vanilla layout, one record for the whole opaque pass): `ModelViewMat`, unused fade/origin fields, `TextureSize`. Bound once. Skipped when matrix + atlas are unchanged.
-2. **`UltimaSectionTable`**: `USAGE_UNIFORM_TEXEL_BUFFER` + `RGBA32_SINT`, one texel per `ViewArea` slot, packed `(origin.xyz, floatBitsToInt(visibility))`. Indexed by `gl_BaseInstance` / `gl_BaseInstanceARB` (never `gl_DrawIDARB`). Only dirty slots are uploaded.
+2. **`UltimaSectionTable`**: `USAGE_UNIFORM_TEXEL_BUFFER` + `RGBA32_SINT`, one texel per `ViewArea` slot, packed `(origin.xyz, floatBitsToInt(visibility))`. Indexed by `gl_BaseInstanceARB` (the identifier Minecraft 26.2's shaderc actually provides on both GL and Vulkan). Only dirty slots are uploaded.
 
 Fail-open: if pipelines fail to compile or a prepare/submit exception occurs, vanilla `prepareChunkRenders` runs unmodified.
 
@@ -148,7 +148,7 @@ Capability order:
 2. Else `drawIndirect` → one `drawIndexedIndirect` per command.
 3. Else `nonZeroFirstInstance` → loop `drawIndexed(..., firstInstance = section.index)`.
 
-Compile define `ULTIMA_GL_DRAW_PARAMETERS` enables `#extension GL_ARB_shader_draw_parameters` and `gl_BaseInstanceARB`.
+`#extension GL_ARB_shader_draw_parameters` + `gl_BaseInstanceARB`. OpenGL also sets compile define `ULTIMA_GL_DRAW_PARAMETERS` (reserved; indexing does not depend on it).
 
 One command encoder. All `writeToBuffer` calls happen before `createRenderPass`. The opaque pass is the same single pass vanilla already creates for `ChunkSectionLayerGroup.OPAQUE`.
 
@@ -156,7 +156,7 @@ One command encoder. All `writeToBuffer` calls happen before `createRenderPass`.
 
 ## 12. Vulkan path
 
-Same producer and the same shader source. Vulkan compile does **not** set `ULTIMA_GL_DRAW_PARAMETERS`, so the shader uses core `gl_BaseInstance`. Minecraft's `GlslCompiler` remaps `gl_VertexID`/`gl_InstanceID` only; ARB-suffixed draw-parameter builtins are undefined and must not appear.
+Same producer and the same shader source. Probed against LWJGL shaderc 3.4.1 (Vulkan 1.2): `gl_BaseInstanceARB` compiles; unsuffixed `gl_BaseInstance` does not. Minecraft's `GlslCompiler` remaps `gl_VertexID`/`gl_InstanceID` only and does not invent a core BaseInstance name.
 
 Submit:
 

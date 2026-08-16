@@ -119,15 +119,7 @@ Yaw sweep therefore touches only `instanceCount` on commands that entered or lef
 
 ## 6. OpenGL shader path
 
-`terrain_retained.vsh` compiles with `ULTIMA_GL_DRAW_PARAMETERS`:
-
-```glsl
-#ifdef ULTIMA_GL_DRAW_PARAMETERS
-#extension GL_ARB_shader_draw_parameters : enable
-#endif
-```
-
-`section_table.glsl` (no `#version`; imported) returns `gl_BaseInstanceARB` under that define. Pixel math is still vanilla terrain + fade from the table.
+`terrain_retained.vsh` enables `GL_ARB_shader_draw_parameters`. The include always uses `gl_BaseInstanceARB`. Pixel math is still vanilla terrain + fade from the table.
 
 Automated checks: source scan forbids `gl_DrawID` / `gl_DrawIDARB`; require the ifdef and `gl_BaseInstanceARB`.
 
@@ -137,7 +129,7 @@ Runtime: `device.precompilePipeline` on the OpenGL backend. Failure → fail-ope
 
 ## 7. Vulkan shader path
 
-Same files. Vulkan compile does **not** set the define, so the shader uses core `gl_BaseInstance`.
+Same files. LWJGL shaderc 3.4.1 (Vulkan 1.2 env, same stack Minecraft uses) was probed on this host: `gl_BaseInstanceARB` compiles; unsuffixed `gl_BaseInstance` is undeclared. The earlier RTX 3090 `gl_DrawIDARB` failure is treated as a reason not to use DrawID, not as proof that ARB suffixes are absent. Indexing is `firstInstance` → `gl_BaseInstanceARB` only.
 
 Automated checks (when shaderc natives load):
 

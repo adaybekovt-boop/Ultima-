@@ -108,9 +108,8 @@ public final class RetainedTerrainPipelines {
             solid = solidPipeline;
             cutout = cutoutPipeline;
             LOGGER.info(
-                    "Retained opaque terrain pipelines compiled on {} (gl_BaseInstance{}, texel section table).",
-                    compileBackend,
-                    opengl ? "ARB" : "");
+                    "Retained opaque terrain pipelines compiled on {} (gl_BaseInstanceARB, texel section table).",
+                    compileBackend);
             return true;
         } catch (RuntimeException e) {
             LOGGER.warn("Retained terrain pipeline compilation threw; falling back to vanilla.", e);

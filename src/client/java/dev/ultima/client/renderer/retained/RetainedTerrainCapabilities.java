@@ -10,9 +10,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Detects whether the retained opaque path may run. Fail closed to vanilla.
  *
- * <p>Table indexing uses {@code gl_BaseInstance} / {@code gl_BaseInstanceARB}
- * (never {@code gl_DrawIDARB}). That requires {@code shaderDrawParameters}
- * plus either indirect {@code firstInstance} or {@code nonZeroFirstInstance}.
+ * <p>Table indexing uses {@code gl_BaseInstanceARB} (the identifier Minecraft
+ * 26.2's shaderc provides on OpenGL and Vulkan). That requires
+ * {@code shaderDrawParameters} plus either indirect {@code firstInstance}
+ * or {@code nonZeroFirstInstance}.
  */
 public final class RetainedTerrainCapabilities {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-retained-terrain");

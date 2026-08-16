@@ -1,8 +1,6 @@
 #version 330
 
-#ifdef ULTIMA_GL_DRAW_PARAMETERS
 #extension GL_ARB_shader_draw_parameters : enable
-#endif
 
 #moj_import <minecraft:fog.glsl>
 #moj_import <minecraft:globals.glsl>

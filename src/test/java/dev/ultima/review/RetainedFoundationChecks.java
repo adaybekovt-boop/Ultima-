@@ -48,8 +48,8 @@ final class RetainedFoundationChecks {
             throw new AssertionError("section_table.glsl is imported and must not declare #version");
         }
         String vertex = readShader("core/terrain_retained.vsh");
-        if (!vertex.contains("ULTIMA_GL_DRAW_PARAMETERS")) {
-            throw new AssertionError("OpenGL retained vertex shader must gate the ARB extension");
+        if (!vertex.contains("GL_ARB_shader_draw_parameters")) {
+            throw new AssertionError("retained vertex shader must enable GL_ARB_shader_draw_parameters");
         }
         if (!vertex.contains("#moj_import <ultima:section_table.glsl>")) {
             throw new AssertionError("retained vertex shader must import the section table");
@@ -58,8 +58,11 @@ final class RetainedFoundationChecks {
 
     private static void testSectionTableUsesBaseInstance() {
         String include = readShader("include/section_table.glsl");
-        if (!include.contains("gl_BaseInstanceARB") || !include.contains("gl_BaseInstance")) {
-            throw new AssertionError("section table must index via gl_BaseInstance / gl_BaseInstanceARB");
+        if (!include.contains("gl_BaseInstanceARB")) {
+            throw new AssertionError("section table must index via gl_BaseInstanceARB");
+        }
+        if (include.contains("gl_BaseInstance;") || include.matches("(?s).*\\bgl_BaseInstance\\b(?!ARB).*")) {
+            throw new AssertionError("unsuffixed gl_BaseInstance is undeclared in Minecraft's Vulkan shaderc");
         }
         if (!include.contains("uniform isamplerBuffer UltimaSectionTable")) {
             throw new AssertionError("section table must be a persistent isamplerBuffer");
@@ -108,30 +111,23 @@ final class RetainedFoundationChecks {
     private static void testShadercPortabilitySnippets() {
         String vulkan = """
                 #version 450
-                uniform isamplerBuffer UltimaSectionTable;
+                #extension GL_ARB_shader_draw_parameters : enable
+                layout(binding = 0) uniform isamplerBuffer UltimaSectionTable;
                 void main() {
-                    int slot = gl_BaseInstance;
+                    int slot = gl_BaseInstanceARB;
                     gl_Position = vec4(texelFetch(UltimaSectionTable, slot));
                 }
                 """;
-        String bannedVulkanDrawId = """
+        String unsuffixedBaseInstance = """
                 #version 450
                 #extension GL_ARB_shader_draw_parameters : enable
                 void main() {
-                    gl_Position = vec4(gl_DrawIDARB);
-                }
-                """;
-        String bannedVulkanBaseInstanceArb = """
-                #version 450
-                #extension GL_ARB_shader_draw_parameters : enable
-                void main() {
-                    gl_Position = vec4(gl_BaseInstanceARB);
+                    gl_Position = vec4(gl_BaseInstance);
                 }
                 """;
         try {
-            compileShaderc(vulkan, 0, 4202496, "ultima-vulkan-baseinstance.vert");
-            expectShadercFailure(bannedVulkanDrawId, "gl_DrawIDARB");
-            expectShadercFailure(bannedVulkanBaseInstanceArb, "gl_BaseInstanceARB");
+            compileShaderc(vulkan, 0, 4202496, "ultima-vulkan-baseinstancearb.vert");
+            expectShadercFailure(unsuffixedBaseInstance, "gl_BaseInstance");
         } catch (UnsatisfiedLinkError | NoClassDefFoundError | ExceptionInInitializerError missingNatives) {
             System.out.println("shaderc natives unavailable; source-level portability checks still passed.");
         }
@@ -160,6 +156,8 @@ final class RetainedFoundationChecks {
         long result = 0L;
         try {
             Shaderc.shaderc_compile_options_set_target_env(options, targetEnv, version);
+            Shaderc.shaderc_compile_options_set_auto_bind_uniforms(options, true);
+            Shaderc.shaderc_compile_options_set_auto_map_locations(options, true);
             result = Shaderc.shaderc_compile_into_spv(compiler, sourceBuffer, 0, filenameBuffer, entry, options);
             int status = Shaderc.shaderc_result_get_compilation_status(result);
             if (status != 0) {
