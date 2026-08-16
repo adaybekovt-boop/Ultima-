@@ -10,7 +10,7 @@ This is **not** a performance-measurement pass. No FPS claim is made.
 | Item | Value |
 |---|---|
 | Starting SHA | `93ce4292719ee161e3ce7d1e4cf0ca25d15d1c81` |
-| Final SHA | *(git SHA of this documentation revision; see `git log -1`)* |
+| Final SHA | `1b930afdd8d5d1a13bf3ddaaa6e4e8618ca0bbd7` |
 | Branch | `cursor/forensic-review-9efc` |
 | Minecraft | 26.2 |
 | Fabric Loader | 0.19.3 |
