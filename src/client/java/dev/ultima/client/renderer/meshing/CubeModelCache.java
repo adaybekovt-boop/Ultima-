@@ -34,6 +34,37 @@ public final class CubeModelCache {
     private final IdentityHashMap<BlockState, Boolean> misses = new IdentityHashMap<>();
     private final List<BlockStateModelPart> parts = new ArrayList<>(4);
     private final RandomSource random = RandomSource.create(0L);
+    private Object boundModelSet;
+
+    /**
+     * Bind this cache to the current {@code BlockStateModelSet} (or any identity
+     * marker for the active model/atlas generation). A new identity is a
+     * resource reload: drop every cached quad so stale UVs cannot survive
+     * F3+T / resource-pack / mipmap changes on a long-lived worker thread.
+     */
+    public void bindModelSet(final Object modelSet) {
+        if (this.boundModelSet != modelSet) {
+            this.clear();
+            this.boundModelSet = modelSet;
+        }
+    }
+
+    public void clear() {
+        this.hits.clear();
+        this.misses.clear();
+    }
+
+    public boolean isEmpty() {
+        return this.hits.isEmpty() && this.misses.isEmpty();
+    }
+
+    public int cachedEntryCount() {
+        return this.hits.size() + this.misses.size();
+    }
+
+    public Object boundModelSet() {
+        return this.boundModelSet;
+    }
 
     public @Nullable CachedCube get(final BlockState state, final BlockStateModel model, final boolean cutoutLeaves) {
         if (state.getBlock() instanceof LeavesBlock || ModelBlockRenderer.forceOpaque(cutoutLeaves, state)) {

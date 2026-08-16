@@ -68,6 +68,15 @@ public final class HybridSectionMesher {
     private HybridSectionMesher() {
     }
 
+    /**
+     * Bind the worker-thread cube cache to the current model/atlas generation.
+     * Resource reload replaces the {@code BlockStateModelSet} identity; the
+     * long-lived {@code ThreadLocal} scratch must drop stale baked quads.
+     */
+    public static CubeModelCache bindWorkerCubeCache(final Object modelSetIdentity) {
+        return SCRATCH.get().cubeCache(modelSetIdentity);
+    }
+
     public static SectionCompiler.Results compile(
             final SectionPos sectionPos,
             final RenderSectionRegion region,
@@ -90,6 +99,7 @@ public final class HybridSectionMesher {
         BlockModelLighter.enableCaching();
         ModelBlockRenderer blockRenderer = scratch.blockRenderer(ambientOcclusion, blockColors);
         FluidRenderer fluidRenderer = scratch.fluidRenderer(fluidModelSet);
+        CubeModelCache cache = scratch.cubeCache(blockModelSet);
         BlockModelLighter lighter = scratch.lighter;
         QuadInstance quadInstance = scratch.quadInstance;
         Map<ChunkSectionLayer, BufferBuilder> startedLayers = scratch.startedLayers;
@@ -105,7 +115,6 @@ public final class HybridSectionMesher {
         FluidRenderer.Output fluidOutput = layer -> layerBegin.begin(startedLayers, builders, layer);
         MutableBlockPos pos = scratch.pos;
         MutableBlockPos neighborPos = scratch.neighborPos;
-        CubeModelCache cache = scratch.cubeCache;
 
         long allocatedBefore = MesherMetrics.threadAllocatedBytes();
         long snapshotStart = System.nanoTime();
@@ -304,6 +313,7 @@ public final class HybridSectionMesher {
         private boolean ambientOcclusion;
         private BlockColors blockColors;
         private FluidStateModelSet fluidModelSet;
+        private Object blockModelSet;
         private ModelBlockRenderer blockRenderer;
         private FluidRenderer fluidRenderer;
         private int tintCacheIndex = -1;
@@ -311,6 +321,15 @@ public final class HybridSectionMesher {
 
         private void resetTint() {
             this.tintCacheIndex = -1;
+        }
+
+        private CubeModelCache cubeCache(final Object blockModelSet) {
+            if (this.blockModelSet != blockModelSet) {
+                this.blockModelSet = blockModelSet;
+                this.cubeCache.clear();
+            }
+            this.cubeCache.bindModelSet(blockModelSet);
+            return this.cubeCache;
         }
 
         private ModelBlockRenderer blockRenderer(final boolean ambientOcclusion, final BlockColors blockColors) {
