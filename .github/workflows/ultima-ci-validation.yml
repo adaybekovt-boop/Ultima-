@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      - fix/provenance-compaction-p0
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,24 +15,18 @@ permissions:
 
 jobs:
   validate:
-    name: ${{ matrix.target.name }} / ${{ matrix.os }} / run-${{ matrix.repeat }}
+    name: current-head / ${{ matrix.os }} / run-${{ matrix.repeat }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         repeat: [1, 2]
-        target:
-          - name: stage1-base
-            ref: ea94d594c6d45e7662675dc044792203971cc02d
-          - name: code-lab
-            ref: 4a4a17e4e47186d9e5317b381d71e6c3d49493fa
 
     steps:
-      - name: Checkout target
+      - name: Checkout actual triggering revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ matrix.target.ref }}
           fetch-depth: 1
 
       - name: Set up Java 25
@@ -47,7 +45,9 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          echo "GITHUB_SHA=$GITHUB_SHA"
           git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           java -version
           gradle --version
           uname -a || true
@@ -56,26 +56,26 @@ jobs:
         shell: bash
         run: bash scripts/ensure-wrapper.sh
 
-      - name: Clean build + forensic regression tests (Linux)
+      - name: Clean build + tests + forensic checks (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euxo pipefail
-          ./gradlew --no-daemon clean build
+          ./gradlew --no-daemon clean build test
           python3 scripts/summarize-client-bench.py --self-test
 
-      - name: Clean build + forensic regression tests (Windows)
+      - name: Clean build + tests + forensic checks (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\gradlew.bat --no-daemon clean build
+          .\gradlew.bat --no-daemon clean build test
           python scripts/summarize-client-bench.py --self-test
 
       - name: Collect build outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ultima-${{ matrix.target.name }}-${{ runner.os }}-run${{ matrix.repeat }}
+          name: ultima-current-head-${{ runner.os }}-run${{ matrix.repeat }}-${{ github.sha }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
