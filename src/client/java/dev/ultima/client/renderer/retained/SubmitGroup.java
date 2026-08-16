@@ -19,8 +19,9 @@ import org.jspecify.annotations.Nullable;
  * Indirect commands live on the GPU and are patched in place.
  *
  * <p>CPU swap-remove lives in {@link SubmitCommandList}. Hidden commands are normally
- * retained as {@code instanceCount=0}; bounded compaction may drop them only after an
- * opaque render pass and replaces the GPU command buffer transactionally for the next frame.
+ * retained as {@code instanceCount=0}; bounded compaction is scheduled by one submit
+ * and applied at the next frame flush, strictly between opaque render passes. The GPU
+ * command buffer is replaced transactionally instead of compacted in place.
  */
 final class SubmitGroup {
     static final int COMMAND_STRIDE = IndirectCommandPacking.STRIDE;
@@ -31,6 +32,7 @@ final class SubmitGroup {
     final @Nullable IndexType indexType;
     final SubmitCommandList commands = new SubmitCommandList();
     @Nullable GpuBuffer gpuCommands;
+    private boolean compactionPending;
 
     SubmitGroup(
             final ChunkSectionLayer layer,
@@ -74,6 +76,11 @@ final class SubmitGroup {
     }
 
     boolean hasLiveDraws() {
+        if (this.commands.shouldCompactBounded()) {
+            // We are already in the submit path for this frame. Do not mutate the
+            // command list or GPU buffer now; compact at the next pre-pass flush.
+            this.compactionPending = true;
+        }
         return this.commands.liveDraws() > 0;
     }
 
@@ -90,6 +97,10 @@ final class SubmitGroup {
     }
 
     void flushCommands(final CommandEncoder encoder, final RetainedUploadMetrics metrics) {
+        if (this.compactionPending) {
+            this.compactionPending = false;
+            this.compactPendingBetweenPasses(metrics);
+        }
         if (this.commands.count() == 0) {
             return;
         }
@@ -107,12 +118,12 @@ final class SubmitGroup {
     }
 
     /**
-     * Apply the Prompt #2.4 bounded-growth policy after the render pass has closed.
-     * A replacement GPU buffer is created before CPU indices are compacted; only after
-     * compaction succeeds is the group pointer swapped and the old buffer retired.
-     * The replacement is filled from the compacted CPU list on the next frame's flush.
+     * Apply the Prompt #2.4 bounded-growth policy between render passes. A replacement
+     * GPU buffer is prepared before CPU indices are compacted; only after compaction
+     * succeeds is the group pointer swapped and the old buffer retired. The current
+     * frame then uploads the compacted CPU list to the replacement before drawing.
      */
-    boolean compactAfterSubmitIfNeeded(final RetainedUploadMetrics metrics) {
+    private boolean compactPendingBetweenPasses(final RetainedUploadMetrics metrics) {
         if (!this.commands.shouldCompactBounded()) {
             return false;
         }
