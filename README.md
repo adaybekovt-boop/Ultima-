@@ -56,10 +56,19 @@ renderer mods.
 A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
 integrated-server / hitch work, not a GPU FPS claim.
 
-Real GPU A/B of the retained foundation (Prompt #2.1–2.4) is **KEEP**:
-stationary, yaw sweep, and chunk-flight all valid. Chunk-flight (the most demanding
-scene): **+27.85% average FPS**, **+12.87% 1% low**, 0 crashes, 0 errors, visual
-parity PASS. See `CHANGELOG.md` and `REAL_PERFORMANCE_REPORT.md`.
+### GPU performance claim status — provenance recovery in progress
+
+Prompt #2.1–2.4 previously reported a retained-terrain KEEP result, including
+**+27.85% average FPS** and **+12.87% 1% low** in chunk-flight. Those numbers are
+currently **quarantined and are not release-valid claims**: the reported tested commit
+`4d518325d974c2e6b504208fe3d9262c8bbbfcb5` is not present in the remote repository,
+and the `main` tree that was merged did not contain the bounded command compaction
+described by that test report.
+
+Prompt #2.5 is recovering the documented compaction behavior, fixing CI so it validates
+the actual triggering HEAD, and requires a repeat real-hardware A/B on the exact released
+SHA before the GPU numbers may be advertised again. See `CHANGELOG.md` and the provenance
+recovery report.
 
 `retained_terrain` stays **opt-in** (default off). Experimental lab PR #3 is not in
 `main` and stays draft / default off.
