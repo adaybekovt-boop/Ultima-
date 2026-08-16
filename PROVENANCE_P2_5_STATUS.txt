@@ -1,0 +1,8 @@
+Prompt #2.5 P0 recovery branch.
+
+Lost reported tested commit 4d518325d974c2e6b504208fe3d9262c8bbbfcb5: NOT FOUND IN REMOTE.
+PR #3: untouched.
+Recovered bounded command compaction: present on this branch.
+CI: validates actual triggering HEAD, not hard-coded historical SHAs.
+Hardware A/B on final main SHA: REQUIRED before GPU performance claim is release-valid.
+Tested commit == Released commit: NO (pending final A/B).
