@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.DeviceInfo;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
+import dev.ultima.client.renderer.retained.RetainedVisibilityDebug;
 import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
@@ -153,6 +154,7 @@ public final class ClientFrameBenchmark {
             if (readyFrames == WARMUP_FRAMES) {
                 ClientOptimizationCounters.reset();
                 TerrainFrameMetrics.resetLifetime();
+                RetainedVisibilityDebug.reset();
             }
             return;
         }
@@ -542,7 +544,10 @@ public final class ClientFrameBenchmark {
                 .append("    \"firstSampleLiveCommands\": ").append(last.firstSampleLiveCommands()).append(",\n")
                 .append("    \"lastSampleTotalCommands\": ").append(last.lastSampleTotalCommands()).append(",\n")
                 .append("    \"lastSampleLiveCommands\": ").append(last.lastSampleLiveCommands()).append(",\n")
-                .append("    \"commandPopulationGrewWhileLiveBounded\": ").append(commandPopulationGrew(last)).append("\n")
+                .append("    \"commandPopulationGrewWhileLiveBounded\": ").append(commandPopulationGrew(last)).append(",\n")
+                .append("    \"a2VisibilityDebugEnabled\": ").append(RetainedVisibilityDebug.ENABLED).append(",\n")
+                .append("    \"a2SameFrameReentries\": ").append(RetainedVisibilityDebug.sameFrameReentries()).append(",\n")
+                .append("    \"a2OneFrameLateReentries\": ").append(RetainedVisibilityDebug.oneFrameLateReentries()).append("\n")
                 .append("  }");
     }
 
