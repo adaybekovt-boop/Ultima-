@@ -34,6 +34,33 @@ bash scripts/check.sh
 
 Built mod JARs appear in `build/libs/`.
 
+## Release-candidate defaults
+
+Ultima's modules are configured in `config/ultima.properties`.
+
+- Enabled by default (dedicated server, integrated server, and client physics):
+  `cursor_step`, `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
+  `supporting_block_shape_skip`, `full_cube_move`
+- Enabled by default on the client only (instrumentation / no visual change): `terrain_metrics`, `temporal`
+- Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
+  `retained_terrain`, `render_snapshot`, `java_mesher`, `section_task_queue`, `rgss_endpoint`
+- Opt-in instrumentation only: `client_benchmark`
+- Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
+  `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
+
+Lithium, Canary, and Radium automatically disable the overlapping collision/entity-index modules.
+Default-on client Mixins (`terrain_metrics`, `temporal`) auto-disable when Sodium, Iris, or Canvas
+is loaded. They do not change pixels. `retained_terrain` remains opt-in and also auto-off with those
+renderer mods.
+
+A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
+integrated-server / hitch work, not a GPU FPS claim. The only RTX 3090 FPS A/B on this project
+was of the three deleted client modules and was inconclusive (−0.28% average FPS). Do not
+advertise a client FPS gain until a GPU A/B of the current defaults exists. See
+`REAL_PERFORMANCE_REPORT.md`.
+
+The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
+
 ## Important
 
 The generated Minecraft sources under `.agent/` are local reference material only and are ignored by Git. Do not commit or redistribute them.

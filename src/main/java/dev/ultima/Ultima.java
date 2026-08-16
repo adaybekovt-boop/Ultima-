@@ -1,5 +1,6 @@
 package dev.ultima;
 
+import dev.ultima.config.UltimaConfig;
 import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,8 @@ public final class Ultima implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("Ultima initialized.");
+        LOGGER.info("Ultima initialized with {} of {} optimization modules enabled.",
+                UltimaConfig.get().enabledModuleCount(), UltimaConfig.get().knownModuleCount());
+        UltimaConfig.get().logResolvedModules();
     }
 }
