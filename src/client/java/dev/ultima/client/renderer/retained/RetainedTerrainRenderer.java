@@ -10,6 +10,7 @@ import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.vertex.CompactTerrainVertexFormat;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.lab.LabFeatureGates;
+import dev.ultima.visibility.IncrementalVisibility;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ public final class RetainedTerrainRenderer {
     private int frameCommandRebuilds;
     private int frameMetadataUpdates;
     private int frameOpaqueDraws;
+    private final IncrementalVisibility visibility = new IncrementalVisibility();
 
     public static RetainedTerrainRenderer get() {
         return INSTANCE;
@@ -87,6 +89,7 @@ public final class RetainedTerrainRenderer {
         this.currentlyVisible.clear();
         this.opaqueReady = false;
         this.failedOpen = false;
+        this.visibility.reset();
         RetainedTerrainPipelines.invalidate();
         RetainedTerrainCapabilities.invalidate();
     }
@@ -137,13 +140,34 @@ public final class RetainedTerrainRenderer {
             dispatcher.lock();
             try {
                 long now = Util.getMillis();
-                this.gpu.ensureSectionSlots(Math.max(1, this.sections.length));
+                int slotCount = Math.max(1, this.sections.length);
+                for (int i = 0; i < visibleSections.size(); i++) {
+                    slotCount = Math.max(slotCount, visibleSections.get(i).index + 1);
+                }
+                this.gpu.ensureSectionSlots(slotCount);
+                boolean incremental = UltimaConfig.get().isEnabled(LabFeatureGates.RETAINED_VISIBILITY);
+                if (incremental) {
+                    this.visibility.beginFrame(slotCount, false);
+                }
                 for (int i = 0; i < visibleSections.size(); i++) {
                     SectionRenderDispatcher.RenderSection section = visibleSections.get(i);
-                    this.captureOpaque(section, dispatcher, now);
+                    if (incremental) {
+                        this.visibility.markVanillaVisible(section.index);
+                    }
+                    RetainedSectionRecord record = this.recordFor(section);
+                    if (!incremental
+                            || this.visibility.needsOpaqueRecapture(section.index)
+                            || this.opaqueStateChanged(section, record, now)) {
+                        this.captureOpaque(section, dispatcher, now);
+                    } else {
+                        this.keepOpaqueVisible(record);
+                    }
                     largestIndexCount = Math.max(
                             largestIndexCount,
                             this.captureTranslucent(section, dispatcher, now, atlasW, atlasH, translucent, translucentInfos));
+                }
+                if (incremental) {
+                    this.visibility.commit();
                 }
             } finally {
                 dispatcher.unlock();
@@ -187,6 +211,43 @@ public final class RetainedTerrainRenderer {
             this.failOpen("submit", e);
         } finally {
             this.opaqueReady = false;
+        }
+    }
+
+    private boolean opaqueStateChanged(
+            final SectionRenderDispatcher.RenderSection section,
+            final RetainedSectionRecord record,
+            final long now) {
+        SectionMesh mesh = section.getSectionMesh();
+        int meshId = System.identityHashCode(mesh);
+        BlockPos origin = section.getRenderOrigin();
+        return record.sectionNode != section.getSectionNode()
+                || record.meshId != meshId
+                || record.originX != origin.getX()
+                || record.originY != origin.getY()
+                || record.originZ != origin.getZ()
+                || record.visibility != section.getVisibility(now);
+    }
+
+    private void keepOpaqueVisible(final RetainedSectionRecord record) {
+        record.visibleThisFrame = true;
+        if (record.solid.alive && record.solid.group != null) {
+            if (record.solid.instanceCount == 0) {
+                record.solid.group.setVisible(record.solid, true);
+            }
+            record.solid.seenThisFrame = true;
+            this.currentlyVisible.add(record.solid);
+            this.frameSectionLayers++;
+            this.frameOpaqueDraws++;
+        }
+        if (record.cutout.alive && record.cutout.group != null) {
+            if (record.cutout.instanceCount == 0) {
+                record.cutout.group.setVisible(record.cutout, true);
+            }
+            record.cutout.seenThisFrame = true;
+            this.currentlyVisible.add(record.cutout);
+            this.frameSectionLayers++;
+            this.frameOpaqueDraws++;
         }
     }
 

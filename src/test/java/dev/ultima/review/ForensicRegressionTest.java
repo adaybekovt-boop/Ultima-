@@ -50,6 +50,7 @@ public final class ForensicRegressionTest {
         DataMesherChecks.run();
         CompactVertexChecks.run();
         CommandCompactionChecks.run();
+        VisibilityChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 

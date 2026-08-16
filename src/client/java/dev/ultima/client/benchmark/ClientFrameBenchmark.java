@@ -10,6 +10,7 @@ import dev.ultima.config.UltimaConfig.ResolvedModule;
 import dev.ultima.command.CommandCompactionMetrics;
 import dev.ultima.meshing.MesherMetrics;
 import dev.ultima.vertex.CompactTerrainMetrics;
+import dev.ultima.visibility.VisibilityMetrics;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -278,6 +279,8 @@ public final class ClientFrameBenchmark {
         CompactTerrainMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
         CommandCompactionMetrics.snapshot().appendJson(json);
+        BenchmarkJson.comma(json);
+        VisibilityMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
         appendTemporalMetrics(json);
         BenchmarkJson.comma(json);
