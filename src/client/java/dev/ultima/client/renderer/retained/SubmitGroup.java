@@ -18,9 +18,9 @@ import org.jspecify.annotations.Nullable;
  * One persistent submit group: same layer, vertex buffer, and index buffer.
  * Indirect commands live on the GPU and are patched in place.
  *
- * <p>CPU swap-remove lives in {@link SubmitCommandList}. This class owns the
- * GPU command buffer. Hidden {@code instanceCount=0} records are kept; this
- * pass does not compact them.
+ * <p>CPU swap-remove lives in {@link SubmitCommandList}. Hidden commands are normally
+ * retained as {@code instanceCount=0}; bounded compaction may drop them only after an
+ * opaque render pass and replaces the GPU command buffer transactionally for the next frame.
  */
 final class SubmitGroup {
     static final int COMMAND_STRIDE = IndirectCommandPacking.STRIDE;
@@ -106,6 +106,53 @@ final class SubmitGroup {
         this.commands.clearStructureDirty();
     }
 
+    /**
+     * Apply the Prompt #2.4 bounded-growth policy after the render pass has closed.
+     * A replacement GPU buffer is created before CPU indices are compacted; only after
+     * compaction succeeds is the group pointer swapped and the old buffer retired.
+     * The replacement is filled from the compacted CPU list on the next frame's flush.
+     */
+    boolean compactAfterSubmitIfNeeded(final RetainedUploadMetrics metrics) {
+        if (!this.commands.shouldCompactBounded()) {
+            return false;
+        }
+
+        GpuBuffer replacement = null;
+        if (this.commands.liveDraws() > 0) {
+            replacement = this.createCommandBuffer(this.commands.liveDraws());
+        }
+
+        final GpuBuffer preparedReplacement = replacement;
+        try {
+            SubmitCommandList.CompactionResult result = this.commands.compactHidden(owner -> {
+                if (owner instanceof RetainedSectionRecord.LayerSlot slot && slot.group == this) {
+                    slot.group = null;
+                }
+            });
+            if (!result.compacted()) {
+                if (preparedReplacement != null) {
+                    preparedReplacement.close();
+                }
+                return false;
+            }
+
+            GpuBuffer old = this.gpuCommands;
+            this.gpuCommands = preparedReplacement;
+            this.commands.markAllDirty();
+            if (old != null) {
+                old.close();
+            }
+            metrics.bufferReallocs++;
+            metrics.commandBufferReallocs++;
+            return true;
+        } catch (RuntimeException error) {
+            if (preparedReplacement != null) {
+                preparedReplacement.close();
+            }
+            throw error;
+        }
+    }
+
     @Nullable GpuBufferSlice commandSlice() {
         if (this.gpuCommands == null || this.commands.count() <= 0) {
             return null;
@@ -156,18 +203,25 @@ final class SubmitGroup {
         if (this.gpuCommands != null && this.gpuCommands.size() >= neededBytes) {
             return;
         }
-        if (this.gpuCommands != null) {
-            this.gpuCommands.close();
+        GpuBuffer replacement = this.createCommandBuffer(this.commands.count());
+        GpuBuffer old = this.gpuCommands;
+        this.gpuCommands = replacement;
+        if (old != null) {
+            old.close();
         }
-        int alloc = Math.max(256 * COMMAND_STRIDE, Integer.highestOneBit(neededBytes - 1) << 1);
-        GpuDevice device = RenderSystem.getDevice();
-        this.gpuCommands = device.createBuffer(
-                () -> "Ultima retained indirect " + this.layer,
-                GpuBuffer.USAGE_INDIRECT_PARAMETERS | GpuBuffer.USAGE_COPY_DST,
-                alloc);
         metrics.bufferReallocs++;
         metrics.commandBufferReallocs++;
         this.commands.markAllDirty();
+    }
+
+    private GpuBuffer createCommandBuffer(final int commandCount) {
+        int neededBytes = Math.max(1, commandCount) * COMMAND_STRIDE;
+        int alloc = Math.max(256 * COMMAND_STRIDE, Integer.highestOneBit(neededBytes - 1) << 1);
+        GpuDevice device = RenderSystem.getDevice();
+        return device.createBuffer(
+                () -> "Ultima retained indirect " + this.layer,
+                GpuBuffer.USAGE_INDIRECT_PARAMETERS | GpuBuffer.USAGE_COPY_DST,
+                alloc);
     }
 
     void detachOwners() {
