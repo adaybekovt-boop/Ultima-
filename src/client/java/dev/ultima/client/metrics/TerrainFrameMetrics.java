@@ -178,6 +178,23 @@ public final class TerrainFrameMetrics {
         CPU.end(Phase.OPAQUE_SUBMIT);
     }
 
+    /**
+     * Close PREPARE after retained {@code prepareChunkRenders} cancels vanilla.
+     * The terrain_metrics {@code @At("RETURN")} hook does not run on that new
+     * return, so the mixin HEAD begin would otherwise leak depth=1.
+     */
+    public static void closeOpenPrepare() {
+        CPU.closeOpen(Phase.PREPARE);
+    }
+
+    /**
+     * Close OPAQUE_SUBMIT after retained {@code renderGroup(OPAQUE)} cancels
+     * vanilla. Same RETURN-vs-cancel pairing hole as {@link #closeOpenPrepare()}.
+     */
+    public static void closeOpenOpaqueSubmit() {
+        CPU.closeOpen(Phase.OPAQUE_SUBMIT);
+    }
+
     public static void recordOpaqueSubmitOutcome(final boolean succeeded, final boolean failOpen) {
         opaqueSubmitSucceeded = succeeded;
         if (failOpen) {

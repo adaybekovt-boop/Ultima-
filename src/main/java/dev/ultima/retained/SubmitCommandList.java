@@ -78,6 +78,10 @@ public final class SubmitCommandList {
         if (indexCount > this.maxIndexCount) {
             this.maxIndexCount = indexCount;
         }
+        // captureLayer calls this when a hidden slot's mesh changed. Geometry
+        // update alone left instanceCount=0 for one frame; restore visibility
+        // here so both the updateImmutable and setVisible branches draw.
+        this.setVisible(owner, true);
     }
 
     public void setVisible(final IndexedCommandOwner owner, final boolean visible) {

@@ -1,6 +1,7 @@
 package dev.ultima.mixin.retained_terrain;
 
 import com.mojang.blaze3d.textures.GpuSampler;
+import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedTerrainRenderer;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayerGroup;
 import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
@@ -21,6 +22,10 @@ public abstract class ChunkSectionsToRenderMixin {
             return;
         }
         if (renderer.submitOpaque(sampler)) {
+            // Cancellable cancel adds a return the priority-900 terrain_metrics
+            // @At("RETURN") hook never sees. Close the outer OPAQUE_SUBMIT
+            // interval here so ON-side CPU totals and pairing stay valid.
+            TerrainFrameMetrics.closeOpenOpaqueSubmit();
             ci.cancel();
         }
     }
