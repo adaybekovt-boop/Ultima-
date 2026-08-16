@@ -21,18 +21,33 @@ HARDWARE PERFORMANCE UNKNOWN
 Lab branch: `cursor/ultima-code-completion-lab-4423`
 (Cloud policy required the `-4423` suffix; do not push to `cursor/forensic-review-9efc`.)
 
+## Verification record (this host)
+
+| Item | Value |
+|---|---|
+| Java | 25.0.4 (Temurin) |
+| Minecraft | 26.2 |
+| Fabric Loader | 0.19.3 |
+| Base SHA | `93ce4292719ee161e3ce7d1e4cf0ca25d15d1c81` |
+| Final SHA | recorded at commit time; see git HEAD on this branch |
+| `scripts/check.sh` | PASS (`./gradlew --no-daemon build` + bench self-test) |
+| Real GPU A/B | NOT RUN |
+| Performance claim | NONE |
+
+Stage table build status below is **PASS** for that check. It is not a GPU runtime test.
+
 ---
 
 ## Stage table
 
 | Stage | Feature gate | Implementation status | Correctness status | Build status | Hardware A/B status | Merge eligibility |
 |---|---|---|---|---|---|---|
-| Lab gates / interfaces | *(registry only)* | IMPLEMENTED | PASS (gate tests) | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
-| A — data-oriented mesher | `data_mesher=false` | IMPLEMENTED | PASS (visit-plan + seed + equivalence rule). GPU tessellation byte dumps are **not** in this host | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
-| B — compact terrain vertices | `compact_terrain_vertices=false` | IMPLEMENTED | PASS (encode/decode, conversion, uber-align, fail-closed policy). GPU fetch/shader is **not** runtime-tested here | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
-| C — command compaction | `command_compaction=false` | IMPLEMENTED | PASS (pack oracle, policy, owner rewrite) | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
-| D — retained / incremental visibility | `retained_visibility=false` | IMPLEMENTED | PASS (bitset vs vanilla oracle, camera-path analog) | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
-| E — future GPU visibility interface | *(no gate; contract only)* | IMPLEMENTED (minimal) | PASS (mask copy / clip) | see `scripts/check.sh` | NOT TESTED | NO — pending hardware validation |
+| Lab gates / interfaces | *(registry only)* | IMPLEMENTED | PASS (gate tests) | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
+| A — data-oriented mesher | `data_mesher=false` | IMPLEMENTED | PASS (visit-plan + seed + equivalence rule). GPU tessellation byte dumps are **not** in this host | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
+| B — compact terrain vertices | `compact_terrain_vertices=false` | IMPLEMENTED | PASS (encode/decode, conversion, uber-align, fail-closed policy). GPU fetch/shader is **not** runtime-tested here | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
+| C — command compaction | `command_compaction=false` | IMPLEMENTED | PASS (pack oracle, policy, owner rewrite) | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
+| D — retained / incremental visibility | `retained_visibility=false` | IMPLEMENTED | PASS (bitset vs vanilla oracle, camera-path analog) | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
+| E — future GPU visibility interface | *(no gate; contract only)* | IMPLEMENTED (minimal) | PASS (mask copy / clip) | PASS (`scripts/check.sh`) | NOT TESTED | NO — pending hardware validation |
 | Temporal / DLSS | — | NOT MODIFIED | — | — | NOT TESTED | — |
 | Custom Vulkan backend | — | NOT ADDED | — | — | NOT TESTED | — |
 
