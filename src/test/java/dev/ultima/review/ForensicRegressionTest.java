@@ -45,6 +45,7 @@ public final class ForensicRegressionTest {
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
         testTemporalMathAndSettings();
+        RetainedFoundationChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 

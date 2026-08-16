@@ -252,7 +252,8 @@ Not restored: `client_chunk_matrix_reuse`, `client_chunk_layer_array_reuse`, `cl
 | E5 task queue | iterator.remove + spin | compact + park | same nearest/quota | n/a | n/a | n/a | n/a | n/a | fewer shifts | n/a | auto-off replacement renderers | **PENDING** |
 | E6 RGSS | always nearest+RGSS | endpoint early-out | exact at 0 and 1 | n/a | reject <3% | n/a | n/a | n/a | n/a | n/a | auto-off replacement renderers | **PENDING** |
 | E7 temporal Native | none | `temporal` default on | no pixel change; Native size=output | capture only | n/a | n/a | n/a | n/a | none | n/a | auto-off Sodium/Iris/Canvas | **KEEP** (architecture) |
-| E8 retained command reuse | refill every walk | fingerprint skip | same draws if set/mesh stable | n/a | n/a | n/a | n/a | n/a | fewer array writes | `commandBatchesReused` | same fail-open | **PENDING GPU A/B** |
+| E8 retained command reuse | refill every walk | fingerprint skip | same draws if set/mesh stable | n/a | n/a | n/a | n/a | n/a | fewer array writes | `commandBatchesReused` | same fail-open | **SUPERSEDED** by E9 |
+| E9 retained foundation | map/fence/DrawIDARB path that lost 35–47% FPS | persistent table + dirty writes + BaseInstance | compile/portability tests only | n/a | n/a | n/a | n/a | n/a | no map/unmap | persistent indirect | GL/VK shader variants | **REWORK** (no GPU A/B on this host) |
 
 ### Next measurement (GPU host)
 
@@ -279,6 +280,18 @@ Implemented the required temporal-ready layer **before** any DLSS/FSR work:
 Not implemented: DLSS/FSR backends, jitter, MV textures, Frame Generation, graphics-menu options.
 
 See `ULTIMA_TEMPORAL_ARCHITECTURE.md`.
+
+---
+
+## 15. Retained foundation rework (architecture; no new GPU A/B)
+
+Date: 2026-08-16. Still no discrete GPU.
+
+The prior RTX 3090 retained path is **not** this code. That path mapped a 256-record UBO, fence-waited a ring buffer, rewrote indirect commands every frame, and used `gl_DrawIDARB` (Vulkan compile failed). Stationary AVG FPS 328.86 → 213.60 (−34.50%); yaw n=6 381.33 → 202.77 (−46.70%).
+
+This rework replaces that with a persistent texel section table, persistent indirect commands, `writeToBuffer` dirty ranges, and `gl_BaseInstance` / `gl_BaseInstanceARB`. See `ULTIMA_FOUNDATION_REWORK_REPORT.md`.
+
+Verdict remains **REWORK** until a GPU host repeats the OpenGL and Vulkan A/Bs. No FPS number from this VM.
 
 ---
 

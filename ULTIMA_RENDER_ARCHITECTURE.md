@@ -89,18 +89,23 @@ A command slot is `(sectionIndex, layer ∈ {SOLID, CUTOUT})`:
 
 Slots are persistent arrays sized to `ViewArea.size()`. They are **not** allocated per draw per frame.
 
-Rebuild the GPU batch lists only when any slot in that `(layer, vertexBuffer, indexBuffer)` group was created, removed, or had mesh/offset change, or when the visible opaque set/order changed. Visibility-only and camera-only frames patch origin/visibility in the existing primitive arrays and skip recycle. `terrainMetrics.commandBatchesReused` records the skip.
+Each alive layer slot belongs to one persistent `SubmitGroup` (same layer + vertex buffer + index buffer). The group's indirect command buffer lives on the GPU.
+
+- Mesh / slice / group change → rewrite that command record (`firstIndex`, `indexCount`, `baseVertex`, `firstInstance = section.index`).
+- Frustum occupancy change → `instanceCount` 0/1 on the existing record only.
+- Camera / atlas change → shared `ChunkSection` header only.
+- `terrainMetrics.commandBatchesReused` is true when a frame had no immutable command rebuilds.
 
 ---
 
 ## 7. GPU metadata lifetime
 
-Two UBOs, both persistent/ringed:
+Persistent device-local buffers, updated with `CommandEncoder.writeToBuffer` dirty ranges. No `MappableRingBuffer`, no per-frame map/unmap, no fence wait on the happy path.
 
-1. **`ChunkSection`** (vanilla layout, **one record for the whole opaque pass**): `ModelViewMat`, unused fade/origin fields, `TextureSize`. Bound once.
-2. **`UltimaSectionBatch`**: `ivec4[BATCH]` packed `(origin.xyz, floatBitsToInt(visibility))`. Indexed by `gl_DrawID + gl_BaseInstance`.
+1. **`ChunkSection` header** (vanilla layout, one record for the whole opaque pass): `ModelViewMat`, unused fade/origin fields, `TextureSize`. Bound once. Skipped when matrix + atlas are unchanged.
+2. **`UltimaSectionTable`**: `USAGE_UNIFORM_TEXEL_BUFFER` + `RGBA32_SINT`, one texel per `ViewArea` slot, packed `(origin.xyz, floatBitsToInt(visibility))`. Indexed by `gl_BaseInstance` / `gl_BaseInstanceARB` (never `gl_DrawIDARB`). Only dirty slots are uploaded.
 
-Legacy fallback (no shader table): vanilla per-draw `ChunkSection` slices via retained `RenderPass.Draw` objects (still skip EnumMap churn when commands are stable). Used if pipelines fail.
+Fail-open: if pipelines fail to compile or a prepare/submit exception occurs, vanilla `prepareChunkRenders` runs unmodified.
 
 ---
 
@@ -135,25 +140,30 @@ Any throwable in prepare or submit: log, set `failedOpen=true`, return control t
 
 ## 11. OpenGL path
 
+Requires `shaderDrawParameters` plus either `drawIndirect` or `nonZeroFirstInstance`. Direct multi-draw modes that cannot supply per-draw `firstInstance` are not used.
+
 Capability order:
 
-1. `drawIndirect` + `multiDrawIndirect` → `drawIndexedIndirect` on a `USAGE_INDIRECT_PARAMETERS` buffer.
-2. Else `multiDrawDirectSeparate` → `multiDrawIndexed(PointerBuffer, counts, baseVertices, n)`.
-3. Else loop `drawIndexed` with `firstInstance = slot` (still one VAO / one batch UBO).
+1. `drawIndirect` + `multiDrawIndirect` → `drawIndexedIndirect` on a persistent `USAGE_INDIRECT_PARAMETERS` buffer.
+2. Else `drawIndirect` → one `drawIndexedIndirect` per command.
+3. Else `nonZeroFirstInstance` → loop `drawIndexed(..., firstInstance = section.index)`.
 
-Requires `GL_ARB_shader_draw_parameters` in the retained shader (`gl_DrawIDARB + gl_BaseInstanceARB`).
+Compile define `ULTIMA_GL_DRAW_PARAMETERS` enables `#extension GL_ARB_shader_draw_parameters` and `gl_BaseInstanceARB`.
+
+One command encoder. All `writeToBuffer` calls happen before `createRenderPass`. The opaque pass is the same single pass vanilla already creates for `ChunkSectionLayerGroup.OPAQUE`.
 
 ---
 
 ## 12. Vulkan path
 
-Same producer. Submit:
+Same producer and the same shader source. Vulkan compile does **not** set `ULTIMA_GL_DRAW_PARAMETERS`, so the shader uses core `gl_BaseInstance`. Minecraft's `GlslCompiler` remaps `gl_VertexID`/`gl_InstanceID` only; ARB-suffixed draw-parameter builtins are undefined and must not appear.
+
+Submit:
 
 1. `drawIndexedIndirect` if `drawIndirect` (and `multiDrawIndirect` when count > 1).
-2. Else `multiDrawDirectInterleaved` → `multiDrawIndexed(IntBuffer, ...)`.
-3. Else per-draw `drawIndexed` with `firstInstance`.
+2. Else per-draw `drawIndexed` with `firstInstance = section.index`.
 
-Do not add a second Vulkan device. Push-descriptor cost falls because `ChunkSection` is not rebound per section.
+Do not add a second Vulkan device. Header + section table are bound once per opaque pass.
 
 ---
 

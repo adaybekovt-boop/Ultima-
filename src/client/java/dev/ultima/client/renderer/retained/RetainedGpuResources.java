@@ -1,189 +1,178 @@
 package dev.ultima.client.renderer.retained;
 
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.Std140Builder;
+import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.util.BitSetRuns;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
+import java.util.BitSet;
 import net.minecraft.client.renderer.DynamicUniforms;
-import net.minecraft.client.renderer.MappableRingBuffer;
+import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.jspecify.annotations.Nullable;
-import org.lwjgl.vulkan.VkDrawIndexedIndirectCommand;
 
 /**
- * Persistent GPU rings for the shared ChunkSection header, per-batch tables,
- * and optional indirect commands.
+ * Persistent GPU section table and shared ChunkSection header.
+ * Updates use {@code writeToBuffer} dirty ranges — no map/unmap, no ring fences.
  */
 final class RetainedGpuResources implements AutoCloseable {
     static final int HEADER_BYTES = DynamicUniforms.CHUNK_SECTION_UBO_SIZE;
-    static final int INDIRECT_STRIDE = VkDrawIndexedIndirectCommand.SIZEOF;
-    private static final int HEADER_USAGE = GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE;
-    private static final int BATCH_USAGE = GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE;
-    private static final int INDIRECT_USAGE = GpuBuffer.USAGE_INDIRECT_PARAMETERS | GpuBuffer.USAGE_MAP_WRITE;
+    static final int SLOT_BYTES = 16;
+    static final GpuFormat TABLE_FORMAT = GpuFormat.RGBA32_SINT;
 
-    private @Nullable MappableRingBuffer headerRing;
-    private @Nullable MappableRingBuffer batchRing;
-    private @Nullable MappableRingBuffer indirectRing;
-    private final List<MappableRingBuffer> graveyard = new ArrayList<>();
-    private int batchRingSlots;
-    private int indirectRingSlots;
-    private int headerAlignment;
-    private int batchStride;
-    private int nextBatchSlot;
-    private int nextIndirectSlot;
+    private @Nullable GpuBuffer header;
+    private @Nullable GpuBuffer sectionTable;
+    private int[] tableCpu = new int[0];
+    private final BitSet tableDirty = new BitSet();
+    private int tableSlots;
+    private final Matrix4f lastHeaderView = new Matrix4f();
+    private int lastAtlasW = Integer.MIN_VALUE;
+    private int lastAtlasH = Integer.MIN_VALUE;
+    private boolean headerDirty = true;
+    final RetainedUploadMetrics metrics = new RetainedUploadMetrics();
+    final RetainedGpuTimers timers = new RetainedGpuTimers();
 
     void beginFrame() {
-        for (MappableRingBuffer old : this.graveyard) {
-            old.close();
+        this.metrics.reset();
+        this.timers.poll(this.metrics);
+    }
+
+    void ensureSectionSlots(final int slots) {
+        if (slots <= this.tableSlots) {
+            return;
         }
-        this.graveyard.clear();
+        int newSlots = Math.max(256, Integer.highestOneBit(slots - 1) << 1);
+        this.tableCpu = Arrays.copyOf(this.tableCpu, newSlots * 4);
+        if (this.sectionTable != null) {
+            this.sectionTable.close();
+            this.sectionTable = null;
+            this.metrics.bufferReallocs++;
+        }
         GpuDevice device = RenderSystem.getDevice();
-        this.headerAlignment = Math.max(1, device.getDeviceInfo().limits().minUniformOffsetAlignment());
-        this.batchStride = align(RetainedTerrainPipelines.BATCH_UBO_BYTES, this.headerAlignment);
-        if (this.headerRing == null) {
-            this.headerRing = new MappableRingBuffer(
-                    () -> "Ultima retained ChunkSection header",
-                    HEADER_USAGE,
-                    align(HEADER_BYTES, this.headerAlignment));
-        }
-        this.nextBatchSlot = 0;
-        this.nextIndirectSlot = 0;
-        if (this.batchRing != null) {
-            this.batchRing.rotate();
-        }
-        if (this.indirectRing != null) {
-            this.indirectRing.rotate();
-        }
-        this.headerRing.rotate();
+        this.sectionTable = device.createBuffer(
+                () -> "Ultima retained section table",
+                GpuBuffer.USAGE_UNIFORM_TEXEL_BUFFER | GpuBuffer.USAGE_COPY_DST,
+                (long)newSlots * SLOT_BYTES);
+        this.tableSlots = newSlots;
+        this.tableDirty.set(0, newSlots);
     }
 
-    GpuBufferSlice writeHeader(final Matrix4fc modelView, final int atlasWidth, final int atlasHeight) {
-        ensureHeader();
-        GpuBufferSlice slice = this.headerRing.currentBuffer().slice(0L, HEADER_BYTES);
-        try (GpuBufferSlice.MappedView view = slice.map(false, true)) {
-            ByteBuffer buffer = view.data();
-            buffer.order(ByteOrder.nativeOrder());
-            buffer.position(0);
-            Std140Builder.intoBuffer(buffer)
-                    .putMat4f(modelView)
-                    .putFloat(1.0F)
-                    .putIVec2(atlasWidth, atlasHeight)
-                    .putIVec3(0, 0, 0);
+    void markSection(final int slot, final int originX, final int originY, final int originZ, final float visibility) {
+        this.ensureSectionSlots(slot + 1);
+        int base = slot * 4;
+        int visBits = SectionPacking.visibilityBits(visibility);
+        if (this.tableCpu[base] == originX
+                && this.tableCpu[base + 1] == originY
+                && this.tableCpu[base + 2] == originZ
+                && this.tableCpu[base + 3] == visBits) {
+            return;
         }
-        return slice;
+        this.tableCpu[base] = originX;
+        this.tableCpu[base + 1] = originY;
+        this.tableCpu[base + 2] = originZ;
+        this.tableCpu[base + 3] = visBits;
+        this.tableDirty.set(slot);
     }
 
-    GpuBufferSlice writeBatch(final OpaqueDrawBatch batch) {
-        ensureBatchCapacity(this.nextBatchSlot + 1);
-        long offset = (long)this.nextBatchSlot * this.batchStride;
-        this.nextBatchSlot++;
-        GpuBufferSlice slice = this.batchRing.currentBuffer().slice(offset, RetainedTerrainPipelines.BATCH_UBO_BYTES);
-        try (GpuBufferSlice.MappedView view = slice.map(false, true)) {
-            ByteBuffer buffer = view.data();
-            buffer.order(ByteOrder.nativeOrder());
-            buffer.position(0);
-            for (int i = 0; i < RetainedTerrainPipelines.BATCH_SIZE; i++) {
-                if (i < batch.count) {
-                    buffer.putInt(batch.originX[i]);
-                    buffer.putInt(batch.originY[i]);
-                    buffer.putInt(batch.originZ[i]);
-                    buffer.putInt(SectionPacking.visibilityBits(batch.visibility[i]));
-                } else {
-                    buffer.putInt(0);
-                    buffer.putInt(0);
-                    buffer.putInt(0);
-                    buffer.putInt(SectionPacking.visibilityBits(1.0F));
-                }
-            }
+    boolean markHeader(final Matrix4fc modelView, final int atlasWidth, final int atlasHeight) {
+        if (!this.headerDirty
+                && this.lastAtlasW == atlasWidth
+                && this.lastAtlasH == atlasHeight
+                && this.lastHeaderView.equals(modelView, 0.0F)) {
+            return false;
         }
-        return slice;
+        this.lastHeaderView.set(modelView);
+        this.lastAtlasW = atlasWidth;
+        this.lastAtlasH = atlasHeight;
+        this.headerDirty = true;
+        return true;
     }
 
-    GpuBufferSlice writeIndirect(final OpaqueDrawBatch batch) {
-        int bytes = batch.count * INDIRECT_STRIDE;
-        ensureIndirectCapacity(this.nextIndirectSlot + batch.count);
-        long offset = (long)this.nextIndirectSlot * INDIRECT_STRIDE;
-        this.nextIndirectSlot += batch.count;
-        GpuBufferSlice slice = this.indirectRing.currentBuffer().slice(offset, bytes);
-        try (GpuBufferSlice.MappedView view = slice.map(false, true)) {
-            ByteBuffer buffer = view.data();
-            buffer.order(ByteOrder.nativeOrder());
-            buffer.position(0);
-            for (int i = 0; i < batch.count; i++) {
-                buffer.putInt(batch.indexCount[i]);
-                buffer.putInt(1);
-                buffer.putInt(batch.firstIndex[i]);
-                buffer.putInt(batch.baseVertex[i]);
-                buffer.putInt(0);
-            }
+    void flush(final CommandEncoder encoder) {
+        this.flushHeader(encoder);
+        this.flushSectionTable(encoder);
+    }
+
+    GpuBuffer headerBuffer() {
+        this.ensureHeader();
+        return this.header;
+    }
+
+    GpuBuffer sectionTableBuffer() {
+        this.ensureSectionSlots(1);
+        return this.sectionTable;
+    }
+
+    private void flushHeader(final CommandEncoder encoder) {
+        if (!this.headerDirty) {
+            return;
         }
-        return slice;
+        this.ensureHeader();
+        ByteBuffer data = ByteBuffer.allocateDirect(HEADER_BYTES).order(ByteOrder.nativeOrder());
+        Std140Builder.intoBuffer(data)
+                .putMat4f(this.lastHeaderView)
+                .putFloat(1.0F)
+                .putIVec2(this.lastAtlasW, this.lastAtlasH)
+                .putIVec3(0, 0, 0);
+        data.flip();
+        encoder.writeToBuffer(this.header.slice(0L, HEADER_BYTES), data);
+        this.metrics.writeToBufferCalls++;
+        this.metrics.metadataBytesWritten += HEADER_BYTES;
+        this.metrics.headerWrites++;
+        this.headerDirty = false;
+    }
+
+    private void flushSectionTable(final CommandEncoder encoder) {
+        if (this.sectionTable == null) {
+            return;
+        }
+        BitSetRuns.forEachRun(this.tableDirty, this.tableSlots, (from, to) -> {
+            int slots = to - from;
+            int bytes = slots * SLOT_BYTES;
+            ByteBuffer data = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder());
+            data.asIntBuffer().put(this.tableCpu, from * 4, slots * 4);
+            data.limit(bytes);
+            encoder.writeToBuffer(this.sectionTable.slice((long)from * SLOT_BYTES, bytes), data);
+            this.metrics.writeToBufferCalls++;
+            this.metrics.metadataBytesWritten += bytes;
+            this.metrics.sectionTableSlotsWritten += slots;
+            this.metrics.dirtyRanges++;
+        });
+        this.tableDirty.clear();
     }
 
     private void ensureHeader() {
-        if (this.headerRing == null) {
-            throw new IllegalStateException("beginFrame was not called");
-        }
-    }
-
-    private void ensureBatchCapacity(final int slots) {
-        if (this.batchRing != null && slots <= this.batchRingSlots) {
+        if (this.header != null) {
             return;
         }
-        int newSlots = Math.max(8, Integer.highestOneBit(Math.max(slots, 1) - 1) << 1);
-        if (this.batchRing != null) {
-            this.graveyard.add(this.batchRing);
-        }
-        this.batchRing = new MappableRingBuffer(
-                () -> "Ultima retained section batch UBO",
-                BATCH_USAGE,
-                newSlots * this.batchStride);
-        this.batchRingSlots = newSlots;
-        this.nextBatchSlot = 0;
-    }
-
-    private void ensureIndirectCapacity(final int commands) {
-        if (this.indirectRing != null && commands <= this.indirectRingSlots) {
-            return;
-        }
-        int newSlots = Math.max(256, Integer.highestOneBit(Math.max(commands, 1) - 1) << 1);
-        if (this.indirectRing != null) {
-            this.graveyard.add(this.indirectRing);
-        }
-        this.indirectRing = new MappableRingBuffer(
-                () -> "Ultima retained indirect commands",
-                INDIRECT_USAGE,
-                newSlots * INDIRECT_STRIDE);
-        this.indirectRingSlots = newSlots;
-        this.nextIndirectSlot = 0;
-    }
-
-    private static int align(final int size, final int alignment) {
-        return (size + alignment - 1) / alignment * alignment;
+        GpuDevice device = RenderSystem.getDevice();
+        this.header = device.createBuffer(
+                () -> "Ultima retained ChunkSection header",
+                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
+                HEADER_BYTES);
+        this.headerDirty = true;
+        this.metrics.bufferReallocs++;
     }
 
     @Override
     public void close() {
-        for (MappableRingBuffer old : this.graveyard) {
-            old.close();
+        this.timers.close();
+        if (this.header != null) {
+            this.header.close();
+            this.header = null;
         }
-        this.graveyard.clear();
-        if (this.headerRing != null) {
-            this.headerRing.close();
+        if (this.sectionTable != null) {
+            this.sectionTable.close();
+            this.sectionTable = null;
         }
-        if (this.batchRing != null) {
-            this.batchRing.close();
-        }
-        if (this.indirectRing != null) {
-            this.indirectRing.close();
-        }
-        this.headerRing = null;
-        this.batchRing = null;
-        this.indirectRing = null;
+        this.tableSlots = 0;
+        this.tableCpu = new int[0];
+        this.tableDirty.clear();
+        this.headerDirty = true;
     }
 }

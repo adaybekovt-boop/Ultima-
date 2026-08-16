@@ -60,8 +60,10 @@ public final class RetainedSectionRecord {
         public int indexCount;
         public int baseVertex;
         public int commandGeneration;
-        public int batchIndex = -1;
-        public int drawIndex = -1;
+        public @Nullable SubmitGroup group;
+        public int commandIndex = -1;
+        public int instanceCount;
+        public boolean seenThisFrame;
 
         public boolean capture(
                 final SectionMesh.SectionDraw draw,
@@ -102,6 +104,9 @@ public final class RetainedSectionRecord {
         }
 
         public void clear() {
+            if (this.group != null) {
+                this.group.remove(this);
+            }
             this.alive = false;
             this.meshId = 0;
             this.vertexBuffer = null;
@@ -111,8 +116,7 @@ public final class RetainedSectionRecord {
             this.indexCount = 0;
             this.baseVertex = 0;
             this.commandGeneration++;
-            this.batchIndex = -1;
-            this.drawIndex = -1;
+            this.instanceCount = 0;
         }
     }
 }

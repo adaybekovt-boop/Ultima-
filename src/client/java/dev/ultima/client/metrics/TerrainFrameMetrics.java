@@ -1,5 +1,6 @@
 package dev.ultima.client.metrics;
 
+import dev.ultima.client.renderer.retained.RetainedUploadMetrics;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -32,6 +33,24 @@ public final class TerrainFrameMetrics {
     private static boolean retainedActive;
     private static boolean commandBatchesReused;
     private static String submitMode = "vanilla";
+    private static int mapCalls;
+    private static int unmapCalls;
+    private static int writeToBufferCalls;
+    private static long metadataBytesWritten;
+    private static long commandBytesWritten;
+    private static int dirtyRanges;
+    private static int commandRecordsChanged;
+    private static int immutableCommandWrites;
+    private static int visibilityCommandWrites;
+    private static int bufferReallocs;
+    private static long fenceWaitNs;
+    private static long mapWaitNs;
+    private static int renderPasses;
+    private static int encoders;
+    private static int headerWrites;
+    private static int sectionTableSlotsWritten;
+    private static long gpuTerrainNs;
+    private static boolean gpuTimingSupported;
 
     private TerrainFrameMetrics() {
     }
@@ -50,6 +69,24 @@ public final class TerrainFrameMetrics {
         retainedActive = false;
         commandBatchesReused = false;
         submitMode = "vanilla";
+        mapCalls = 0;
+        unmapCalls = 0;
+        writeToBufferCalls = 0;
+        metadataBytesWritten = 0L;
+        commandBytesWritten = 0L;
+        dirtyRanges = 0;
+        commandRecordsChanged = 0;
+        immutableCommandWrites = 0;
+        visibilityCommandWrites = 0;
+        bufferReallocs = 0;
+        fenceWaitNs = 0L;
+        mapWaitNs = 0L;
+        renderPasses = 0;
+        encoders = 0;
+        headerWrites = 0;
+        sectionTableSlotsWritten = 0;
+        gpuTerrainNs = 0L;
+        gpuTimingSupported = false;
     }
 
     public static void beginPrepare() {
@@ -128,6 +165,27 @@ public final class TerrainFrameMetrics {
         commandBatchesReused = reused;
     }
 
+    public static void recordRetainedUploads(final RetainedUploadMetrics metrics) {
+        mapCalls = metrics.mapCalls;
+        unmapCalls = metrics.unmapCalls;
+        writeToBufferCalls = metrics.writeToBufferCalls;
+        metadataBytesWritten = metrics.metadataBytesWritten;
+        commandBytesWritten = metrics.commandBytesWritten;
+        dirtyRanges = metrics.dirtyRanges;
+        commandRecordsChanged = metrics.commandRecordsChanged;
+        immutableCommandWrites = metrics.immutableCommandWrites;
+        visibilityCommandWrites = metrics.visibilityCommandWrites;
+        bufferReallocs = metrics.bufferReallocs;
+        fenceWaitNs = metrics.fenceWaitNs;
+        mapWaitNs = metrics.mapWaitNs;
+        renderPasses = metrics.renderPasses;
+        encoders = metrics.encoders;
+        headerWrites = metrics.headerWrites;
+        sectionTableSlotsWritten = metrics.sectionTableSlotsWritten;
+        gpuTerrainNs = metrics.gpuTerrainNs;
+        gpuTimingSupported = metrics.gpuTimingSupported;
+    }
+
     public static boolean isCommandBatchesReused() {
         return commandBatchesReused;
     }
@@ -166,7 +224,25 @@ public final class TerrainFrameMetrics {
                 CHUNK_UPLOADS.get(),
                 retainedActive,
                 commandBatchesReused,
-                submitMode);
+                submitMode,
+                mapCalls,
+                unmapCalls,
+                writeToBufferCalls,
+                metadataBytesWritten,
+                commandBytesWritten,
+                dirtyRanges,
+                commandRecordsChanged,
+                immutableCommandWrites,
+                visibilityCommandWrites,
+                bufferReallocs,
+                fenceWaitNs,
+                mapWaitNs,
+                renderPasses,
+                encoders,
+                headerWrites,
+                sectionTableSlotsWritten,
+                gpuTerrainNs,
+                gpuTimingSupported);
     }
 
     public record Snapshot(
@@ -189,14 +265,32 @@ public final class TerrainFrameMetrics {
             long chunkUploads,
             boolean retainedActive,
             boolean commandBatchesReused,
-            String submitMode) {
+            String submitMode,
+            int mapCalls,
+            int unmapCalls,
+            int writeToBufferCalls,
+            long metadataBytesWritten,
+            long commandBytesWritten,
+            int dirtyRanges,
+            int commandRecordsChanged,
+            int immutableCommandWrites,
+            int visibilityCommandWrites,
+            int bufferReallocs,
+            long fenceWaitNs,
+            long mapWaitNs,
+            int renderPasses,
+            int encoders,
+            int headerWrites,
+            int sectionTableSlotsWritten,
+            long gpuTerrainNs,
+            boolean gpuTimingSupported) {
         public void appendJson(final StringBuilder json) {
             json.append("  \"terrainMetrics\": {\n")
                     .append("    \"prepareNs\": ").append(this.prepareNsAccum).append(",\n")
                     .append("    \"commandNs\": ").append(this.commandNsAccum).append(",\n")
                     .append("    \"submitNs\": ").append(this.submitNsAccum).append(",\n")
                     .append("    \"wholeFrameNs\": ").append(this.wholeFrameNs).append(",\n")
-                    .append("    \"gpuFrameNs\": ").append(this.gpuFrameNs).append(",\n")
+                    .append("    \"gpuFrameNs\": ").append(this.wholeFrameNs > 0L ? this.gpuFrameNs : this.gpuTerrainNs).append(",\n")
                     .append("    \"terrainDraws\": ").append(this.terrainDraws).append(",\n")
                     .append("    \"visibleSections\": ").append(this.visibleSections).append(",\n")
                     .append("    \"visibleSectionLayers\": ").append(this.visibleSectionLayers).append(",\n")
@@ -208,7 +302,25 @@ public final class TerrainFrameMetrics {
                     .append("    \"chunkUploads\": ").append(this.chunkUploads).append(",\n")
                     .append("    \"retainedActive\": ").append(this.retainedActive).append(",\n")
                     .append("    \"commandBatchesReused\": ").append(this.commandBatchesReused).append(",\n")
-                    .append("    \"submitMode\": \"").append(this.submitMode).append("\"\n")
+                    .append("    \"submitMode\": \"").append(this.submitMode).append("\",\n")
+                    .append("    \"mapCalls\": ").append(this.mapCalls).append(",\n")
+                    .append("    \"unmapCalls\": ").append(this.unmapCalls).append(",\n")
+                    .append("    \"writeToBufferCalls\": ").append(this.writeToBufferCalls).append(",\n")
+                    .append("    \"metadataBytesWritten\": ").append(this.metadataBytesWritten).append(",\n")
+                    .append("    \"commandBytesWritten\": ").append(this.commandBytesWritten).append(",\n")
+                    .append("    \"dirtyRanges\": ").append(this.dirtyRanges).append(",\n")
+                    .append("    \"commandRecordsChanged\": ").append(this.commandRecordsChanged).append(",\n")
+                    .append("    \"immutableCommandWrites\": ").append(this.immutableCommandWrites).append(",\n")
+                    .append("    \"visibilityCommandWrites\": ").append(this.visibilityCommandWrites).append(",\n")
+                    .append("    \"bufferReallocs\": ").append(this.bufferReallocs).append(",\n")
+                    .append("    \"fenceWaitNs\": ").append(this.fenceWaitNs).append(",\n")
+                    .append("    \"mapWaitNs\": ").append(this.mapWaitNs).append(",\n")
+                    .append("    \"renderPasses\": ").append(this.renderPasses).append(",\n")
+                    .append("    \"encoders\": ").append(this.encoders).append(",\n")
+                    .append("    \"headerWrites\": ").append(this.headerWrites).append(",\n")
+                    .append("    \"sectionTableSlotsWritten\": ").append(this.sectionTableSlotsWritten).append(",\n")
+                    .append("    \"gpuTerrainNs\": ").append(this.gpuTerrainNs).append(",\n")
+                    .append("    \"gpuTimingSupported\": ").append(this.gpuTimingSupported).append("\n")
                     .append("  }");
         }
     }

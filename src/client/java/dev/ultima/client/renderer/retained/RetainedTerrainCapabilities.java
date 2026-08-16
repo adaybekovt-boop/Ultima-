@@ -10,9 +10,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Detects whether the retained opaque path may run. Fail closed to vanilla.
  *
- * <p>Table indexing requires {@code shaderDrawParameters}. Without multi-draw,
- * indirect, or non-zero base instance, every draw would fetch slot 0 and the
- * image would be wrong, so the path stays off.
+ * <p>Table indexing uses {@code gl_BaseInstance} / {@code gl_BaseInstanceARB}
+ * (never {@code gl_DrawIDARB}). That requires {@code shaderDrawParameters}
+ * plus either indirect {@code firstInstance} or {@code nonZeroFirstInstance}.
  */
 public final class RetainedTerrainCapabilities {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-retained-terrain");
@@ -61,7 +61,7 @@ public final class RetainedTerrainCapabilities {
 
         cachedMode = modeFor(features);
         if ("unsupported".equals(cachedMode)) {
-            LOGGER.info("Retained terrain disabled: no multi-draw, indirect, or base-instance indexing.");
+            LOGGER.info("Retained terrain disabled: no indirect firstInstance or non-zero base instance.");
             return false;
         }
         LOGGER.info("Retained terrain submit mode: {}", cachedMode);
@@ -75,35 +75,12 @@ public final class RetainedTerrainCapabilities {
         return cachedMode;
     }
 
-    public static int maxDrawsPerBatch() {
-        GpuDevice device = RenderSystem.tryGetDevice();
-        int cap = RetainedTerrainPipelines.BATCH_SIZE;
-        if (device == null) {
-            return cap;
-        }
-        DeviceFeatures features = device.getDeviceInfo().features();
-        if (!features.multiDrawIndirect() && !features.drawIndirect() && !features.multiDrawDirectSeparate()
-                && features.multiDrawDirectInterleaved()) {
-            int limit = device.getDeviceInfo().limits().maxMultiDrawDirectInterleavedDrawCount();
-            if (limit > 0) {
-                cap = Math.min(cap, limit);
-            }
-        }
-        return Math.max(1, cap);
-    }
-
     private static String modeFor(final DeviceFeatures features) {
         if (features.drawIndirect() && features.multiDrawIndirect()) {
             return "indirect";
         }
         if (features.drawIndirect()) {
             return "indirect_single";
-        }
-        if (features.multiDrawDirectSeparate()) {
-            return "multidraw_separate";
-        }
-        if (features.multiDrawDirectInterleaved()) {
-            return "multidraw_interleaved";
         }
         if (features.nonZeroFirstInstance()) {
             return "base_instance_loop";
