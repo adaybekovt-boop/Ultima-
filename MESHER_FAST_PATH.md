@@ -90,11 +90,12 @@ Recorded on this cloud VM (not hardware A/B, **not an FPS claim**):
 
 | Snapshot | Oracle (min) | Fast path (min) | Vertices |
 |---|---|---|---|
-| solid 16³ | 0.333 ms | 0.255 ms | 6144 |
-| checkerboard | 1.480 ms | 1.506 ms | 49152 |
+| solid 16³ | 0.334 ms | 0.239 ms | 6144 |
+| checkerboard | 1.455 ms | 1.417 ms | 49152 |
 
-These numbers measure the Java cube kernel only. They are **not** a real FPS/GPU
-claim and require hardware A/B before any performance statement.
+These numbers measure the Java cube kernel only on this cloud VM and vary
+between runs. They are **not** a real FPS/GPU claim and require hardware A/B
+before any performance statement.
 
 ## License
 
