@@ -7,6 +7,7 @@ import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
+import dev.ultima.client.renderer.vertex.CompactTerrainVertexFormat;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.ArrayList;
@@ -232,7 +233,11 @@ public final class RetainedTerrainRenderer {
             return;
         }
         VertexFormat format = layer.pipeline().getVertexFormatBinding(0);
-        boolean meshChanged = slot.capture(draw, slice, format, meshId);
+        boolean meshChanged = slot.capture(
+                draw,
+                slice,
+                CompactTerrainVertexFormat.opaqueStride(format),
+                meshId);
         if (!slot.alive || slot.vertexBuffer == null) {
             this.hideSlot(slot);
             return;

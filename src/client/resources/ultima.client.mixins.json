@@ -21,6 +21,8 @@
     "render_snapshot.SectionCopyMixin",
     "java_mesher.SectionCompilerMixin",
     "data_mesher.SectionCompilerMixin",
+    "compact_terrain_vertices.SectionRenderDispatcherMixin",
+    "compact_terrain_vertices.RenderSectionMixin",
     "section_task_queue.SectionTaskAccessor",
     "section_task_queue.SectionTaskDynamicQueueMixin",
     "section_task_queue.CompileTaskMixin",

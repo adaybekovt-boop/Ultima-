@@ -9,14 +9,15 @@ import java.util.List;
  *
  * <pre>
  * data_mesher                  independent
- * compact_terrain_vertices     independent
+ * compact_terrain_vertices     requires retained_terrain (GPU upload). Independent of data_mesher.
  * command_compaction           requires retained_terrain
  * retained_visibility          requires retained_terrain
  * </pre>
  *
- * {@code compact_terrain_vertices} does not require {@code data_mesher}. When both
- * are on, the mesher may emit compact vertices directly; when only compact is on,
- * vanilla {@code MeshData} can be converted after compile.
+ * {@code compact_terrain_vertices} does not require {@code data_mesher}. GPU upload
+ * of compact vertices requires {@code retained_terrain} so vanilla TRANSLUCENT and
+ * retained fail-open keep the BLOCK stride. When only the codec is needed, tests
+ * exercise {@link dev.ultima.vertex.CompactTerrainVertex} without enabling the module.
  *
  * {@code data_mesher} does not require {@code java_mesher}. When both are requested,
  * {@code data_mesher} wins.

@@ -37,6 +37,7 @@ final class RetainedFoundationChecks {
         for (String relative : List.of(
                 "core/terrain_retained.vsh",
                 "core/terrain_retained.fsh",
+                "core/terrain_compact.vsh",
                 "include/section_table.glsl")) {
             String source = readShader(relative);
             if (source.contains("gl_DrawIDARB") || source.contains("gl_DrawID")) {
@@ -53,6 +54,16 @@ final class RetainedFoundationChecks {
         }
         if (!vertex.contains("#moj_import <ultima:section_table.glsl>")) {
             throw new AssertionError("retained vertex shader must import the section table");
+        }
+        String compact = readShader("core/terrain_compact.vsh");
+        if (!compact.contains("65535.0 / 1024.0") || !compact.contains("- 32.0")) {
+            throw new AssertionError("compact vertex shader must unpack UNORM16 local positions");
+        }
+        if (!compact.contains("GL_ARB_shader_draw_parameters")) {
+            throw new AssertionError("compact vertex shader must enable GL_ARB_shader_draw_parameters");
+        }
+        if (!compact.contains("#moj_import <ultima:section_table.glsl>")) {
+            throw new AssertionError("compact vertex shader must import the section table");
         }
     }
 

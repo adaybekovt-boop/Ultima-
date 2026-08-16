@@ -137,9 +137,11 @@ public final class UltimaModules {
                             + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("compact_terrain_vertices", false,
-                    "Experimental compact terrain vertex representation. Does not rewrite vanilla BLOCK format "
-                            + "in place. Independent of data_mesher (codec and optional conversion). "
-                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    "Experimental compact terrain vertex representation (20 bytes vs vanilla BLOCK 28). "
+                            + "Does not rewrite DefaultVertexFormat.BLOCK. GPU upload applies to retained SOLID/CUTOUT "
+                            + "only; TRANSLUCENT stays vanilla BLOCK. Requires retained_terrain. Independent of "
+                            + "data_mesher. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    List.of("retained_terrain"),
                     RENDERER_FAMILY),
             Module.client("command_compaction", false,
                     "Experimental retained command compaction: pack out zero-instance slots when dead ratio and "

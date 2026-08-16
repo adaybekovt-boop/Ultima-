@@ -48,6 +48,7 @@ public final class ForensicRegressionTest {
         RetainedFoundationChecks.run();
         LabGateChecks.run();
         DataMesherChecks.run();
+        CompactVertexChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 

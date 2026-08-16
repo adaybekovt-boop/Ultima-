@@ -8,6 +8,7 @@ import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import dev.ultima.meshing.MesherMetrics;
+import dev.ultima.vertex.CompactTerrainMetrics;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -272,6 +273,8 @@ public final class ClientFrameBenchmark {
         appendTerrainMetrics(json);
         BenchmarkJson.comma(json);
         MesherMetrics.snapshot().appendJson(json);
+        BenchmarkJson.comma(json);
+        CompactTerrainMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
         appendTemporalMetrics(json);
         BenchmarkJson.comma(json);

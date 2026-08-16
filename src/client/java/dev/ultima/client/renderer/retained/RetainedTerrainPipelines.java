@@ -8,6 +8,7 @@ import com.mojang.blaze3d.shaders.ShaderType;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.client.renderer.vertex.CompactTerrainVertexFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.ShaderManager;
@@ -23,6 +24,7 @@ import org.slf4j.LoggerFactory;
 public final class RetainedTerrainPipelines {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-retained-terrain");
     public static final Identifier SHADER = Identifier.fromNamespaceAndPath("ultima", "core/terrain_retained");
+    public static final Identifier COMPACT_SHADER = Identifier.fromNamespaceAndPath("ultima", "core/terrain_compact");
 
     public static final BindGroupLayout SECTION_TABLE = BindGroupLayout.builder()
             .withUniform("UltimaSectionTable", UniformType.TEXEL_BUFFER, GpuFormat.RGBA32_SINT)
@@ -72,7 +74,8 @@ public final class RetainedTerrainPipelines {
             return false;
         }
         ShaderManager shaders = minecraft.getShaderManager();
-        if (shaders.getShader(SHADER, ShaderType.VERTEX) == null
+        Identifier vertexShader = CompactTerrainVertexFormat.gpuPathEnabled() ? COMPACT_SHADER : SHADER;
+        if (shaders.getShader(vertexShader, ShaderType.VERTEX) == null
                 || shaders.getShader(SHADER, ShaderType.FRAGMENT) == null) {
             return false;
         }
@@ -81,15 +84,19 @@ public final class RetainedTerrainPipelines {
             compileBackend = device.getDeviceInfo().backendName();
             RenderPipeline.Builder solidBuilder = RenderPipeline.builder(RenderPipelines.TERRAIN_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath("ultima", "pipeline/solid_terrain_retained"))
-                    .withVertexShader(SHADER)
+                    .withVertexShader(vertexShader)
                     .withFragmentShader(SHADER)
                     .withBindGroupLayout(SECTION_TABLE);
             RenderPipeline.Builder cutoutBuilder = RenderPipeline.builder(RenderPipelines.TERRAIN_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath("ultima", "pipeline/cutout_terrain_retained"))
-                    .withVertexShader(SHADER)
+                    .withVertexShader(vertexShader)
                     .withFragmentShader(SHADER)
                     .withShaderDefine("ALPHA_CUTOUT", 0.5F)
                     .withBindGroupLayout(SECTION_TABLE);
+            if (CompactTerrainVertexFormat.gpuPathEnabled()) {
+                solidBuilder.withVertexBinding(0, CompactTerrainVertexFormat.FORMAT);
+                cutoutBuilder.withVertexBinding(0, CompactTerrainVertexFormat.FORMAT);
+            }
             if (opengl) {
                 solidBuilder.withShaderDefine("ULTIMA_GL_DRAW_PARAMETERS");
                 cutoutBuilder.withShaderDefine("ULTIMA_GL_DRAW_PARAMETERS");

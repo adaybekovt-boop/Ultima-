@@ -2,7 +2,6 @@ package dev.ultima.client.renderer.retained;
 
 import com.mojang.blaze3d.IndexType;
 import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.SectionMesh;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
@@ -68,7 +67,7 @@ public final class RetainedSectionRecord {
         public boolean capture(
                 final SectionMesh.SectionDraw draw,
                 final SectionRenderDispatcher.RenderSectionBufferSlice slice,
-                final VertexFormat vertexFormat,
+                final int vertexSize,
                 final int meshId) {
             GpuBuffer vertex = slice.vertexBuffer();
             GpuBuffer index = draw.hasCustomIndexBuffer() ? slice.indexBuffer() : null;
@@ -80,7 +79,7 @@ public final class RetainedSectionRecord {
                 }
                 firstIndex = (int)(slice.indexBufferOffset() / indexType.bytes);
             }
-            int baseVertex = (int)(slice.vertexBufferOffset() / vertexFormat.getVertexSize());
+            int baseVertex = (int)(slice.vertexBufferOffset() / vertexSize);
             boolean changed = !this.alive
                     || this.meshId != meshId
                     || this.vertexBuffer != vertex

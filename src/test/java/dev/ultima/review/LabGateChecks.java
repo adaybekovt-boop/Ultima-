@@ -43,8 +43,9 @@ final class LabGateChecks {
 
     private static void testDependencyGraph() {
         UltimaModules.Module compact = LabFeatureGates.require(LabFeatureGates.COMPACT_TERRAIN_VERTICES);
-        if (!compact.dependencies().isEmpty()) {
-            throw new AssertionError("compact_terrain_vertices must not require data_mesher or any other module");
+        if (!compact.dependencies().equals(List.of(LabFeatureGates.RETAINED_TERRAIN))) {
+            throw new AssertionError("compact_terrain_vertices GPU path requires retained_terrain, got "
+                    + compact.dependencies());
         }
         UltimaModules.Module mesher = LabFeatureGates.require(LabFeatureGates.DATA_MESHER);
         if (!mesher.dependencies().isEmpty()) {
