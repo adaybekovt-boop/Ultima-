@@ -14,6 +14,8 @@ final class CompactVertexChecks {
 
     static void run() {
         testStrideAndDependency();
+        testUberAlignPolicy();
+        testVanillaOpaqueFailClosed();
         testPositionRoundTrip();
         testExtremeLocalCoordinates();
         testUvAndLight();
@@ -39,6 +41,30 @@ final class CompactVertexChecks {
         UltimaModules.Module mesher = LabFeatureGates.require(LabFeatureGates.DATA_MESHER);
         if (compact.dependencies().contains(LabFeatureGates.DATA_MESHER) || !mesher.dependencies().isEmpty()) {
             throw new AssertionError("compact vertices must not require data_mesher");
+        }
+    }
+
+    private static void testUberAlignPolicy() {
+        if (CompactTerrainVertex.uberAlignSize("solid", 28) != CompactTerrainVertex.BYTES
+                || CompactTerrainVertex.uberAlignSize("cutout", 28) != CompactTerrainVertex.BYTES) {
+            throw new AssertionError("opaque vertex heaps must use compact stride");
+        }
+        if (CompactTerrainVertex.uberAlignSize("translucent", 28) != 28) {
+            throw new AssertionError("translucent vertex heaps must stay vanilla BLOCK");
+        }
+        if (CompactTerrainVertex.uberAlignSize("solid", 8) != 8
+                || CompactTerrainVertex.uberAlignSize("cutout", 8) != 8
+                || CompactTerrainVertex.uberAlignSize("translucent", 8) != 8) {
+            throw new AssertionError("index heaps must stay 8-byte aligned");
+        }
+    }
+
+    private static void testVanillaOpaqueFailClosed() {
+        if (CompactTerrainVertex.vanillaOpaqueDrawUnsafe(false)) {
+            throw new AssertionError("vanilla opaque is safe when compact GPU path is off");
+        }
+        if (!CompactTerrainVertex.vanillaOpaqueDrawUnsafe(true)) {
+            throw new AssertionError("vanilla opaque must be suppressed when compact GPU path is on");
         }
     }
 

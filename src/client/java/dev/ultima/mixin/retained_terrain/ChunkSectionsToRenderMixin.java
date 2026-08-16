@@ -2,6 +2,8 @@ package dev.ultima.mixin.retained_terrain;
 
 import com.mojang.blaze3d.textures.GpuSampler;
 import dev.ultima.client.renderer.retained.RetainedTerrainRenderer;
+import dev.ultima.client.renderer.vertex.CompactTerrainVertexFormat;
+import dev.ultima.vertex.CompactTerrainVertex;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayerGroup;
 import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,10 +19,13 @@ public abstract class ChunkSectionsToRenderMixin {
             return;
         }
         RetainedTerrainRenderer renderer = RetainedTerrainRenderer.get();
-        if (!renderer.isOpaqueReady()) {
+        if (renderer.isOpaqueReady()) {
+            renderer.submitOpaque(sampler);
+            ci.cancel();
             return;
         }
-        renderer.submitOpaque(sampler);
-        ci.cancel();
+        if (CompactTerrainVertex.vanillaOpaqueDrawUnsafe(CompactTerrainVertexFormat.gpuPathEnabled())) {
+            ci.cancel();
+        }
     }
 }

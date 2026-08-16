@@ -69,7 +69,9 @@ A future packed snapshot/region cache may introduce an explicit region id; until
 
 ## 4. Mesh lifetime
 
-Meshes remain vanilla `SectionMesh` in `UberGpuBuffer`. Ultima does not retesselate, restrip, or change vertex formats. A command slot stores vertex/index buffer **handles and offsets** from `getRenderSectionSlice`. If the slice is null (not uploaded), the slot is skipped this frame — same as vanilla.
+Meshes remain vanilla `SectionMesh` in `UberGpuBuffer`. The default retained path does not retesselate, restrip, or change vertex formats. A command slot stores vertex/index buffer **handles and offsets** from `getRenderSectionSlice`. If the slice is null (not uploaded), the slot is skipped this frame — same as vanilla.
+
+The isolated lab gate `compact_terrain_vertices` (default off) is the exception: SOLID/CUTOUT uber heaps become a 20-byte Ultima format and vanilla opaque is fail-closed if retained cannot submit. See `ULTIMA_CODE_COMPLETION_LAB.md`.
 
 ---
 
@@ -136,6 +138,8 @@ Fail-open: if pipelines fail to compile or a prepare/submit exception occurs, va
 
 Any throwable in prepare or submit: log, set `failedOpen=true`, return control to vanilla for that frame and subsequent frames until renderer reset. Never mutate world state. Never leave a half-bound render pass: submit uses try-with-resources `RenderPass` like vanilla.
 
+Exception: if `compact_terrain_vertices` is on, vanilla SOLID/CUTOUT heaps are not BLOCK-stride, so opaque is skipped instead of fail-opened. Translucent still uses vanilla.
+
 ---
 
 ## 11. OpenGL path
@@ -169,7 +173,7 @@ Do not add a second Vulkan device. Header + section table are bound once per opa
 
 ## 13. Shader compatibility boundary
 
-Owned shaders: `assets/ultima/shaders/core/terrain_retained.{vsh,fsh}` and `include/section_table.glsl`. Pixel math copies vanilla `core/terrain` except origin/fade fetch.
+Owned shaders: `assets/ultima/shaders/core/terrain_retained.{vsh,fsh}`, optional lab `core/terrain_compact.vsh`, and `include/section_table.glsl`. Pixel math copies vanilla `core/terrain` except origin/fade fetch (compact also unpacks UNORM16 positions).
 
 Vanilla `minecraft:core/terrain` is untouched so translucent, block items, and shader packs that rewrite vanilla files keep working.
 
@@ -186,8 +190,14 @@ Incompatible mods (`sodium`, `iris`, `canvas`): module auto-off via `UltimaModul
 | `section_task_queue` | off | Compact cancelled tasks; `LockSupport.parkNanos(50µs)` instead of `onSpinWait` | Same nearest-initial / recompile-quota selection |
 | `rgss_endpoint` | off | Fragment source rewrite of `sampleRGSS` endpoints only | Exact at blend 0 and 1; reject unless GPU ≥3% |
 | `temporal` | client **on** | Native passthrough temporal contract (current/previous VP, reset events). No pixel change. | Auto-off Sodium/Iris/Canvas. See `ULTIMA_TEMPORAL_ARCHITECTURE.md` |
+| `data_mesher` | off | Lab: packed 18³ snapshot + vanilla tessellators | Visit-plan tests; see `ULTIMA_CODE_COMPLETION_LAB.md` |
+| `compact_terrain_vertices` | off | Lab: 20-byte SOLID/CUTOUT vertices | Requires `retained_terrain`. Vanilla opaque fail-closed |
+| `command_compaction` | off | Lab: pack zero-instance retained commands | Requires `retained_terrain`. Thresholds are explicit |
+| `retained_visibility` | off | Lab: persist vanilla visible set, skip unchanged opaque recapture | Requires `retained_terrain`. Vanilla frustum remains oracle |
 
 Entity render-state arenas and extra simulation stay deferred until terrain is measured on a GPU.
+
+Isolated lab details, gates, and adversarial notes: `ULTIMA_CODE_COMPLETION_LAB.md`. Do not merge those gates without hardware A/B.
 
 ---
 

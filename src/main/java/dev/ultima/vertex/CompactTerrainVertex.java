@@ -177,4 +177,31 @@ public final class CompactTerrainVertex {
     public static ByteOrder nativeOrder() {
         return ByteOrder.nativeOrder();
     }
+
+    /**
+     * Uber-heap alignment for one {@code ChunkSectionLayer} buffer. Index heaps
+     * stay 8. TRANSLUCENT vertex heaps stay on vanilla BLOCK. SOLID/CUTOUT
+     * vertex heaps use the compact stride. Matching uses the layer label
+     * ({@code solid}/{@code cutout}/{@code translucent}), not heap creation
+     * order.
+     */
+    public static int uberAlignSize(final String layerLabel, final int vanillaAlignSize) {
+        if (vanillaAlignSize == 8) {
+            return 8;
+        }
+        if ("translucent".equals(layerLabel)) {
+            return vanillaAlignSize;
+        }
+        return BYTES;
+    }
+
+    /**
+     * Vanilla SOLID/CUTOUT pipelines fetch {@link #VANILLA_BLOCK_STRIDE}-byte
+     * vertices. Compact uber heaps store {@link #BYTES}-byte vertices, so a
+     * vanilla opaque draw would mis-fetch. When the compact GPU path is on,
+     * retained compact pipelines must submit, or opaque must be skipped.
+     */
+    public static boolean vanillaOpaqueDrawUnsafe(final boolean compactGpuPathEnabled) {
+        return compactGpuPathEnabled;
+    }
 }

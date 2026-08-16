@@ -16,7 +16,9 @@ import java.util.List;
  *
  * {@code compact_terrain_vertices} does not require {@code data_mesher}. GPU upload
  * of compact vertices requires {@code retained_terrain} so vanilla TRANSLUCENT and
- * retained fail-open keep the BLOCK stride. When only the codec is needed, tests
+ * retained fail-open keep the BLOCK stride. When the compact GPU path is on,
+ * vanilla opaque is fail-closed (skipped) if retained cannot submit, because
+ * SOLID/CUTOUT uber heaps are 20-byte. When only the codec is needed, tests
  * exercise {@link dev.ultima.vertex.CompactTerrainVertex} without enabling the module.
  *
  * {@code data_mesher} does not require {@code java_mesher}. When both are requested,

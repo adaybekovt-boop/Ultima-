@@ -71,7 +71,18 @@ public final class RetainedTerrainRenderer {
 
     public void failOpen(final String reason, final @Nullable Throwable error) {
         if (!this.failedOpen) {
-            if (error != null) {
+            if (CompactTerrainVertexFormat.gpuPathEnabled()) {
+                if (error != null) {
+                    LOGGER.warn(
+                            "Retained terrain failed; compact_terrain_vertices is on so opaque is skipped (vanilla SOLID/CUTOUT would mis-fetch 20-byte heaps): {}",
+                            reason,
+                            error);
+                } else {
+                    LOGGER.warn(
+                            "Retained terrain failed; compact_terrain_vertices is on so opaque is skipped (vanilla SOLID/CUTOUT would mis-fetch 20-byte heaps): {}",
+                            reason);
+                }
+            } else if (error != null) {
                 LOGGER.warn("Retained terrain failed open to vanilla: {}", reason, error);
             } else {
                 LOGGER.warn("Retained terrain failed open to vanilla: {}", reason);
