@@ -59,7 +59,10 @@ public final class CommandCompactionPolicy {
                     "invalid command counts total=" + totalCommands + " live=" + liveCommands);
         }
         int dead = totalCommands - liveCommands;
-        if (dead < this.minDead || totalCommands == 0) {
+        if (dead <= 0 || totalCommands == 0) {
+            return false;
+        }
+        if (dead < this.minDead) {
             return false;
         }
         return ((double)dead / (double)totalCommands) >= this.deadRatioThreshold;

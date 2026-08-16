@@ -8,6 +8,8 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.vertex.CompactTerrainVertexFormat;
+import dev.ultima.config.UltimaConfig;
+import dev.ultima.lab.LabFeatureGates;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.ArrayList;
@@ -148,6 +150,7 @@ public final class RetainedTerrainRenderer {
             }
 
             this.hideUnseenSlots();
+            this.compactCommandsIfEnabled();
             this.pruneDeadGroups();
             this.gpu.markHeader(this.headerModelView, atlasW, atlasH);
 
@@ -283,6 +286,15 @@ public final class RetainedTerrainRenderer {
         this.previouslyVisible = this.currentlyVisible;
         this.currentlyVisible = swap;
         this.currentlyVisible.clear();
+    }
+
+    private void compactCommandsIfEnabled() {
+        if (!UltimaConfig.get().isEnabled(LabFeatureGates.COMMAND_COMPACTION)) {
+            return;
+        }
+        for (int i = 0; i < this.groups.size(); i++) {
+            this.groups.get(i).compactIfNeeded();
+        }
     }
 
     private int captureTranslucent(

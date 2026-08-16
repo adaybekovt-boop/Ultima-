@@ -6,6 +6,10 @@ import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.command.CommandCompactionMetrics;
+import dev.ultima.command.CommandCompactor;
+import dev.ultima.lab.CommandCompactionPolicy;
+import dev.ultima.lab.CommandCompactionRuntime;
 import dev.ultima.util.BitSetRuns;
 import dev.ultima.util.IndirectCommandPacking;
 import java.nio.ByteBuffer;
@@ -145,6 +149,51 @@ final class SubmitGroup {
         slot.group = null;
         slot.commandIndex = -1;
         slot.instanceCount = 0;
+    }
+
+    boolean compactIfNeeded() {
+        CommandCompactionPolicy policy = CommandCompactionRuntime.policy();
+        if (!policy.shouldCompact(this.count, this.liveDraws)) {
+            return false;
+        }
+        long start = System.nanoTime();
+        CommandCompactor.Result result = CommandCompactor.compact(
+                this.count,
+                this.firstIndex,
+                this.indexCount,
+                this.baseVertex,
+                this.sectionSlot,
+                this.instanceCount,
+                this.owners,
+                (from, to) -> {
+                    if (to < 0) {
+                        RetainedSectionRecord.LayerSlot owner = this.owners[from];
+                        if (owner != null) {
+                            owner.group = null;
+                            owner.commandIndex = -1;
+                            owner.instanceCount = 0;
+                        }
+                    } else {
+                        RetainedSectionRecord.LayerSlot owner = this.owners[to];
+                        if (owner != null) {
+                            owner.commandIndex = to;
+                            owner.group = this;
+                        }
+                    }
+                },
+                this.dirty,
+                false);
+        this.count = result.commandsAfter();
+        this.liveDraws = this.count;
+        this.structureDirty = true;
+        this.maxIndexCount = 0;
+        for (int i = 0; i < this.count; i++) {
+            if (this.indexCount[i] > this.maxIndexCount) {
+                this.maxIndexCount = this.indexCount[i];
+            }
+        }
+        CommandCompactionMetrics.record(result, System.nanoTime() - start);
+        return result.compacted();
     }
 
     boolean hasLiveDraws() {
