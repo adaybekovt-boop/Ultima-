@@ -148,6 +148,22 @@ final class AuditStage1Checks {
         assertEquals(0, list.count(), "removing a hidden command empties the group");
         assertEquals(0, list.liveDraws(), "live count does not go negative");
         assertEquals(1, list.commandsRemoved(), "hidden removal is counted");
+
+        FakeOwner rebuilt = new FakeOwner("rebuilt");
+        list.add(rebuilt, 0, 36, 0, 4);
+        list.setVisible(rebuilt, false);
+        assertEquals(0, rebuilt.instanceCount, "hidden before mesh change");
+        assertEquals(0, list.liveDraws(), "hidden slot is not live");
+        list.updateImmutable(rebuilt, 8, 48, 2);
+        assertEquals(8, list.firstIndexAt(0), "geometry firstIndex updated");
+        assertEquals(48, list.indexCountAt(0), "geometry indexCount updated");
+        assertEquals(2, list.baseVertexAt(0), "geometry baseVertex updated");
+        assertEquals(1, list.instanceCountAt(0), "updateImmutable restores instanceCount");
+        assertEquals(1, rebuilt.instanceCount, "owner visibility is restored");
+        assertEquals(1, list.liveDraws(), "restored slot is live the same frame");
+        list.updateImmutable(rebuilt, 8, 48, 2);
+        assertEquals(1, list.instanceCountAt(0), "already-visible updateImmutable stays visible");
+        assertEquals(1, list.liveDraws(), "already-visible update does not double-count live");
     }
 
     private static void testCommandGrowthAccounting() {
@@ -251,6 +267,38 @@ final class AuditStage1Checks {
         assertEquals(2, cpu.begins(), "two begins");
         assertEquals(2, cpu.ends(), "two ends");
         assertTrue(cpu.pairingBalanced(), "nested pairing is balanced");
+
+        // ON-side retained cancel: mixin HEAD begins, retained self-times and
+        // ends, then cancellable inject returns without the metrics RETURN hook.
+        cpu.beginFrame();
+        cpu.begin(Phase.PREPARE);
+        cpu.begin(Phase.PREPARE);
+        cpu.begin(Phase.COMMAND);
+        clock.addAndGet(40);
+        cpu.end(Phase.COMMAND);
+        clock.addAndGet(10);
+        cpu.end(Phase.PREPARE);
+        assertFalse(cpu.pairingBalanced(), "skipped RETURN leaves PREPARE depth=1");
+        assertEquals(0, cpu.accumNs(Phase.PREPARE), "unclosed outer PREPARE does not accumulate");
+        cpu.closeOpen(Phase.PREPARE);
+        assertTrue(cpu.pairingBalanced(), "closeOpen after cancel balances PREPARE");
+        assertEquals(50, cpu.accumNs(Phase.PREPARE), "closeOpen records the outer PREPARE interval");
+        assertEquals(0, cpu.depth(Phase.PREPARE), "PREPARE depth returns to 0");
+        cpu.closeOpen(Phase.PREPARE);
+        assertTrue(cpu.pairingBalanced(), "closeOpen on a closed phase is a no-op");
+        assertEquals(50, cpu.accumNs(Phase.PREPARE), "no-op closeOpen does not add time");
+
+        cpu.begin(Phase.OPAQUE_SUBMIT);
+        cpu.begin(Phase.OPAQUE_SUBMIT);
+        clock.addAndGet(15);
+        cpu.end(Phase.OPAQUE_SUBMIT);
+        assertFalse(cpu.pairingBalanced(), "skipped RETURN leaves OPAQUE_SUBMIT depth=1");
+        assertEquals(0, cpu.accumNs(Phase.OPAQUE_SUBMIT), "unclosed outer OPAQUE_SUBMIT does not accumulate");
+        cpu.closeOpen(Phase.OPAQUE_SUBMIT);
+        assertTrue(cpu.pairingBalanced(), "closeOpen after cancel balances OPAQUE_SUBMIT");
+        assertEquals(15, cpu.accumNs(Phase.OPAQUE_SUBMIT), "closeOpen records the outer OPAQUE_SUBMIT interval");
+        assertEquals(65, cpu.totalCpuNs(), "ON-side total is prepare+opaque after cancel close");
+        assertEquals(0, cpu.pairingErrors(), "cancel-path close must not count as a pairing error");
     }
 
     private static void testHeaderLayout() {

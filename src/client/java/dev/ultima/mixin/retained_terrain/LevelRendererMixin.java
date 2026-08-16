@@ -1,5 +1,6 @@
 package dev.ultima.mixin.retained_terrain;
 
+import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedTerrainRenderer;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -38,6 +39,10 @@ public abstract class LevelRendererMixin {
                 this.sectionRenderDispatcher,
                 this.textureManager);
         if (built != null) {
+            // Cancellable setReturnValue adds a return the priority-900
+            // terrain_metrics @At("RETURN") hook never sees. Close the outer
+            // PREPARE interval here so ON-side CPU totals and pairing stay valid.
+            TerrainFrameMetrics.closeOpenPrepare();
             cir.setReturnValue(built);
         }
     }

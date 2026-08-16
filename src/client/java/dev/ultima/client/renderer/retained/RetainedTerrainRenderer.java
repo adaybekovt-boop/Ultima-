@@ -270,6 +270,7 @@ public final class RetainedTerrainRenderer {
             }
             if (slot.group == group) {
                 group.updateImmutable(slot);
+                group.setVisible(slot, true);
             } else {
                 group.add(slot, record.slot);
             }

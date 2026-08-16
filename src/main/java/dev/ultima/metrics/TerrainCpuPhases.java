@@ -84,6 +84,19 @@ public final class TerrainCpuPhases {
         }
     }
 
+    /**
+     * Close a phase that an outer mixin {@code @At("RETURN")} hook will never
+     * see. Retained prepare/submit cancel vanilla via a later-applied
+     * cancellable inject, so the metrics mixin's RETURN callbacks stay on the
+     * original return opcodes and do not run. Ending until depth is 0 records
+     * the outer interval and keeps {@link #pairingBalanced()} true.
+     */
+    public void closeOpen(final Phase phase) {
+        while (this.depth[phase.ordinal()] > 0) {
+            this.end(phase);
+        }
+    }
+
     public long lastNs(final Phase phase) {
         return this.lastNs[phase.ordinal()];
     }
