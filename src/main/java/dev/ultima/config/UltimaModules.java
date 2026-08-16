@@ -42,6 +42,15 @@ public final class UltimaModules {
                 final List<String> incompatibleMods) {
             return new Module(key, enabledByDefault, description, List.of(), incompatibleMods, true);
         }
+
+        public static Module client(
+                final String key,
+                final boolean enabledByDefault,
+                final String description,
+                final List<String> dependencies,
+                final List<String> incompatibleMods) {
+            return new Module(key, enabledByDefault, description, dependencies, incompatibleMods, true);
+        }
     }
 
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
@@ -120,6 +129,29 @@ public final class UltimaModules {
                     "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
                             + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
                             + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("data_mesher", false,
+                    "Experimental data-oriented section mesher: versioned 18^3 packed snapshot, direct local "
+                            + "indexing, worker scratch, vanilla tessellators. Independent of java_mesher; when both "
+                            + "are requested, data_mesher wins and java_mesher is skipped. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("compact_terrain_vertices", false,
+                    "Experimental compact terrain vertex representation. Does not rewrite vanilla BLOCK format "
+                            + "in place. Independent of data_mesher (codec and optional conversion). "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
+            Module.client("command_compaction", false,
+                    "Experimental retained command compaction: pack out zero-instance slots when dead ratio and "
+                            + "minimum dead count thresholds are met. Requires retained_terrain. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    List.of("retained_terrain"),
+                    RENDERER_FAMILY),
+            Module.client("retained_visibility", false,
+                    "Experimental CPU retained/incremental visibility: persist vanilla visible-section sets as a "
+                            + "bitset and apply deltas. Vanilla frustum remains the oracle. Requires retained_terrain. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                    List.of("retained_terrain"),
                     RENDERER_FAMILY));
 
     private UltimaModules() {
