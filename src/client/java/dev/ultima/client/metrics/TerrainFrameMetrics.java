@@ -1,6 +1,7 @@
 package dev.ultima.client.metrics;
 
 import dev.ultima.client.renderer.retained.RetainedUploadMetrics;
+import dev.ultima.meshing.MesherMetrics;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -320,7 +321,9 @@ public final class TerrainFrameMetrics {
                     .append("    \"headerWrites\": ").append(this.headerWrites).append(",\n")
                     .append("    \"sectionTableSlotsWritten\": ").append(this.sectionTableSlotsWritten).append(",\n")
                     .append("    \"gpuTerrainNs\": ").append(this.gpuTerrainNs).append(",\n")
-                    .append("    \"gpuTimingSupported\": ").append(this.gpuTimingSupported).append("\n")
+                    .append("    \"gpuTimingSupported\": ").append(this.gpuTimingSupported).append(",\n");
+            MesherMetrics.snapshot().appendJson(json);
+            json.append('\n')
                     .append("  }");
         }
     }

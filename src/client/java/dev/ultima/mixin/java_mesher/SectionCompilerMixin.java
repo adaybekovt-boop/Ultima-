@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.ultima.client.renderer.mesh.PackedSectionScan;
+import dev.ultima.config.UltimaConfig;
+import dev.ultima.lab.LabFeatureGates;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -92,6 +94,9 @@ public abstract class SectionCompilerMixin {
             final VertexSorting vertexSorting,
             final SectionBufferBuilderPack builders,
             final CallbackInfoReturnable<SectionCompiler.Results> cir) {
+        if (UltimaConfig.get().isEnabled(LabFeatureGates.DATA_MESHER)) {
+            return;
+        }
         SectionCompiler.Results results = new SectionCompiler.Results();
         BlockPos minPos = sectionPos.origin();
         VisGraph visGraph = new VisGraph();
