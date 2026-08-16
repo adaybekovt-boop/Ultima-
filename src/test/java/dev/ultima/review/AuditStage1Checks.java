@@ -2,6 +2,7 @@ package dev.ultima.review;
 
 import com.mojang.blaze3d.buffers.Std140Builder;
 import dev.ultima.config.UltimaModules;
+import dev.ultima.client.renderer.retained.GpuQueryRotationGuard;
 import dev.ultima.metrics.TerrainCpuPhases;
 import dev.ultima.metrics.TerrainCpuPhases.Phase;
 import dev.ultima.retained.CommandPopulation;
@@ -31,6 +32,7 @@ final class AuditStage1Checks {
         testVisibilitySequences();
         testCommandGrowthAccounting();
         testTerrainCpuTimingModel();
+        testGpuQueryRotationGuard();
         testHeaderLayout();
         testModuleClassification();
         System.out.println("Audit stage-1 regression checks passed.");
@@ -299,6 +301,27 @@ final class AuditStage1Checks {
         assertEquals(15, cpu.accumNs(Phase.OPAQUE_SUBMIT), "closeOpen records the outer OPAQUE_SUBMIT interval");
         assertEquals(65, cpu.totalCpuNs(), "ON-side total is prepare+opaque after cancel close");
         assertEquals(0, cpu.pairingErrors(), "cancel-path close must not count as a pairing error");
+    }
+
+    private static void testGpuQueryRotationGuard() {
+        boolean[] completed = new boolean[3];
+        assertFalse(
+                GpuQueryRotationGuard.canRead(completed, 1),
+                "an unwritten rotation must be skipped without reading a query object");
+        completed[1] = true;
+        assertTrue(
+                GpuQueryRotationGuard.canRead(completed, 1),
+                "only a rotation with a complete begin/end pair may be read");
+        completed[1] = false;
+        assertFalse(
+                GpuQueryRotationGuard.canRead(completed, 1),
+                "a rotation becomes unreadable again when its slot is reused");
+        assertFalse(
+                GpuQueryRotationGuard.canRead(completed, -1),
+                "negative rotation cannot address a query pair");
+        assertFalse(
+                GpuQueryRotationGuard.canRead(completed, completed.length),
+                "out-of-range rotation cannot address a query pair");
     }
 
     private static void testHeaderLayout() {
