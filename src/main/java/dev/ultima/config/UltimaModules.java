@@ -111,6 +111,14 @@ public final class UltimaModules {
             Module.client("java_mesher", false,
                     "Packed x-fastest section compile loop matching BlockPos.betweenClosed, with worker-owned "
                             + "scratch and tessellator reuse. Exact visit order. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded. "
+                            + "Skipped when mesher_fast_path is enabled.",
+                    RENDERER_FAMILY),
+            Module.client("mesher_fast_path", false,
+                    "Experimental hybrid mesher: unit-cube fast path from cached vanilla quads plus neighbor "
+                            + "occlusion masks, vanilla ModelBlockRenderer/FluidRenderer fallback otherwise. "
+                            + "Default off. Independent of retained_terrain and of java_mesher; when both "
+                            + "java_mesher and mesher_fast_path are requested, mesher_fast_path wins. "
                             + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("section_task_queue", false,
