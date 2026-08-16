@@ -1,8 +1,28 @@
 # REAL_PERFORMANCE_REPORT.md
 
-Date: 2026-08-15  
-Branch: `cursor/forensic-review-9efc`  
+Date: 2026-08-15 (server / JFR pass); KEEP addendum 2026-08-16  
+Branch: `cursor/forensic-review-9efc` merged to `main` via PR #2  
 Minecraft 26.2, Fabric Loader 0.19.3, Fabric API `0.156.0+26.2`, Java 25, Gradle 9.5.1, Ultima 0.1.0
+
+## KEEP addendum (Prompt #2.1–2.4, real GPU A/B)
+
+Verdict: **KEEP**. Hardware-validated. This supersedes the “no GPU FPS claim” /
+`>=25% REAL AVG FPS: FAIL` closing block below, which described the earlier
+host that had no discrete GPU.
+
+| Scene | Verdict |
+|---|---|
+| Stationary | KEEP (valid, statistically proven) |
+| Yaw sweep | KEEP (valid, statistically proven) |
+| Chunk-flight (final / most demanding) | **+27.85% avg FPS**, **+12.87% 1% low** |
+
+Reported with the KEEP pass: 0 crashes, 0 errors, visual parity PASS; bounded
+command compaction stopped hidden-command growth on a route three times the
+test length.
+
+PR #3 experimental lab was **not** merged.
+
+---
 
 This pass exists to produce a **measurable** improvement on real work, not a prettier allocation counter. Previous vanilla-terrain client micro-opts were deleted when an RTX 3090 A/B showed no useful FPS gain. The work that remains was chosen from Java Flight Recorder on a running 26.2 server, then kept or rejected with paired A/B.
 
@@ -299,7 +319,7 @@ Verdict remains **REWORK** until a GPU host repeats the OpenGL and Vulkan A/Bs. 
 
 REAL PERFORMANCE PASS COMPLETE
 
-ACCEPTED CLIENT OPTIMIZATIONS: 0 shipped (retained terrain is opt-in / unmeasured)
+ACCEPTED CLIENT OPTIMIZATIONS: retained foundation KEEP (opt-in `retained_terrain`; see KEEP addendum)
 
 ACCEPTED SIMULATION OPTIMIZATIONS: 6
 
@@ -336,7 +356,9 @@ VISUAL PARITY: FAIL OPEN TO VANILLA (no screenshot pair this host)
 
 STABILITY: `scripts/check.sh` BUILD SUCCESSFUL
 
->=25% REAL AVG FPS: FAIL
+>=25% REAL AVG FPS: FAIL on this measurement host (no discrete GPU).
+Superseded by KEEP addendum: chunk-flight **+27.85% avg FPS** / **+12.87% 1% low**
+on real hardware (Prompt #2.1–2.4).
 
 TARGET >=5% AVG FPS OR >=10% TERRAIN PREP CPU (prototype keep): NOT MEASURED
 

@@ -54,10 +54,15 @@ is loaded. They do not change pixels. `retained_terrain` remains opt-in and also
 renderer mods.
 
 A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
-integrated-server / hitch work, not a GPU FPS claim. The only RTX 3090 FPS A/B on this project
-was of the three deleted client modules and was inconclusive (−0.28% average FPS). Do not
-advertise a client FPS gain until a GPU A/B of the current defaults exists. See
-`REAL_PERFORMANCE_REPORT.md`.
+integrated-server / hitch work, not a GPU FPS claim.
+
+Real GPU A/B of the retained foundation (Prompt #2.1–2.4) is **KEEP**:
+stationary, yaw sweep, and chunk-flight all valid. Chunk-flight (the most demanding
+scene): **+27.85% average FPS**, **+12.87% 1% low**, 0 crashes, 0 errors, visual
+parity PASS. See `CHANGELOG.md` and `REAL_PERFORMANCE_REPORT.md`.
+
+`retained_terrain` stays **opt-in** (default off). Experimental lab PR #3 is not in
+`main` and stays draft / default off.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 
