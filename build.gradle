@@ -93,11 +93,20 @@ tasks.register("forensicRegressionTest", JavaExec) {
     mainClass = "dev.ultima.review.ForensicRegressionTest"
 }
 
+tasks.register("commandCompactionRecoveryTest", JavaExec) {
+    group = "verification"
+    description = "Runs pure regression checks for the recovered bounded retained-command compaction contract."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.CommandCompactionRecoveryTest"
+}
+
 test {
     failOnNoDiscoveredTests = false
 }
 
 check.dependsOn forensicRegressionTest
+check.dependsOn commandCompactionRecoveryTest
 
 java {
     withSourcesJar()
