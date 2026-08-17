@@ -155,6 +155,7 @@ final class SubmitGroup {
             }
             metrics.bufferReallocs++;
             metrics.commandBufferReallocs++;
+            RetainedCompactionDebug.recordSuccessfulCompaction();
             return true;
         } catch (RuntimeException error) {
             if (preparedReplacement != null) {

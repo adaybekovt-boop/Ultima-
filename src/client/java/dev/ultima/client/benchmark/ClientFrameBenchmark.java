@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedVisibilityDebug;
+import dev.ultima.client.renderer.retained.RetainedCompactionDebug;
 import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
@@ -155,6 +156,7 @@ public final class ClientFrameBenchmark {
                 ClientOptimizationCounters.reset();
                 TerrainFrameMetrics.resetLifetime();
                 RetainedVisibilityDebug.reset();
+                RetainedCompactionDebug.reset();
             }
             return;
         }
@@ -547,7 +549,9 @@ public final class ClientFrameBenchmark {
                 .append("    \"commandPopulationGrewWhileLiveBounded\": ").append(commandPopulationGrew(last)).append(",\n")
                 .append("    \"a2VisibilityDebugEnabled\": ").append(RetainedVisibilityDebug.ENABLED).append(",\n")
                 .append("    \"a2SameFrameReentries\": ").append(RetainedVisibilityDebug.sameFrameReentries()).append(",\n")
-                .append("    \"a2OneFrameLateReentries\": ").append(RetainedVisibilityDebug.oneFrameLateReentries()).append("\n")
+                .append("    \"a2OneFrameLateReentries\": ").append(RetainedVisibilityDebug.oneFrameLateReentries()).append(",\n")
+                .append("    \"compactionDebugEnabled\": ").append(RetainedCompactionDebug.ENABLED).append(",\n")
+                .append("    \"successfulCompactions\": ").append(RetainedCompactionDebug.successfulCompactions()).append("\n")
                 .append("  }");
     }
 
