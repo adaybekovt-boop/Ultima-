@@ -14,10 +14,13 @@ package dev.ultima.meshing;
  * <ul>
  *   <li>Vanilla {@code SingleVariant} whose baked part is exactly one
  *       axis-aligned opaque unit-cube quad per {@code Direction} and no
- *       unculled quads (typical {@code cube}/{@code cube_all}/
- *       {@code cube_bottom_top}/{@code cube_column}: stone, dirt, ores,
- *       planks, wool, concrete, terracotta, sand, gravel, netherrack,
- *       glowstone, grass_block if it stays a 6-quad cube).</li>
+ *       unculled quads. The cache is keyed by {@code BlockState} identity, so
+ *       furnace facing, log axis, and other property cubes are distinct
+ *       entries of the <em>same</em> geometric rule.</li>
+ *   <li>Vanilla {@code WeightedVariants} whose <em>every</em> alternative is
+ *       such a {@code SingleVariant} unit cube (26.2 stone/dirt/deepslate/sand
+ *       random rotations). The alternative is picked with vanilla
+ *       {@code BlockState.getSeed(pos)} + {@code WeightedList.getRandomOrThrow}.</li>
  *   <li>Neighbor occlusion via vanilla {@code Block.shouldRenderFace}.</li>
  *   <li>Lighting/AO/tint via vanilla {@code BlockModelLighter} and
  *       {@code BlockColors} on those cached quads.</li>
@@ -30,7 +33,8 @@ package dev.ultima.meshing;
  *   <li>Non-{@code RenderShape.MODEL} blocks.</li>
  *   <li>Any quad on {@code ChunkSectionLayer.TRANSLUCENT} (glass, stained
  *       glass, ice, slime, honey, tinted glass).</li>
- *   <li>{@code WeightedVariants}, multipart, non-{@code SingleVariant}.</li>
+ *   <li>{@code MultiPartModel} (fences, bamboo, redstone, mushrooms).</li>
+ *   <li>Weighted families that are not 6-quad cubes (grass overlay, dirt path).</li>
  *   <li>Non-unit-cube geometry (stairs, slabs, plants, rails, chests).</li>
  *   <li>Offset functions (flowers, ferns).</li>
  *   <li>{@code LeavesBlock} / {@code forceOpaque}.</li>
@@ -44,14 +48,17 @@ public final class FastPathCriteria {
     }
 
     public enum Reason {
-        FAST_PATH_UNIT_CUBE("simple opaque unit-cube SingleVariant; geometry from cached vanilla quads"),
+        FAST_PATH_UNIT_CUBE("opaque unit-cube SingleVariant for this BlockState; geometry from cached vanilla quads"),
+        FAST_PATH_WEIGHTED_UNIT_CUBE("opaque unit-cube WeightedVariants; pick with vanilla BlockState seed"),
         AIR("air is skipped, matching vanilla SectionCompiler"),
         HAS_FLUID("fluid tessellation always uses FluidRenderer"),
         NOT_MODEL("RenderShape is not MODEL"),
         HAS_OFFSET("block offset function is non-null"),
         SKIP_RENDERING("LeavesBlock / forceOpaque; never fast-pathed"),
         TRANSLUCENT_LAYER("translucent render layer (glass/ice/slime); always vanilla"),
-        NOT_SINGLE_VARIANT("model is not vanilla SingleVariant (weighted/multipart/modded)"),
+        NOT_SINGLE_VARIANT("model is not a seed-stable or weighted unit-cube family"),
+        WEIGHTED_NON_CUBE("WeightedVariants whose alternatives are not all 6-quad unit cubes"),
+        MULTIPART_MODEL("multipart / connected-state model; always vanilla"),
         UNCULLED_QUADS("model emits unculled quads"),
         FACE_QUAD_COUNT("a culled face does not have exactly one quad"),
         NOT_UNIT_CUBE_FACE("a culled quad is not an axis-aligned unit-cube face"),
@@ -73,6 +80,10 @@ public final class FastPathCriteria {
         public boolean countsAsNonAirCompile() {
             return this != AIR;
         }
+
+        public boolean fastPath() {
+            return this == FAST_PATH_UNIT_CUBE || this == FAST_PATH_WEIGHTED_UNIT_CUBE;
+        }
     }
 
     public record Result(Decision decision, Reason reason) {
@@ -82,6 +93,10 @@ public final class FastPathCriteria {
 
         public static Result admitted() {
             return new Result(Decision.FAST_PATH, Reason.FAST_PATH_UNIT_CUBE);
+        }
+
+        public static Result admittedWeighted() {
+            return new Result(Decision.FAST_PATH, Reason.FAST_PATH_WEIGHTED_UNIT_CUBE);
         }
 
         public static Result fallback(final Reason reason) {
@@ -119,6 +134,9 @@ public final class FastPathCriteria {
     }
 
     public static Result fromFixtureState(final int stateId) {
+        if (stateId == SectionFixtures.WEIGHTED_CUBE) {
+            return Result.admittedWeighted();
+        }
         if (SectionFixtures.fixtureAllowsFastPath(stateId)) {
             Result fromFlags = fromFlags(SectionFixtures.flags(stateId));
             if (fromFlags.fastPath()) {
@@ -130,8 +148,9 @@ public final class FastPathCriteria {
             case SectionFixtures.FLUID -> Result.fallback(Reason.HAS_FLUID);
             case SectionFixtures.LEAVES -> Result.fallback(Reason.SKIP_RENDERING);
             case SectionFixtures.TRANSPARENT -> Result.fallback(Reason.TRANSLUCENT_LAYER);
-            case SectionFixtures.RANDOM -> Result.fallback(Reason.NOT_SINGLE_VARIANT);
-            case SectionFixtures.STAIRS, SectionFixtures.SLAB, SectionFixtures.FENCE, SectionFixtures.PLANT, SectionFixtures.CUTOUT ->
+            case SectionFixtures.RANDOM, SectionFixtures.GRASS_OVERLAY -> Result.fallback(Reason.WEIGHTED_NON_CUBE);
+            case SectionFixtures.FENCE -> Result.fallback(Reason.MULTIPART_MODEL);
+            case SectionFixtures.STAIRS, SectionFixtures.SLAB, SectionFixtures.PLANT, SectionFixtures.CUTOUT ->
                     Result.fallback(Reason.NOT_UNIT_CUBE_FACE);
             case SectionFixtures.BLOCK_ENTITY -> Result.admitted();
             default -> fromFlags(SectionFixtures.flags(stateId));

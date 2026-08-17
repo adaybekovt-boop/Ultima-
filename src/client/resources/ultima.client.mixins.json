@@ -21,6 +21,7 @@
     "render_snapshot.SectionCopyMixin",
     "java_mesher.SectionCompilerMixin",
     "mesher_fast_path.SectionCompilerMixin",
+    "mesher_fast_path.WeightedVariantsAccessor",
     "section_task_queue.SectionTaskAccessor",
     "section_task_queue.SectionTaskDynamicQueueMixin",
     "section_task_queue.CompileTaskMixin",

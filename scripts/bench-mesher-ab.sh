@@ -80,7 +80,7 @@ if [[ "$DRY_RUN" == 1 ]]; then
   for scene in "${scenes[@]}"; do
     echo "----- ${scene} -----"
     echo "  camera=$(camera_for "$scene") warmup=$(warmup_for "$scene") sample=$(sample_for "$scene")"
-    echo "  metrics: meshBuildNs meshBuildNsPerSection sectionsPerSecond fastPathCoverageOfNonAir fallbackByReason meshFastPathFailures meshFastPathCircuitBreakerTrips"
+    echo "  metrics: meshBuildNs meshBuildNsPerSection sectionsPerSecond fastPathCoverageOfNonAir weightedFastPathBlocks fallbackByReason meshFastPathFailures meshFastPathCircuitBreakerTrips"
     echo "  off: SCENE=${scene} FORCE_MODULES=mesher_fast_path=false,retained_terrain=false"
     echo "  on:  SCENE=${scene} FORCE_MODULES=mesher_fast_path=true,retained_terrain=false"
   done

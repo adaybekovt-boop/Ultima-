@@ -80,8 +80,9 @@ only.
 
 `fastPathCoverageOfNonAir` is the honest “how much of a real world we
 accelerate” number: fast-path blocks / non-air compiled blocks, with
-`fallbackByReason` (translucent, complex model, offset, circuit-breaker,
-section fail-open, …).
+`weightedFastPathBlocks` (26.2 stone/dirt/deepslate-style families) and
+`fallbackByReason` (translucent, weighted non-cube, multipart, offset,
+circuit-breaker, section fail-open, …).
 
 ## Summarizer
 

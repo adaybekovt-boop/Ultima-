@@ -26,6 +26,14 @@ public final class SectionFixtures {
     public static final int ANIMATED = 14;
     public static final int TINT_FOLIAGE = 15;
     public static final int TINT_WATER = 16;
+    /** 26.2 stone/dirt/deepslate: WeightedVariants of unit cubes. */
+    public static final int WEIGHTED_CUBE = 17;
+    /** Log/pillar axis cube: SingleVariant per BlockState. */
+    public static final int AXIS_CUBE = 18;
+    /** Furnace-style facing cube: SingleVariant per BlockState. */
+    public static final int FACING_CUBE = 19;
+    /** Grass-block overlay: WeightedVariants that are not 6-quad cubes. */
+    public static final int GRASS_OVERLAY = 20;
 
     private SectionFixtures() {
     }
@@ -33,11 +41,11 @@ public final class SectionFixtures {
     public static int flags(final int stateId) {
         return switch (stateId) {
             case AIR -> BlockRenderFlags.pack(true, false, false, false, false, false, true, false);
-            case FULL_CUBE, LIGHT, TINT, ANIMATED, TINT_FOLIAGE, TINT_WATER ->
+            case FULL_CUBE, LIGHT, TINT, ANIMATED, TINT_FOLIAGE, TINT_WATER, WEIGHTED_CUBE, AXIS_CUBE, FACING_CUBE ->
                     BlockRenderFlags.pack(false, true, false, false, true, true, false, false);
             case CUTOUT -> BlockRenderFlags.pack(false, false, false, false, true, false, false, false);
             case LEAVES -> BlockRenderFlags.pack(false, false, false, false, true, false, true, true);
-            case PLANT, STAIRS, SLAB, FENCE, RANDOM ->
+            case PLANT, STAIRS, SLAB, FENCE, RANDOM, GRASS_OVERLAY ->
                     BlockRenderFlags.pack(false, false, false, false, true, false, false, false);
             case FLUID -> BlockRenderFlags.pack(false, false, false, true, false, false, true, false);
             case TRANSPARENT -> BlockRenderFlags.pack(false, false, false, false, true, false, true, false, true);
@@ -48,7 +56,8 @@ public final class SectionFixtures {
 
     public static boolean fixtureAllowsFastPath(final int stateId) {
         return switch (stateId) {
-            case FULL_CUBE, TINT, LIGHT, BLOCK_ENTITY, ANIMATED, TINT_FOLIAGE, TINT_WATER -> true;
+            case FULL_CUBE, TINT, LIGHT, BLOCK_ENTITY, ANIMATED, TINT_FOLIAGE, TINT_WATER,
+                    WEIGHTED_CUBE, AXIS_CUBE, FACING_CUBE -> true;
             default -> false;
         };
     }

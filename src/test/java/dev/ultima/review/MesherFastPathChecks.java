@@ -26,19 +26,25 @@ import dev.ultima.meshing.SectionIndex;
 import dev.ultima.meshing.VanillaBlockSeed;
 import dev.ultima.meshing.VanillaCubeOracle;
 import dev.ultima.meshing.VanillaVisitOracle;
+import dev.ultima.meshing.VanillaWeightedPick;
+import dev.ultima.meshing.VanillaCubeCoverage;
 import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.client.renderer.FaceInfo;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.util.random.WeightedList;
 import net.minecraft.world.level.CardinalLighting;
 import org.joml.Vector3f;
 
@@ -83,6 +89,10 @@ final class MesherFastPathChecks {
         testCompileAfterReloadIsFreshNotStale();
         testRealisticCpuDatasets();
         testMesherBenchmarkScenes();
+        testWeightedAndPerStateCubeEquivalence();
+        testGrassOverlayAndMultipartStayFallback();
+        testVanillaWeightedPickMatchesVanillaRng();
+        testVanillaCubeCoverageCatalog();
         System.out.println("Mesher fast-path equivalence cases:");
         for (String line : CASE_RESULTS) {
             System.out.println("  " + line);
@@ -284,14 +294,18 @@ final class MesherFastPathChecks {
         expectCriteria(SectionFixtures.FULL_CUBE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.TINT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.LIGHT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.WEIGHTED_CUBE, true, FastPathCriteria.Reason.FAST_PATH_WEIGHTED_UNIT_CUBE);
+        expectCriteria(SectionFixtures.AXIS_CUBE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.FACING_CUBE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.TRANSPARENT, false, FastPathCriteria.Reason.TRANSLUCENT_LAYER);
         expectCriteria(SectionFixtures.AIR, false, FastPathCriteria.Reason.AIR);
         expectCriteria(SectionFixtures.FLUID, false, FastPathCriteria.Reason.HAS_FLUID);
         expectCriteria(SectionFixtures.LEAVES, false, FastPathCriteria.Reason.SKIP_RENDERING);
-        expectCriteria(SectionFixtures.RANDOM, false, FastPathCriteria.Reason.NOT_SINGLE_VARIANT);
+        expectCriteria(SectionFixtures.RANDOM, false, FastPathCriteria.Reason.WEIGHTED_NON_CUBE);
+        expectCriteria(SectionFixtures.GRASS_OVERLAY, false, FastPathCriteria.Reason.WEIGHTED_NON_CUBE);
         expectCriteria(SectionFixtures.STAIRS, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
         expectCriteria(SectionFixtures.SLAB, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
-        expectCriteria(SectionFixtures.FENCE, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        expectCriteria(SectionFixtures.FENCE, false, FastPathCriteria.Reason.MULTIPART_MODEL);
         expectCriteria(SectionFixtures.PLANT, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
         expectCriteria(SectionFixtures.ANIMATED, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.TINT_FOLIAGE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
@@ -326,6 +340,9 @@ final class MesherFastPathChecks {
         if (!hybrid.contains("Block.shouldRenderFace")) {
             throw new AssertionError("production fast path must cull with Block.shouldRenderFace");
         }
+        if (!hybrid.contains("getSeed")) {
+            throw new AssertionError("production fast path must pick weighted cubes with BlockState.getSeed");
+        }
         if (!hybrid.contains("prepareQuadAmbientOcclusion") || !hybrid.contains("prepareQuadFlat")) {
             throw new AssertionError("production fast path must light with BlockModelLighter");
         }
@@ -333,7 +350,16 @@ final class MesherFastPathChecks {
             throw new AssertionError("fallback must remain vanilla ModelBlockRenderer/FluidRenderer");
         }
         if (!cache.contains("instanceof SingleVariant") || !cache.contains("instanceof LeavesBlock")) {
-            throw new AssertionError("cube cache must require SingleVariant and reject LeavesBlock");
+            throw new AssertionError("cube cache must require SingleVariant children and reject LeavesBlock");
+        }
+        if (!cache.contains("WeightedVariants") || !cache.contains("VanillaWeightedPick") || !cache.contains("getSeed")) {
+            throw new AssertionError("cube cache must pick weighted unit cubes with vanilla BlockState seed");
+        }
+        if (!cache.contains("MultiPartModel") || !cache.contains("MULTIPART_MODEL")) {
+            throw new AssertionError("cube cache must reject multipart models");
+        }
+        if (!cache.contains("IdentityHashMap<BlockState") && !cache.contains("IdentityHashMap<BlockState,")) {
+            throw new AssertionError("cube cache must key hits by BlockState identity");
         }
         if (!cache.contains("isUnitCubeFace")) {
             throw new AssertionError("cube cache must reject non-unit-cube quads");
@@ -473,13 +499,14 @@ final class MesherFastPathChecks {
         SectionFixtures.setInterior(states, 6, 1, 1, SectionFixtures.PLANT);
         SectionFixtures.setInterior(states, 7, 1, 1, SectionFixtures.RANDOM);
         SectionFixtures.setInterior(states, 8, 1, 1, SectionFixtures.TRANSPARENT);
+        SectionFixtures.setInterior(states, 9, 1, 1, SectionFixtures.GRASS_OVERLAY);
         PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
         FastPathCubeMesher.MeshResult fast = meshFast(volume);
         if (!fast.vertices().isEmpty()) {
             throw new AssertionError("fallback-only section must not emit fast-path vertices");
         }
-        if (fast.fallbackBlocks() != 8) {
-            throw new AssertionError("expected 8 fallback cells, got " + fast.fallbackBlocks());
+        if (fast.fallbackBlocks() != 9) {
+            throw new AssertionError("expected 9 fallback cells, got " + fast.fallbackBlocks());
         }
         int[][][] mixed = SectionFixtures.emptyHalo();
         SectionFixtures.setInterior(mixed, 8, 8, 8, SectionFixtures.FULL_CUBE);
@@ -525,12 +552,16 @@ final class MesherFastPathChecks {
         MesherMetrics.recordSectionFailure();
         MesherMetrics.recordCircuitBreakerTrip();
         MesherMetrics.recordDecision(FastPathCriteria.Result.fallback(FastPathCriteria.Reason.TRANSLUCENT_LAYER));
+        MesherMetrics.recordDecision(FastPathCriteria.Result.admittedWeighted());
         MesherMetrics.Snapshot after = MesherMetrics.snapshot();
         if (after.meshFastPathFailures() != 1L || after.meshFastPathCircuitBreakerTrips() != 1L) {
             throw new AssertionError("fail-open / circuit-breaker counters");
         }
         if (after.fallbackCount(FastPathCriteria.Reason.TRANSLUCENT_LAYER) != 1L) {
             throw new AssertionError("coverage bucket for translucent");
+        }
+        if (after.weightedFastPathBlocks() != 1L) {
+            throw new AssertionError("weighted fast-path counter");
         }
         if (after.fastPathCoverageOfNonAir() <= 0.0) {
             throw new AssertionError("coverage ratio must be exported");
@@ -540,8 +571,11 @@ final class MesherFastPathChecks {
         if (!json.toString().contains("meshFastPathFailures")
                 || !json.toString().contains("fastPathCoverageOfNonAir")
                 || !json.toString().contains("TRANSLUCENT_LAYER")
+                || !json.toString().contains("weightedFastPathBlocks")
+                || !json.toString().contains("WEIGHTED_NON_CUBE")
+                || !json.toString().contains("MULTIPART_MODEL")
                 || !json.toString().contains("\"scene\"")) {
-            throw new AssertionError("mesher JSON must export coverage, scene, and fail-open counters");
+            throw new AssertionError("mesher JSON must export coverage, scene, weighted cubes, and fail-open counters");
         }
         pass("mesher_metrics");
     }
@@ -569,11 +603,16 @@ final class MesherFastPathChecks {
                 "solid_16cubed", SectionFixtures.pack(0, 0, 0, solid), 40);
         CpuMeshingBenchmark.Sample checkerSample = CpuMeshingBenchmark.run(
                 "checkerboard", SectionFixtures.pack(0, 0, 0, checker), 40);
+        CpuMeshingBenchmark.Sample weightedSample = CpuMeshingBenchmark.run(
+                "weighted_overworld_volume",
+                SectionFixtures.pack(0, 0, 0, MesherWorldFixtures.weightedOverworldVolume()),
+                40);
         SnapshotFlagHotPath.Sample flags = SnapshotFlagHotPath.run(80);
         System.out.println(CpuMeshingBenchmark.format(solidSample));
         System.out.println(CpuMeshingBenchmark.format(checkerSample));
+        System.out.println(CpuMeshingBenchmark.format(weightedSample));
         System.out.println(SnapshotFlagHotPath.format(flags));
-        if (solidSample.vertices() <= 0 || checkerSample.vertices() <= 0) {
+        if (solidSample.vertices() <= 0 || checkerSample.vertices() <= 0 || weightedSample.vertices() <= 0) {
             throw new AssertionError("CPU benchmark produced empty meshes");
         }
         if (flags.leanNs() <= 0L || flags.heavyNs() <= 0L) {
@@ -583,6 +622,105 @@ final class MesherFastPathChecks {
             throw new AssertionError("lean production flagsOf must not be slower than the removed 6-face walk");
         }
         pass("cpu_meshing_time_not_a_perf_claim");
+    }
+
+    private static void testWeightedAndPerStateCubeEquivalence() {
+        int[][][] isolated = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(isolated, 8, 8, 8, SectionFixtures.WEIGHTED_CUBE);
+        assertGeometry("isolated_weighted_cube", 0, 64, 0, isolated, 6 * 4);
+
+        int[][][] facing = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(facing, 3, 3, 3, SectionFixtures.FACING_CUBE);
+        SectionFixtures.setInterior(facing, 4, 3, 3, SectionFixtures.FACING_CUBE);
+        assertGeometry("adjacent_facing_cubes", 0, 64, 0, facing, 10 * 4);
+
+        int[][][] axis = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(axis, 5, 5, 5, SectionFixtures.AXIS_CUBE);
+        SectionFixtures.setInterior(axis, 6, 5, 5, SectionFixtures.WEIGHTED_CUBE);
+        assertGeometry("axis_cube_next_to_weighted_stone", 0, 64, 0, axis, 10 * 4);
+
+        int[][][] mixed = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(mixed, 2, 2, 2, SectionFixtures.WEIGHTED_CUBE);
+        SectionFixtures.setInterior(mixed, 4, 2, 2, SectionFixtures.AXIS_CUBE);
+        SectionFixtures.setInterior(mixed, 6, 2, 2, SectionFixtures.FACING_CUBE);
+        SectionFixtures.setInterior(mixed, 8, 2, 2, SectionFixtures.FULL_CUBE);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 64, 0, mixed);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        assertIdentical("per_state_and_weighted_cubes", meshOracle(volume), fast.vertices());
+        if (fast.fastPathBlocks() != 4) {
+            throw new AssertionError("four distinct cube BlockState fixtures must all fast-path, got "
+                    + fast.fastPathBlocks());
+        }
+        pass("weighted_and_per_state_cube_equivalence");
+    }
+
+    private static void testGrassOverlayAndMultipartStayFallback() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 4, 4, 4, SectionFixtures.GRASS_OVERLAY);
+        SectionFixtures.setInterior(states, 6, 4, 4, SectionFixtures.FENCE);
+        SectionFixtures.setInterior(states, 8, 4, 4, SectionFixtures.RANDOM);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 64, 0, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        if (!fast.vertices().isEmpty() || fast.fastPathBlocks() != 0 || fast.fallbackBlocks() != 3) {
+            throw new AssertionError("grass overlay / multipart / weighted non-cube must stay vanilla fallback");
+        }
+        expectCriteria(SectionFixtures.GRASS_OVERLAY, false, FastPathCriteria.Reason.WEIGHTED_NON_CUBE);
+        expectCriteria(SectionFixtures.FENCE, false, FastPathCriteria.Reason.MULTIPART_MODEL);
+        pass("grass_overlay_and_multipart_fallback");
+    }
+
+    private static void testVanillaWeightedPickMatchesVanillaRng() {
+        WeightedList<String> list = WeightedList.of("north", "east", "south", "west");
+        RandomSource expectedRng = RandomSource.createThreadLocalInstance(0L);
+        RandomSource actualRng = VanillaWeightedPick.mesherRandom();
+        long[] seeds = {
+                0L,
+                1L,
+                VanillaBlockSeed.defaultSeed(3, 64, -8),
+                VanillaBlockSeed.defaultSeed(-32, 12, 48),
+                Long.MIN_VALUE,
+                42L
+        };
+        for (long seed : seeds) {
+            expectedRng.setSeed(seed);
+            String expected = list.getRandomOrThrow(expectedRng);
+            String actual = VanillaWeightedPick.pick(list, actualRng, seed);
+            if (!expected.equals(actual)) {
+                throw new AssertionError("weighted pick mismatch at seed " + seed + ": " + expected + " vs " + actual);
+            }
+        }
+        Set<String> seen = new HashSet<>();
+        for (int x = 0; x < 64; x++) {
+            seen.add(VanillaWeightedPick.pick(list, actualRng, VanillaBlockSeed.defaultSeed(x, 70, 0)));
+        }
+        if (seen.size() < 2) {
+            throw new AssertionError("vanilla weighted pick must vary across BlockPos seeds, got " + seen);
+        }
+        pass("vanilla_weighted_pick_matches_rng");
+    }
+
+    private static void testVanillaCubeCoverageCatalog() {
+        if (VanillaCubeCoverage.WEIGHTED_UNIT_CUBE_BLOCKS.size() != 29) {
+            throw new AssertionError("26.2 weighted unit-cube catalog size");
+        }
+        for (String required : List.of("stone", "dirt", "deepslate", "sand", "netherrack", "bedrock")) {
+            if (!VanillaCubeCoverage.WEIGHTED_UNIT_CUBE_BLOCKS.contains(required)) {
+                throw new AssertionError("weighted unit-cube catalog missing " + required);
+            }
+        }
+        if (VanillaCubeCoverage.WEIGHTED_NON_CUBE_BLOCKS.contains("stone")
+                || VanillaCubeCoverage.WEIGHTED_UNIT_CUBE_BLOCKS.contains("grass_block")) {
+            throw new AssertionError("stone must be weighted-cube; grass_block overlay must not");
+        }
+        if (!VanillaCubeCoverage.PER_STATE_SINGLE_VARIANT_CUBE_EXAMPLES.contains("furnace")
+                || !VanillaCubeCoverage.PER_STATE_SINGLE_VARIANT_CUBE_EXAMPLES.contains("oak_log")) {
+            throw new AssertionError("facing/axis cubes are already per-BlockState SingleVariant");
+        }
+        if (!VanillaCubeCoverage.MULTIPART_EXAMPLES.contains("bamboo")
+                || !VanillaCubeCoverage.MULTIPART_EXAMPLES.contains("oak_fence")) {
+            throw new AssertionError("multipart catalog must keep bamboo/fences as fallback");
+        }
+        pass("vanilla_cube_coverage_catalog");
     }
 
     private static void expectCriteria(final int stateId, final boolean fast, final FastPathCriteria.Reason reason) {
@@ -851,10 +989,18 @@ final class MesherFastPathChecks {
                 "dense_structure",
                 SectionFixtures.pack(0, 64, 0, MesherWorldFixtures.denseStructure()),
                 20);
+        CpuMeshingBenchmark.Sample weighted = CpuMeshingBenchmark.run(
+                "weighted_overworld_volume",
+                SectionFixtures.pack(0, 64, 0, MesherWorldFixtures.weightedOverworldVolume()),
+                20);
         System.out.println(CpuMeshingBenchmark.format(typical));
         System.out.println(CpuMeshingBenchmark.format(dense));
-        if (typical.fastPathBlocks() <= 0 || dense.fastPathBlocks() <= 0) {
+        System.out.println(CpuMeshingBenchmark.format(weighted));
+        if (typical.fastPathBlocks() <= 0 || dense.fastPathBlocks() <= 0 || weighted.fastPathBlocks() <= 0) {
             throw new AssertionError("realistic datasets must still have some fast-path cubes");
+        }
+        if (weighted.fastPathBlocks() <= typical.fastPathBlocks()) {
+            throw new AssertionError("weighted underground dataset should admit more cubes than the mixed surface");
         }
         pass("cpu_meshing_realistic_datasets_not_a_perf_claim");
     }
@@ -866,7 +1012,8 @@ final class MesherFastPathChecks {
         MesherBenchmarkScenes.byId("mesher_cold_load");
         MesherBenchmarkScenes.byId("mesher_rebuild_storm");
         MesherBenchmarkScenes.byId("mesher_chunk_flight");
-        if (!MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.fastPathCoverageOfNonAir")) {
+        if (!MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.fastPathCoverageOfNonAir")
+                || !MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.weightedFastPathBlocks")) {
             throw new AssertionError("hardware metric list must include real-world coverage");
         }
         String recorder = readUtf8(Path.of("src/client/java/dev/ultima/client/benchmark/ClientFrameBenchmark.java"));

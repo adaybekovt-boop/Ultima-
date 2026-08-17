@@ -22,6 +22,7 @@ public final class MesherMetrics {
     private static final AtomicLong WORKER_QUEUE_LATENCY_NS = new AtomicLong();
     private static final AtomicLong SECTION_FAILURES = new AtomicLong();
     private static final AtomicLong CIRCUIT_BREAKER_TRIPS = new AtomicLong();
+    private static final AtomicLong WEIGHTED_FAST_PATH_BLOCKS = new AtomicLong();
     private static final AtomicLongArray FALLBACK_BY_REASON =
             new AtomicLongArray(FastPathCriteria.Reason.values().length);
 
@@ -43,6 +44,7 @@ public final class MesherMetrics {
         WORKER_QUEUE_LATENCY_NS.set(0L);
         SECTION_FAILURES.set(0L);
         CIRCUIT_BREAKER_TRIPS.set(0L);
+        WEIGHTED_FAST_PATH_BLOCKS.set(0L);
         for (int i = 0; i < FALLBACK_BY_REASON.length(); i++) {
             FALLBACK_BY_REASON.set(i, 0L);
         }
@@ -79,6 +81,9 @@ public final class MesherMetrics {
 
     public static void recordDecision(final FastPathCriteria.Result result) {
         if (result.fastPath()) {
+            if (result.reason() == FastPathCriteria.Reason.FAST_PATH_WEIGHTED_UNIT_CUBE) {
+                WEIGHTED_FAST_PATH_BLOCKS.incrementAndGet();
+            }
             return;
         }
         FALLBACK_BY_REASON.incrementAndGet(result.reason().ordinal());
@@ -127,6 +132,7 @@ public final class MesherMetrics {
                 WORKER_QUEUE_LATENCY_NS.get(),
                 SECTION_FAILURES.get(),
                 CIRCUIT_BREAKER_TRIPS.get(),
+                WEIGHTED_FAST_PATH_BLOCKS.get(),
                 visited == 0L ? 0.0 : (double)fast / (double)visited,
                 byReason);
     }
@@ -146,6 +152,7 @@ public final class MesherMetrics {
             long workerQueueLatencyNs,
             long meshFastPathFailures,
             long meshFastPathCircuitBreakerTrips,
+            long weightedFastPathBlocks,
             double fastPathCoverageOfNonAir,
             long[] fallbackByReason) {
         public long sectionsPerSecond() {
@@ -175,6 +182,7 @@ public final class MesherMetrics {
                     .append("    \"sectionsPerSecond\": ").append(this.sectionsPerSecond()).append(",\n")
                     .append("    \"blocksVisited\": ").append(this.blocksVisited).append(",\n")
                     .append("    \"fastPathBlocks\": ").append(this.fastPathBlocks).append(",\n")
+                    .append("    \"weightedFastPathBlocks\": ").append(this.weightedFastPathBlocks).append(",\n")
                     .append("    \"fallbackBlocks\": ").append(this.fallbackBlocks).append(",\n")
                     .append("    \"fastPathCoverageOfNonAir\": ").append(this.fastPathCoverageOfNonAir).append(",\n")
                     .append("    \"modelCalls\": ").append(this.modelCalls).append(",\n")

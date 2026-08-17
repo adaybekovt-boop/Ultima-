@@ -30,12 +30,15 @@ public final class MesherWorldFixtures {
                             case 1 -> SectionFixtures.LEAVES;
                             case 2 -> SectionFixtures.TRANSPARENT;
                             case 3 -> SectionFixtures.SLAB;
-                            default -> SectionFixtures.FULL_CUBE;
+                            case 4 -> SectionFixtures.GRASS_OVERLAY;
+                            default -> SectionFixtures.WEIGHTED_CUBE;
                         };
                     } else if (y > height - 3) {
-                        id = SectionFixtures.FULL_CUBE;
+                        id = SectionFixtures.WEIGHTED_CUBE;
+                    } else if (((x + z) & 15) == 0) {
+                        id = SectionFixtures.AXIS_CUBE;
                     } else {
-                        id = ((x + y + z) & 5) == 0 ? SectionFixtures.LIGHT : SectionFixtures.FULL_CUBE;
+                        id = ((x + y + z) & 5) == 0 ? SectionFixtures.LIGHT : SectionFixtures.WEIGHTED_CUBE;
                     }
                     SectionFixtures.setInterior(states, x, y, z, id);
                 }
@@ -62,11 +65,43 @@ public final class MesherWorldFixtures {
                     } else if (stair) {
                         id = SectionFixtures.STAIRS;
                     } else if (shell) {
-                        id = ((x + y) & 1) == 0 ? SectionFixtures.FULL_CUBE : SectionFixtures.TINT;
+                        id = ((x + y) & 1) == 0 ? SectionFixtures.FACING_CUBE : SectionFixtures.TINT;
                     } else if (y == 3 && x == 8 && z == 8) {
                         id = SectionFixtures.BLOCK_ENTITY;
                     } else {
                         id = SectionFixtures.AIR;
+                    }
+                    SectionFixtures.setInterior(states, x, y, z, id);
+                }
+            }
+        }
+        return states;
+    }
+
+    /**
+     * Underground-ish 16³: mostly 26.2 weighted cubes (stone/dirt/deepslate),
+     * a few SingleVariant ores, and rare non-cubes. Used by the CPU meshing
+     * micro-bench to reflect the expanded fast-path family.
+     */
+    public static int[][][] weightedOverworldVolume() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        for (int z = 0; z < 16; z++) {
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    int id;
+                    int mix = (x * 19 + y * 17 + z * 13) & 31;
+                    if (mix == 0) {
+                        id = SectionFixtures.STAIRS;
+                    } else if (mix == 1) {
+                        id = SectionFixtures.GRASS_OVERLAY;
+                    } else if (mix == 2) {
+                        id = SectionFixtures.FENCE;
+                    } else if (mix == 3) {
+                        id = SectionFixtures.FULL_CUBE;
+                    } else if (mix == 4) {
+                        id = SectionFixtures.AXIS_CUBE;
+                    } else {
+                        id = SectionFixtures.WEIGHTED_CUBE;
                     }
                     SectionFixtures.setInterior(states, x, y, z, id);
                 }

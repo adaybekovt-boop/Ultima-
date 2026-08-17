@@ -1,5 +1,17 @@
 # Changelog
 
+## mesher_fast_path Phase 3.2 (weighted unit-cube coverage)
+
+Expand the unit-cube fast path to vanilla 26.2 `WeightedVariants` whose
+every alternative is a proven 6-quad opaque cube (stone, dirt, deepslate,
+sand, …). Pick the alternative with `BlockState.getSeed(pos)` + vanilla
+`WeightedList.getRandomOrThrow` so UVs stay bit-identical. Multipart,
+grass overlay, fluids, and true non-cubes stay fallback. Cache was
+already keyed by `BlockState` identity (furnace/log variants were already
+distinct SingleVariant entries). Default remains **OFF**. **No FPS/GPU
+claim.** See `MESHER_FAST_PATH.md`. Retained-terrain GPU-time hypothesis
+is in `RETAINED_GPU_TIME_HYPOTHESIS.md` (no retained code change).
+
 ## mesher_fast_path Phase 3.1 (hardware-ready prep)
 
 Section-level fail-open + BlockState circuit breaker, unified

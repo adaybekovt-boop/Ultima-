@@ -72,9 +72,9 @@ SHA before the GPU numbers may be advertised again. See `CHANGELOG.md` and the p
 recovery report.
 
 `retained_terrain` stays **opt-in** (default off). `mesher_fast_path` is a
-separate opt-in (default off) on `cursor/ultima-mesher-fast-path-0e88`; it is
-not enabled in `main`. Experimental lab PR #3 is not in `main` and stays draft /
-default off.
+separate opt-in (default off). Phase 3.2 admits 26.2 weighted unit cubes
+(stone/dirt/deepslate) with vanilla seed picking; see `MESHER_FAST_PATH.md`.
+Experimental lab PR #3 is not in `main` and stays draft / default off.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 

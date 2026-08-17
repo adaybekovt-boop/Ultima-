@@ -47,7 +47,7 @@ def summarize_pair(off: dict, on: dict) -> str:
         "CPU meshing time only, NOT a real FPS/GPU claim, requires hardware A/B before any performance statement",
         "",
     ]
-    for field in ("meshBuildNs", "rebuildCount", "fastPathCoverageOfNonAir", "meshFastPathFailures"):
+    for field in ("meshBuildNs", "rebuildCount", "fastPathCoverageOfNonAir", "weightedFastPathBlocks", "meshFastPathFailures"):
         lines.append(f"  {field}: {off_m.get(field)} -> {on_m.get(field)}")
     lines.append(f"  off disclaimer: {off_m.get('disclaimer')}")
     return "\n".join(lines) + "\n"
@@ -61,6 +61,7 @@ def self_test() -> None:
             "fastPathBlocks": 80,
             "fallbackBlocks": 20,
             "fastPathCoverageOfNonAir": 0.8,
+            "weightedFastPathBlocks": 60,
             "meshFastPathFailures": 0,
             "meshFastPathCircuitBreakerTrips": 0,
             "fallbackByReason": {"TRANSLUCENT_LAYER": 4},

@@ -54,6 +54,7 @@ public final class MesherBenchmarkScenes {
             "mesherMetrics.fastPathBlocks",
             "mesherMetrics.fallbackBlocks",
             "mesherMetrics.fastPathCoverageOfNonAir",
+            "mesherMetrics.weightedFastPathBlocks",
             "mesherMetrics.fallbackByReason",
             "mesherMetrics.meshFastPathFailures",
             "mesherMetrics.meshFastPathCircuitBreakerTrips",

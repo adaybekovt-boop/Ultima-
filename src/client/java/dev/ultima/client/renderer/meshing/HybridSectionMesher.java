@@ -180,7 +180,8 @@ public final class HybridSectionMesher {
                                     blockState.getSeed(pos));
                             continue;
                         }
-                        CubeModelCache.Lookup lookup = cache.lookup(blockState, model, cutoutLeaves);
+                        CubeModelCache.Lookup lookup = cache.lookup(
+                                blockState, model, cutoutLeaves, blockState.getSeed(pos));
                         if (lookup.fastPath()) {
                             try {
                                 tessellateFastCube(

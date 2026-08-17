@@ -145,7 +145,10 @@ public final class FullCubeTemplates {
             case SectionFixtures.LIGHT -> CubeMaterial.glowstone();
             case SectionFixtures.TRANSPARENT -> CubeMaterial.glass();
             case SectionFixtures.ANIMATED -> CubeMaterial.animatedMagma();
-            case SectionFixtures.FULL_CUBE, SectionFixtures.BLOCK_ENTITY -> CubeMaterial.stone();
+            case SectionFixtures.FULL_CUBE, SectionFixtures.BLOCK_ENTITY, SectionFixtures.FACING_CUBE ->
+                    CubeMaterial.stone();
+            case SectionFixtures.WEIGHTED_CUBE -> CubeMaterial.dirt();
+            case SectionFixtures.AXIS_CUBE -> CubeMaterial.glowstone();
             default -> CubeMaterial.stone();
         };
     }
