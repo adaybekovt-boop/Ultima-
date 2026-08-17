@@ -47,6 +47,7 @@ public final class ForensicRegressionTest {
         testTemporalMathAndSettings();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
+        VanillaClientHostingChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 
