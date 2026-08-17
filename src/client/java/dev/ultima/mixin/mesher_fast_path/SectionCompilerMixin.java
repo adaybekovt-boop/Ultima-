@@ -3,6 +3,8 @@ package dev.ultima.mixin.mesher_fast_path;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.ultima.client.renderer.meshing.HybridSectionMesher;
+import dev.ultima.meshing.MesherMetrics;
+import dev.ultima.meshing.MesherSectionFailOpen;
 import java.util.Map;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
@@ -62,17 +64,23 @@ public abstract class SectionCompilerMixin {
             final VertexSorting vertexSorting,
             final SectionBufferBuilderPack builders,
             final CallbackInfoReturnable<SectionCompiler.Results> cir) {
-        cir.setReturnValue(HybridSectionMesher.compile(
-                sectionPos,
-                region,
-                vertexSorting,
-                builders,
-                this.ambientOcclusion,
-                this.cutoutLeaves,
-                this.blockModelSet,
-                this.fluidModelSet,
-                this.blockColors,
-                this::getOrBeginLayer,
-                this::handleBlockEntity));
+        try {
+            cir.setReturnValue(HybridSectionMesher.compile(
+                    sectionPos,
+                    region,
+                    vertexSorting,
+                    builders,
+                    this.ambientOcclusion,
+                    this.cutoutLeaves,
+                    this.blockModelSet,
+                    this.fluidModelSet,
+                    this.blockColors,
+                    this::getOrBeginLayer,
+                    this::handleBlockEntity));
+        } catch (Throwable error) {
+            MesherSectionFailOpen.log(sectionPos, error);
+            MesherMetrics.recordSectionFailure();
+            // Do not cancel: vanilla SectionCompiler.compile runs for this section only.
+        }
     }
 }

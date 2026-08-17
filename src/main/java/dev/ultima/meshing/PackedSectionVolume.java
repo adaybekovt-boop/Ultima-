@@ -16,7 +16,7 @@ public final class PackedSectionVolume {
     private int originY;
     private int originZ;
     private final int[] states = new int[SectionIndex.VOLUME];
-    private final byte[] flags = new byte[SectionIndex.VOLUME];
+    private final int[] flags = new int[SectionIndex.VOLUME];
     private final int[] blockEntitySlot = new int[SectionIndex.VOLUME];
     private int[] entityPackedIndex = new int[INITIAL_ENTITIES];
     private int entityCount;
@@ -32,7 +32,7 @@ public final class PackedSectionVolume {
         this.originY = originY;
         this.originZ = originZ;
         Arrays.fill(this.states, AIR_ID);
-        Arrays.fill(this.flags, (byte)BlockRenderFlags.AIR);
+        Arrays.fill(this.flags, BlockRenderFlags.AIR);
         Arrays.fill(this.blockEntitySlot, -1);
         this.entityCount = 0;
         this.frozen = false;
@@ -62,7 +62,7 @@ public final class PackedSectionVolume {
         return this.originZ;
     }
 
-    public void setCell(final int packedIndex, final int stateId, final byte flags) {
+    public void setCell(final int packedIndex, final int stateId, final int flags) {
         this.requireMutable();
         this.states[packedIndex] = stateId;
         this.flags[packedIndex] = flags;

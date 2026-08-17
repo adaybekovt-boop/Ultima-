@@ -4,6 +4,9 @@ package dev.ultima.meshing;
  * Synthetic palette used by mesh-equivalence tests. These IDs are fixtures, not
  * Minecraft registry IDs. Flags are the documented properties vanilla would
  * observe for that kind of cell.
+ *
+ * <p>{@link #TRANSPARENT} is glass/stained-glass: empty occluder as a
+ * <em>neighbor</em>, but never fast-pathed as the cell itself.
  */
 public final class SectionFixtures {
     public static final int AIR = PackedSectionVolume.AIR_ID;
@@ -20,20 +23,24 @@ public final class SectionFixtures {
     public static final int LIGHT = 11;
     public static final int BLOCK_ENTITY = 12;
     public static final int RANDOM = 13;
+    public static final int ANIMATED = 14;
+    public static final int TINT_FOLIAGE = 15;
+    public static final int TINT_WATER = 16;
 
     private SectionFixtures() {
     }
 
-    public static byte flags(final int stateId) {
+    public static int flags(final int stateId) {
         return switch (stateId) {
             case AIR -> BlockRenderFlags.pack(true, false, false, false, false, false, true, false);
-            case FULL_CUBE, LIGHT, TINT -> BlockRenderFlags.pack(false, true, false, false, true, true, false, false);
+            case FULL_CUBE, LIGHT, TINT, ANIMATED, TINT_FOLIAGE, TINT_WATER ->
+                    BlockRenderFlags.pack(false, true, false, false, true, true, false, false);
             case CUTOUT -> BlockRenderFlags.pack(false, false, false, false, true, false, false, false);
             case LEAVES -> BlockRenderFlags.pack(false, false, false, false, true, false, true, true);
             case PLANT, STAIRS, SLAB, FENCE, RANDOM ->
                     BlockRenderFlags.pack(false, false, false, false, true, false, false, false);
             case FLUID -> BlockRenderFlags.pack(false, false, false, true, false, false, true, false);
-            case TRANSPARENT -> BlockRenderFlags.pack(false, false, false, false, true, false, true, false);
+            case TRANSPARENT -> BlockRenderFlags.pack(false, false, false, false, true, false, true, false, true);
             case BLOCK_ENTITY -> BlockRenderFlags.pack(false, true, true, false, true, true, false, false);
             default -> throw new IllegalArgumentException("unknown fixture state " + stateId);
         };
@@ -41,7 +48,7 @@ public final class SectionFixtures {
 
     public static boolean fixtureAllowsFastPath(final int stateId) {
         return switch (stateId) {
-            case FULL_CUBE, TINT, LIGHT, TRANSPARENT, BLOCK_ENTITY -> true;
+            case FULL_CUBE, TINT, LIGHT, BLOCK_ENTITY, ANIMATED, TINT_FOLIAGE, TINT_WATER -> true;
             default -> false;
         };
     }
@@ -50,8 +57,8 @@ public final class SectionFixtures {
         return new int[SectionIndex.EXTENT][SectionIndex.EXTENT][SectionIndex.EXTENT];
     }
 
-    public static byte[][][] flagsOf(final int[][][] states) {
-        byte[][][] flags = new byte[SectionIndex.EXTENT][SectionIndex.EXTENT][SectionIndex.EXTENT];
+    public static int[][][] flagsOf(final int[][][] states) {
+        int[][][] flags = new int[SectionIndex.EXTENT][SectionIndex.EXTENT][SectionIndex.EXTENT];
         for (int x = 0; x < SectionIndex.EXTENT; x++) {
             for (int y = 0; y < SectionIndex.EXTENT; y++) {
                 for (int z = 0; z < SectionIndex.EXTENT; z++) {

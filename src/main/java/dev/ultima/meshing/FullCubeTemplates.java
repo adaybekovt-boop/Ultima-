@@ -120,6 +120,18 @@ public final class FullCubeTemplates {
             return new CubeMaterial(1, -1, -1, true, 0.0F, 1.0F, 1.0F, 0.0F);
         }
 
+        public static CubeMaterial animatedMagma() {
+            return new CubeMaterial(0, -1, -1, true, 0.125F, 0.125F, 0.125F, 0.125F);
+        }
+
+        public static CubeMaterial foliage() {
+            return new CubeMaterial(0, 1, 0xFF48B518, true, 0.0F, 1.0F, 1.0F, 0.0F);
+        }
+
+        public static CubeMaterial waterTinted() {
+            return new CubeMaterial(0, 2, 0xFF3F76E4, true, 0.0F, 1.0F, 1.0F, 0.0F);
+        }
+
         public float v0(final Direction direction) {
             return direction == Direction.UP ? this.upV0 : this.u0;
         }
@@ -128,8 +140,11 @@ public final class FullCubeTemplates {
     public static CubeMaterial materialOf(final int stateId) {
         return switch (stateId) {
             case SectionFixtures.TINT -> CubeMaterial.grass();
+            case SectionFixtures.TINT_FOLIAGE -> CubeMaterial.foliage();
+            case SectionFixtures.TINT_WATER -> CubeMaterial.waterTinted();
             case SectionFixtures.LIGHT -> CubeMaterial.glowstone();
             case SectionFixtures.TRANSPARENT -> CubeMaterial.glass();
+            case SectionFixtures.ANIMATED -> CubeMaterial.animatedMagma();
             case SectionFixtures.FULL_CUBE, SectionFixtures.BLOCK_ENTITY -> CubeMaterial.stone();
             default -> CubeMaterial.stone();
         };

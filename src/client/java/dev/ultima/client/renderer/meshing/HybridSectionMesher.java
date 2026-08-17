@@ -6,15 +6,14 @@ import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.ultima.client.renderer.snapshot.RenderSectionSnapshot;
 import dev.ultima.meshing.BlockRenderFlags;
+import dev.ultima.meshing.FastPathCriteria;
+import dev.ultima.meshing.MesherCircuitBreaker;
 import dev.ultima.meshing.MesherMetrics;
 import dev.ultima.meshing.PackedSectionVolume;
 import dev.ultima.meshing.SectionIndex;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import net.minecraft.CrashReport;
-import net.minecraft.CrashReportCategory;
-import net.minecraft.ReportedException;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
@@ -129,6 +128,7 @@ public final class HybridSectionMesher {
         long fallbackBlocks = 0L;
         long modelCalls = 0L;
         long fluidCalls = 0L;
+        MesherCircuitBreaker breaker = MesherCircuitBreaker.get();
         try {
             for (int z = 0; z < SectionIndex.INTERIOR; z++) {
                 for (int y = 0; y < SectionIndex.INTERIOR; y++) {
@@ -144,30 +144,47 @@ public final class HybridSectionMesher {
                         int worldZ = originZ + z;
                         pos.set(worldX, worldY, worldZ);
                         BlockState blockState = view.state(packed);
-                        try {
-                            if (BlockRenderFlags.solidRender(flags)) {
-                                visGraph.setOpaque(pos);
+                        if (BlockRenderFlags.solidRender(flags)) {
+                            visGraph.setOpaque(pos);
+                        }
+                        if (BlockRenderFlags.hasBlockEntity(flags)) {
+                            BlockEntity blockEntity = view.entity(volume.blockEntitySlot(packed));
+                            if (blockEntity != null) {
+                                blockEntityHandler.accept(results, blockEntity);
                             }
-                            if (BlockRenderFlags.hasBlockEntity(flags)) {
-                                BlockEntity blockEntity = view.entity(volume.blockEntitySlot(packed));
-                                if (blockEntity != null) {
-                                    blockEntityHandler.accept(results, blockEntity);
-                                }
-                            }
-                            if (BlockRenderFlags.hasFluid(flags)) {
-                                FluidState fluidState = blockState.getFluidState();
-                                fluidCalls++;
-                                fluidRenderer.tesselate(view, pos, fluidOutput, blockState, fluidState);
-                            }
-                            if (blockState.getRenderShape() != RenderShape.MODEL) {
-                                continue;
-                            }
-                            BlockStateModel model = blockModelSet.get(blockState);
-                            CubeModelCache.CachedCube cube = cache.get(blockState, model, cutoutLeaves);
-                            if (cube != null) {
-                                fastPathBlocks++;
+                        }
+                        if (BlockRenderFlags.hasFluid(flags)) {
+                            FluidState fluidState = blockState.getFluidState();
+                            fluidCalls++;
+                            fluidRenderer.tesselate(view, pos, fluidOutput, blockState, fluidState);
+                        }
+                        if (blockState.getRenderShape() != RenderShape.MODEL) {
+                            fallbackBlocks++;
+                            MesherMetrics.recordDecision(FastPathCriteria.Result.fallback(FastPathCriteria.Reason.NOT_MODEL));
+                            continue;
+                        }
+                        BlockStateModel model = blockModelSet.get(blockState);
+                        if (!breaker.allowFastPath(blockState)) {
+                            fallbackBlocks++;
+                            modelCalls++;
+                            MesherMetrics.recordDecision(FastPathCriteria.Result.fallback(FastPathCriteria.Reason.CIRCUIT_BREAKER));
+                            blockRenderer.tesselateBlock(
+                                    ModelBlockRenderer.forceOpaque(cutoutLeaves, blockState) ? opaqueQuadOutput : quadOutput,
+                                    x,
+                                    y,
+                                    z,
+                                    view,
+                                    pos,
+                                    blockState,
+                                    model,
+                                    blockState.getSeed(pos));
+                            continue;
+                        }
+                        CubeModelCache.Lookup lookup = cache.lookup(blockState, model, cutoutLeaves);
+                        if (lookup.fastPath()) {
+                            try {
                                 tessellateFastCube(
-                                        cube,
+                                        lookup.cube(),
                                         quadOutput,
                                         x,
                                         y,
@@ -181,25 +198,29 @@ public final class HybridSectionMesher {
                                         quadInstance,
                                         scratch,
                                         blockColors);
-                            } else {
-                                fallbackBlocks++;
-                                modelCalls++;
-                                blockRenderer.tesselateBlock(
-                                        ModelBlockRenderer.forceOpaque(cutoutLeaves, blockState) ? opaqueQuadOutput : quadOutput,
-                                        x,
-                                        y,
-                                        z,
-                                        view,
-                                        pos,
-                                        blockState,
-                                        model,
-                                        blockState.getSeed(pos));
+                                fastPathBlocks++;
+                                MesherMetrics.recordDecision(lookup.result());
+                            } catch (Throwable error) {
+                                if (breaker.recordFailure(blockState)) {
+                                    MesherMetrics.recordCircuitBreakerTrip();
+                                }
+                                discardStartedLayers(startedLayers);
+                                throw error;
                             }
-                        } catch (Throwable t) {
-                            CrashReport report = CrashReport.forThrowable(t, "Tesselating block in world");
-                            CrashReportCategory category = report.addCategory("Block being tesselated");
-                            CrashReportCategory.populateBlockDetails(category, view, pos, blockState);
-                            throw new ReportedException(report);
+                        } else {
+                            fallbackBlocks++;
+                            modelCalls++;
+                            MesherMetrics.recordDecision(lookup.result());
+                            blockRenderer.tesselateBlock(
+                                    ModelBlockRenderer.forceOpaque(cutoutLeaves, blockState) ? opaqueQuadOutput : quadOutput,
+                                    x,
+                                    y,
+                                    z,
+                                    view,
+                                    pos,
+                                    blockState,
+                                    model,
+                                    blockState.getSeed(pos));
                         }
                     }
                 }
@@ -239,10 +260,35 @@ public final class HybridSectionMesher {
                     allocationProxy,
                     0L);
             return results;
+        } catch (Throwable error) {
+            results.release();
+            discardStartedLayers(startedLayers);
+            throw error;
         } finally {
             BlockModelLighter.clearCache();
             startedLayers.clear();
         }
+    }
+
+    /**
+     * Finish and drop any in-progress layer so the shared
+     * {@code SectionBufferBuilderPack} can be reused by vanilla compile.
+     * 26.2 {@code BufferBuilder} has no {@code discard()}; {@code build()}
+     * then {@code MeshData.close()} is the public way to free the
+     * {@code ByteBufferBuilder} slice.
+     */
+    static void discardStartedLayers(final Map<ChunkSectionLayer, BufferBuilder> startedLayers) {
+        for (BufferBuilder builder : startedLayers.values()) {
+            try {
+                MeshData mesh = builder.build();
+                if (mesh != null) {
+                    mesh.close();
+                }
+            } catch (Throwable ignored) {
+                // Already built, or mid-vertex: vanilla fail-open still runs.
+            }
+        }
+        startedLayers.clear();
     }
 
     private static void tessellateFastCube(

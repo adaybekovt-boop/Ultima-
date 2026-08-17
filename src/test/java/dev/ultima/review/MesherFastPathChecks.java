@@ -7,9 +7,14 @@ import dev.ultima.config.UltimaModules;
 import dev.ultima.meshing.BlockRenderFlags;
 import dev.ultima.meshing.CpuMeshingBenchmark;
 import dev.ultima.meshing.FastPathCriteria;
-import dev.ultima.meshing.FastPathCubeMesher;
 import dev.ultima.meshing.FullCubeTemplates;
+import dev.ultima.meshing.MesherBenchmarkScenes;
+import dev.ultima.meshing.MesherCircuitBreaker;
+import dev.ultima.meshing.MesherSectionFailOpen;
+import dev.ultima.meshing.MesherWorldFixtures;
+import dev.ultima.meshing.FastPathCubeMesher;
 import dev.ultima.meshing.MeshEquivalence;
+import dev.ultima.meshing.SnapshotFlagHotPath;
 import dev.ultima.meshing.MeshVisit;
 import dev.ultima.meshing.MesherMetrics;
 import dev.ultima.meshing.OcclusionMask;
@@ -69,6 +74,15 @@ final class MesherFastPathChecks {
         testMetricsRecord();
         testCpuMeshingTime();
         testCubeCacheInvalidatesOnModelSetReload();
+        testSectionFailOpenDoesNotCrashOtherSections();
+        testCircuitBreakerIsPerBlockStateNotSection();
+        testGlassAndTranslucentAlwaysFallback();
+        testAnimatedCubeUvsAreFrameIndependent();
+        testMultipleTintProviders();
+        testUnloadedNeighborSectionEdge();
+        testCompileAfterReloadIsFreshNotStale();
+        testRealisticCpuDatasets();
+        testMesherBenchmarkScenes();
         System.out.println("Mesher fast-path equivalence cases:");
         for (String line : CASE_RESULTS) {
             System.out.println("  " + line);
@@ -270,7 +284,7 @@ final class MesherFastPathChecks {
         expectCriteria(SectionFixtures.FULL_CUBE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.TINT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         expectCriteria(SectionFixtures.LIGHT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
-        expectCriteria(SectionFixtures.TRANSPARENT, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.TRANSPARENT, false, FastPathCriteria.Reason.TRANSLUCENT_LAYER);
         expectCriteria(SectionFixtures.AIR, false, FastPathCriteria.Reason.AIR);
         expectCriteria(SectionFixtures.FLUID, false, FastPathCriteria.Reason.HAS_FLUID);
         expectCriteria(SectionFixtures.LEAVES, false, FastPathCriteria.Reason.SKIP_RENDERING);
@@ -279,6 +293,9 @@ final class MesherFastPathChecks {
         expectCriteria(SectionFixtures.SLAB, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
         expectCriteria(SectionFixtures.FENCE, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
         expectCriteria(SectionFixtures.PLANT, false, FastPathCriteria.Reason.NOT_UNIT_CUBE_FACE);
+        expectCriteria(SectionFixtures.ANIMATED, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.TINT_FOLIAGE, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
+        expectCriteria(SectionFixtures.TINT_WATER, true, FastPathCriteria.Reason.FAST_PATH_UNIT_CUBE);
         pass("fast_path_criteria");
     }
 
@@ -320,6 +337,26 @@ final class MesherFastPathChecks {
         }
         if (!cache.contains("isUnitCubeFace")) {
             throw new AssertionError("cube cache must reject non-unit-cube quads");
+        }
+        if (!cache.contains("TRANSLUCENT") || !cache.contains("TRANSLUCENT_LAYER")) {
+            throw new AssertionError("cube cache must reject translucent-layer quads");
+        }
+        String snapshot = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/snapshot/RenderSectionSnapshot.java"));
+        if (snapshot.contains("getFaceOcclusionShape") && snapshot.indexOf("flagsOfForTest") < 0) {
+            throw new AssertionError("production flagsOf must not compute occlusion shapes");
+        }
+        int productionFlags = snapshot.indexOf("static int flagsOf(");
+        int testFlags = snapshot.indexOf("flagsOfForTest");
+        int occlusion = snapshot.indexOf("getFaceOcclusionShape");
+        if (productionFlags < 0 || testFlags < 0 || occlusion < 0 || occlusion < testFlags) {
+            throw new AssertionError("getFaceOcclusionShape must live only in flagsOfForTest");
+        }
+        String mixin = readUtf8(Path.of("src/client/java/dev/ultima/mixin/mesher_fast_path/SectionCompilerMixin.java"));
+        if (!mixin.contains("catch (Throwable") || !mixin.contains("MesherSectionFailOpen")) {
+            throw new AssertionError("SectionCompiler mixin must fail open to vanilla compile");
+        }
+        if (!hybrid.contains("discardStartedLayers") || !hybrid.contains("mesh.close()")) {
+            throw new AssertionError("failed hybrid compile must close partial MeshData before vanilla reuse");
         }
         pass("production_uses_vanilla_cull_light_fallback");
     }
@@ -421,8 +458,11 @@ final class MesherFastPathChecks {
             throw new AssertionError("tinted cube must multiply grass tint into AO color");
         }
         boolean sawGlassLayer = fast.vertices().stream().anyMatch(v -> v.layer() == 1);
-        if (!sawGlassLayer) {
-            throw new AssertionError("glass fixture must keep a distinct layer id");
+        if (sawGlassLayer) {
+            throw new AssertionError("glass/translucent must not emit fast-path vertices");
+        }
+        if (fast.fallbackBlocks() < 1) {
+            throw new AssertionError("glass cell must be counted as fallback");
         }
     }
 
@@ -435,13 +475,14 @@ final class MesherFastPathChecks {
         SectionFixtures.setInterior(states, 5, 1, 1, SectionFixtures.LEAVES);
         SectionFixtures.setInterior(states, 6, 1, 1, SectionFixtures.PLANT);
         SectionFixtures.setInterior(states, 7, 1, 1, SectionFixtures.RANDOM);
+        SectionFixtures.setInterior(states, 8, 1, 1, SectionFixtures.TRANSPARENT);
         PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
         FastPathCubeMesher.MeshResult fast = meshFast(volume);
         if (!fast.vertices().isEmpty()) {
             throw new AssertionError("fallback-only section must not emit fast-path vertices");
         }
-        if (fast.fallbackBlocks() != 7) {
-            throw new AssertionError("expected 7 fallback cells, got " + fast.fallbackBlocks());
+        if (fast.fallbackBlocks() != 8) {
+            throw new AssertionError("expected 8 fallback cells, got " + fast.fallbackBlocks());
         }
         int[][][] mixed = SectionFixtures.emptyHalo();
         SectionFixtures.setInterior(mixed, 8, 8, 8, SectionFixtures.FULL_CUBE);
@@ -459,7 +500,7 @@ final class MesherFastPathChecks {
         volume.begin(0, 0, 0);
         volume.freeze();
         try {
-            volume.setCell(0, 1, (byte)0);
+            volume.setCell(0, 1, 0);
             throw new AssertionError("frozen volume must reject writes");
         } catch (IllegalStateException expected) {
             pass("frozen_volume");
@@ -483,6 +524,27 @@ final class MesherFastPathChecks {
                 || snapshot.rebuildCount() != 1L
                 || snapshot.workerQueueLatencyNs() != 7L) {
             throw new AssertionError("mesher metrics snapshot");
+        }
+        MesherMetrics.recordSectionFailure();
+        MesherMetrics.recordCircuitBreakerTrip();
+        MesherMetrics.recordDecision(FastPathCriteria.Result.fallback(FastPathCriteria.Reason.TRANSLUCENT_LAYER));
+        MesherMetrics.Snapshot after = MesherMetrics.snapshot();
+        if (after.meshFastPathFailures() != 1L || after.meshFastPathCircuitBreakerTrips() != 1L) {
+            throw new AssertionError("fail-open / circuit-breaker counters");
+        }
+        if (after.fallbackCount(FastPathCriteria.Reason.TRANSLUCENT_LAYER) != 1L) {
+            throw new AssertionError("coverage bucket for translucent");
+        }
+        if (after.fastPathCoverageOfNonAir() <= 0.0) {
+            throw new AssertionError("coverage ratio must be exported");
+        }
+        StringBuilder json = new StringBuilder();
+        after.appendJson(json);
+        if (!json.toString().contains("meshFastPathFailures")
+                || !json.toString().contains("fastPathCoverageOfNonAir")
+                || !json.toString().contains("TRANSLUCENT_LAYER")
+                || !json.toString().contains("\"scene\"")) {
+            throw new AssertionError("mesher JSON must export coverage, scene, and fail-open counters");
         }
         pass("mesher_metrics");
     }
@@ -510,10 +572,18 @@ final class MesherFastPathChecks {
                 "solid_16cubed", SectionFixtures.pack(0, 0, 0, solid), 40);
         CpuMeshingBenchmark.Sample checkerSample = CpuMeshingBenchmark.run(
                 "checkerboard", SectionFixtures.pack(0, 0, 0, checker), 40);
+        SnapshotFlagHotPath.Sample flags = SnapshotFlagHotPath.run(80);
         System.out.println(CpuMeshingBenchmark.format(solidSample));
         System.out.println(CpuMeshingBenchmark.format(checkerSample));
+        System.out.println(SnapshotFlagHotPath.format(flags));
         if (solidSample.vertices() <= 0 || checkerSample.vertices() <= 0) {
             throw new AssertionError("CPU benchmark produced empty meshes");
+        }
+        if (flags.leanNs() <= 0L || flags.heavyNs() <= 0L) {
+            throw new AssertionError("snapshot flag hot-path bench produced no samples");
+        }
+        if (flags.leanNs() > flags.heavyNs() * 2L) {
+            throw new AssertionError("lean production flagsOf must not be slower than the removed 6-face walk");
         }
         pass("cpu_meshing_time_not_a_perf_claim");
     }
@@ -591,7 +661,7 @@ final class MesherFastPathChecks {
             final int originY,
             final int originZ,
             final int[][][] states) {
-        byte[][][] flags = SectionFixtures.flagsOf(states);
+        int[][][] flags = SectionFixtures.flagsOf(states);
         int[][][] entities = SectionFixtures.entitySlots(states);
         List<MeshVisit> oracle = VanillaVisitOracle.walk(originX, originY, originZ, states, flags, entities);
         PackedSectionVolume volume = SectionFixtures.pack(originX, originY, originZ, states);
@@ -604,6 +674,211 @@ final class MesherFastPathChecks {
             throw new AssertionError("representative case produced no visits");
         }
         return oracle;
+    }
+
+    private static void testSectionFailOpenDoesNotCrashOtherSections() {
+        MesherMetrics.reset();
+        java.util.List<String> compiled = new java.util.ArrayList<>();
+        MesherSectionFailOpen.Outcome<String> failed = MesherSectionFailOpen.compile(
+                "section[0,4,0]",
+                () -> {
+                    compiled.add("hybrid-A");
+                    throw new IllegalStateException("intentional fast-path fault");
+                },
+                () -> {
+                    compiled.add("vanilla-A");
+                    return "mesh-vanilla-A";
+                });
+        if (failed.hybridSucceeded() || !"mesh-vanilla-A".equals(failed.value())) {
+            throw new AssertionError("faulted section must use vanilla mesh, got " + failed);
+        }
+        if (!compiled.equals(java.util.List.of("hybrid-A", "vanilla-A"))) {
+            throw new AssertionError("vanilla fallback must run after hybrid throw: " + compiled);
+        }
+        MesherSectionFailOpen.Outcome<String> neighbor = MesherSectionFailOpen.compile(
+                "section[1,4,0]",
+                () -> {
+                    compiled.add("hybrid-B");
+                    return "mesh-hybrid-B";
+                },
+                () -> {
+                    compiled.add("vanilla-B");
+                    return "mesh-vanilla-B";
+                });
+        if (!neighbor.hybridSucceeded() || !"mesh-hybrid-B".equals(neighbor.value())) {
+            throw new AssertionError("neighbor section must stay on hybrid: " + neighbor);
+        }
+        if (compiled.contains("vanilla-B")) {
+            throw new AssertionError("neighbor section must not be forced to vanilla");
+        }
+        if (MesherMetrics.snapshot().meshFastPathFailures() != 1L) {
+            throw new AssertionError("exactly one section fail-open must be counted");
+        }
+        pass("section_fail_open_isolated");
+    }
+
+    private static void testCircuitBreakerIsPerBlockStateNotSection() {
+        MesherCircuitBreaker breaker = MesherCircuitBreaker.get();
+        breaker.reset();
+        Object glassLike = new Object();
+        Object stone = new Object();
+        for (int i = 0; i < MesherCircuitBreaker.TRIP_AFTER; i++) {
+            if (breaker.isOpen(glassLike)) {
+                throw new AssertionError("breaker must not trip before threshold");
+            }
+            breaker.recordFailure(glassLike);
+        }
+        if (!breaker.isOpen(glassLike)) {
+            throw new AssertionError("breaker must trip the noisy BlockState");
+        }
+        if (breaker.isOpen(stone) || !breaker.allowFastPath(stone)) {
+            throw new AssertionError("a different BlockState must keep the fast path");
+        }
+        int trips = breaker.tripCount();
+        breaker.recordFailure(glassLike);
+        if (breaker.tripCount() != trips) {
+            throw new AssertionError("already-open key must not spam additional trips");
+        }
+        pass("circuit_breaker_per_blockstate");
+    }
+
+    private static void testGlassAndTranslucentAlwaysFallback() {
+        expectCriteria(SectionFixtures.TRANSPARENT, false, FastPathCriteria.Reason.TRANSLUCENT_LAYER);
+        if (SectionFixtures.fixtureAllowsFastPath(SectionFixtures.TRANSPARENT)) {
+            throw new AssertionError("glass fixture must not be on the fast-path whitelist");
+        }
+        if (!BlockRenderFlags.translucent(SectionFixtures.flags(SectionFixtures.TRANSPARENT))) {
+            throw new AssertionError("glass fixture flags must carry TRANSLUCENT");
+        }
+        if (FastPathCriteria.fromFlags(SectionFixtures.flags(SectionFixtures.TRANSPARENT)).fastPath()) {
+            throw new AssertionError("fromFlags must reject translucent glass");
+        }
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 4, 4, 4, SectionFixtures.TRANSPARENT);
+        FastPathCubeMesher.MeshResult fast = meshFast(SectionFixtures.pack(0, 64, 0, states));
+        if (!fast.vertices().isEmpty() || fast.fastPathBlocks() != 0 || fast.fallbackBlocks() != 1) {
+            throw new AssertionError("isolated glass must be vanilla fallback only");
+        }
+        pass("glass_translucent_always_fallback");
+    }
+
+    private static void testAnimatedCubeUvsAreFrameIndependent() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 3, 3, 3, SectionFixtures.ANIMATED);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        FastPathCubeMesher.MeshResult frameA = meshFast(volume);
+        FastPathCubeMesher.MeshResult frameB = meshFast(volume);
+        assertIdentical("animated_texture_uv_stable", frameA.vertices(), frameB.vertices());
+        FullCubeTemplates.CubeMaterial magma = FullCubeTemplates.CubeMaterial.animatedMagma();
+        if (frameA.vertices().isEmpty()) {
+            throw new AssertionError("animated cube fixture must still be a fast-path opaque cube");
+        }
+        boolean sawSpriteRect = frameA.vertices().stream().anyMatch(v -> v.u() == magma.u0() || v.u() == magma.u0() + magma.uSpan());
+        if (!sawSpriteRect) {
+            throw new AssertionError("animated cube UVs must be the sprite rectangle, not a frame index");
+        }
+    }
+
+    private static void testMultipleTintProviders() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 2, 2, 2, SectionFixtures.TINT);
+        SectionFixtures.setInterior(states, 4, 2, 2, SectionFixtures.TINT_FOLIAGE);
+        SectionFixtures.setInterior(states, 6, 2, 2, SectionFixtures.TINT_WATER);
+        PackedSectionVolume volume = SectionFixtures.pack(0, 0, 0, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        List<MeshEquivalence.TerrainVertex> oracle = meshOracle(volume);
+        assertIdentical("multiple_tint_providers", oracle, fast.vertices());
+        long distinctColors = fast.vertices().stream().map(v -> v.color()).distinct().count();
+        if (distinctColors < 3) {
+            throw new AssertionError("grass/foliage/water tint providers must not collapse to one color, got "
+                    + distinctColors);
+        }
+    }
+
+    private static void testUnloadedNeighborSectionEdge() {
+        int[][][] states = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(states, 0, 0, 0, SectionFixtures.FULL_CUBE);
+        PackedSectionVolume volume = SectionFixtures.pack(16, 64, -32, states);
+        FastPathCubeMesher.MeshResult fast = meshFast(volume);
+        if (fast.vertices().size() != 6 * 4) {
+            throw new AssertionError("unloaded neighbor (air halo) must keep all six faces, got "
+                    + fast.vertices().size());
+        }
+        assertGeometry("unloaded_neighbor_section_edge", volume, 6 * 4);
+    }
+
+    private static void testCompileAfterReloadIsFreshNotStale() {
+        Object generationA = new Object();
+        Object generationB = new Object();
+        CubeModelCache cache = HybridSectionMesher.bindWorkerCubeCache(generationA);
+        seedCacheOccupant(cache);
+        if (cache.isEmpty()) {
+            throw new AssertionError("pre-reload cache must be occupied");
+        }
+        CubeModelCache after = HybridSectionMesher.bindWorkerCubeCache(generationB);
+        if (after != cache || !after.isEmpty()) {
+            throw new AssertionError("reload must empty the same worker cache");
+        }
+        seedCacheOccupant(after);
+        if (after.cachedEntryCount() != 1) {
+            throw new AssertionError("next compile after reload must populate fresh entries, not stay empty");
+        }
+        after.bindModelSet(generationB);
+        if (after.cachedEntryCount() != 1) {
+            throw new AssertionError("same generation must keep the fresh compile result");
+        }
+        int[][][] before = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(before, 5, 5, 5, SectionFixtures.FULL_CUBE);
+        int[][][] afterReload = SectionFixtures.emptyHalo();
+        SectionFixtures.setInterior(afterReload, 5, 5, 5, SectionFixtures.ANIMATED);
+        FastPathCubeMesher.MeshResult staleStone = meshFast(SectionFixtures.pack(0, 0, 0, before));
+        FastPathCubeMesher.MeshResult freshAnimated = meshFast(SectionFixtures.pack(0, 0, 0, afterReload));
+        if (freshAnimated.vertices().isEmpty()) {
+            throw new AssertionError("compile after reload must emit the new section, not an empty mesh");
+        }
+        assertIdentical("compile_after_reload_fresh_geometry", meshOracle(SectionFixtures.pack(0, 0, 0, afterReload)), freshAnimated.vertices());
+        boolean reusedStoneUv = freshAnimated.vertices().stream().allMatch(v ->
+                staleStone.vertices().stream().anyMatch(old -> old.u() == v.u() && old.v() == v.v()));
+        if (reusedStoneUv) {
+            throw new AssertionError("reload compile must not reuse the previous atlas rectangle");
+        }
+        pass("compile_after_reload_fresh");
+    }
+
+    private static void testRealisticCpuDatasets() {
+        CpuMeshingBenchmark.Sample typical = CpuMeshingBenchmark.run(
+                "typical_overworld_surface",
+                SectionFixtures.pack(0, 64, 0, MesherWorldFixtures.typicalOverworldSurface()),
+                20);
+        CpuMeshingBenchmark.Sample dense = CpuMeshingBenchmark.run(
+                "dense_structure",
+                SectionFixtures.pack(0, 64, 0, MesherWorldFixtures.denseStructure()),
+                20);
+        System.out.println(CpuMeshingBenchmark.format(typical));
+        System.out.println(CpuMeshingBenchmark.format(dense));
+        if (typical.fastPathBlocks() <= 0 || dense.fastPathBlocks() <= 0) {
+            throw new AssertionError("realistic datasets must still have some fast-path cubes");
+        }
+        pass("cpu_meshing_realistic_datasets_not_a_perf_claim");
+    }
+
+    private static void testMesherBenchmarkScenes() {
+        if (MesherBenchmarkScenes.all().size() != 3) {
+            throw new AssertionError("three mesher hardware scenes are required");
+        }
+        MesherBenchmarkScenes.byId("mesher_cold_load");
+        MesherBenchmarkScenes.byId("mesher_rebuild_storm");
+        MesherBenchmarkScenes.byId("mesher_chunk_flight");
+        if (!MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.fastPathCoverageOfNonAir")) {
+            throw new AssertionError("hardware metric list must include real-world coverage");
+        }
+        String recorder = readUtf8(Path.of("src/client/java/dev/ultima/client/benchmark/ClientFrameBenchmark.java"));
+        if (!recorder.contains("mesher_cold_load")
+                || !recorder.contains("mesher_rebuild_storm")
+                || !recorder.contains("mesher_chunk_flight")) {
+            throw new AssertionError("ClientFrameBenchmark must default warmup/camera for the three mesher scenes");
+        }
+        pass("mesher_benchmark_scenes");
     }
 
     private static void testCubeCacheInvalidatesOnModelSetReload() {
@@ -660,7 +935,7 @@ final class MesherFastPathChecks {
         try {
             var misses = CubeModelCache.class.getDeclaredField("misses");
             misses.setAccessible(true);
-            ((Map<Object, Boolean>) misses.get(cache)).put(new Object(), Boolean.TRUE);
+            ((Map<Object, Object>) misses.get(cache)).put(new Object(), FastPathCriteria.Reason.NOT_SINGLE_VARIANT);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not seed cubeCache occupant", e);
         }

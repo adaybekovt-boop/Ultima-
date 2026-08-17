@@ -1,5 +1,13 @@
 # Changelog
 
+## mesher_fast_path Phase 3.1 (hardware-ready prep)
+
+Section-level fail-open + BlockState circuit breaker, unified
+`FastPathCriteria` (glass/translucent always vanilla), lean production
+snapshot flags, expanded equivalence + realistic CPU datasets, coverage
+JSON, and a three-scene hardware runbook. Default remains **OFF**.
+**No FPS/GPU claim.** See `MESHER_FAST_PATH.md` and `MESHER_HARDWARE_AB.md`.
+
 ## mesher_fast_path (draft, isolated from main / PR #3)
 
 Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,

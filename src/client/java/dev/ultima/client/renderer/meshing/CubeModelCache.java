@@ -1,5 +1,8 @@
 package dev.ultima.client.renderer.meshing;
 
+import dev.ultima.meshing.FastPathCriteria;
+import dev.ultima.meshing.FastPathCriteria.Reason;
+import dev.ultima.meshing.FastPathCriteria.Result;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -7,6 +10,7 @@ import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.block.dispatch.SingleVariant;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
@@ -30,8 +34,14 @@ public final class CubeModelCache {
         }
     }
 
+    public record Lookup(@Nullable CachedCube cube, Result result) {
+        public boolean fastPath() {
+            return this.cube != null && this.result.fastPath();
+        }
+    }
+
     private final IdentityHashMap<BlockState, CachedCube> hits = new IdentityHashMap<>();
-    private final IdentityHashMap<BlockState, Boolean> misses = new IdentityHashMap<>();
+    private final IdentityHashMap<BlockState, Reason> misses = new IdentityHashMap<>();
     private final List<BlockStateModelPart> parts = new ArrayList<>(4);
     private final RandomSource random = RandomSource.create(0L);
     private Object boundModelSet;
@@ -67,65 +77,88 @@ public final class CubeModelCache {
     }
 
     public @Nullable CachedCube get(final BlockState state, final BlockStateModel model, final boolean cutoutLeaves) {
-        if (state.getBlock() instanceof LeavesBlock || ModelBlockRenderer.forceOpaque(cutoutLeaves, state)) {
-            this.misses.put(state, Boolean.TRUE);
-            return null;
+        return this.lookup(state, model, cutoutLeaves).cube();
+    }
+
+    /**
+     * Same admission tree as {@link FastPathCriteria}. A miss reason is the
+     * coverage bucket; a hit is a proven opaque unit cube.
+     */
+    public Lookup lookup(final BlockState state, final BlockStateModel model, final boolean cutoutLeaves) {
+        Result early = classifyState(state, cutoutLeaves);
+        if (!early.fastPath()) {
+            this.misses.put(state, early.reason());
+            return new Lookup(null, early);
         }
         CachedCube hit = this.hits.get(state);
         if (hit != null) {
-            return hit;
+            return new Lookup(hit, Result.admitted());
         }
-        if (this.misses.containsKey(state)) {
-            return null;
+        Reason remembered = this.misses.get(state);
+        if (remembered != null) {
+            return new Lookup(null, Result.fallback(remembered));
         }
-        CachedCube inspected = inspect(state, model);
-        if (inspected == null) {
-            this.misses.put(state, Boolean.TRUE);
-            return null;
+        Lookup inspected = inspect(state, model);
+        if (inspected.cube() == null) {
+            this.misses.put(state, inspected.result().reason());
+            return inspected;
         }
-        this.hits.put(state, inspected);
+        this.hits.put(state, inspected.cube());
         return inspected;
     }
 
-    private @Nullable CachedCube inspect(final BlockState state, final BlockStateModel model) {
-        if (state.getRenderShape() != RenderShape.MODEL) {
-            return null;
+    static Result classifyState(final BlockState state, final boolean cutoutLeaves) {
+        if (state.isAir()) {
+            return Result.fallback(Reason.AIR);
         }
         if (!state.getFluidState().isEmpty()) {
-            return null;
+            return Result.fallback(Reason.HAS_FLUID);
+        }
+        if (state.getRenderShape() != RenderShape.MODEL) {
+            return Result.fallback(Reason.NOT_MODEL);
         }
         if (state.hasOffsetFunction()) {
-            return null;
+            return Result.fallback(Reason.HAS_OFFSET);
         }
-        if (state.getBlock() instanceof LeavesBlock) {
-            return null;
+        if (state.getBlock() instanceof LeavesBlock || ModelBlockRenderer.forceOpaque(cutoutLeaves, state)) {
+            return Result.fallback(Reason.SKIP_RENDERING);
         }
+        return Result.admitted();
+    }
+
+    private Lookup inspect(final BlockState state, final BlockStateModel model) {
         if (!(model instanceof SingleVariant)) {
-            return null;
+            return new Lookup(null, Result.fallback(Reason.NOT_SINGLE_VARIANT));
         }
         this.parts.clear();
         this.random.setSeed(0L);
         model.collectParts(this.random, this.parts);
         if (this.parts.size() != 1) {
-            return null;
+            return new Lookup(null, Result.fallback(Reason.NOT_SINGLE_VARIANT));
         }
         BlockStateModelPart part = this.parts.getFirst();
         if (!part.getQuads(null).isEmpty()) {
-            return null;
+            return new Lookup(null, Result.fallback(Reason.UNCULLED_QUADS));
         }
         BakedQuad[] quads = new BakedQuad[DIRECTIONS.length];
         for (Direction direction : DIRECTIONS) {
             List<BakedQuad> face = part.getQuads(direction);
             if (face.size() != 1) {
-                return null;
+                return new Lookup(null, Result.fallback(Reason.FACE_QUAD_COUNT));
             }
             BakedQuad quad = face.getFirst();
-            if (quad.direction() != direction || !isUnitCubeFace(quad, direction)) {
-                return null;
+            if (quad.materialInfo().layer() == ChunkSectionLayer.TRANSLUCENT) {
+                return new Lookup(null, Result.fallback(Reason.TRANSLUCENT_LAYER));
+            }
+            if (quad.direction() != direction) {
+                return new Lookup(null, Result.fallback(Reason.FACE_DIRECTION_MISMATCH));
+            }
+            if (!isUnitCubeFace(quad, direction)) {
+                return new Lookup(null, Result.fallback(Reason.NOT_UNIT_CUBE_FACE));
             }
             quads[direction.ordinal()] = quad;
         }
-        return new CachedCube(quads, part.useAmbientOcclusion());
+        return new Lookup(new CachedCube(quads, part.useAmbientOcclusion()), Result.admitted());
     }
 
     static boolean isUnitCubeFace(final BakedQuad quad, final Direction direction) {

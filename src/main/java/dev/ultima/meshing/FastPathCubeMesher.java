@@ -53,13 +53,8 @@ public final class FastPathCubeMesher {
             final boolean ambientOcclusion,
             final CardinalLighting lighting,
             final List<MeshEquivalence.TerrainVertex> out) {
-        int packed = SectionIndex.interior(x, y, z);
-        int flags = volume.flags(packed);
-        int stateId = volume.state(packed);
-        if (BlockRenderFlags.air(flags) || !SectionFixtures.fixtureAllowsFastPath(stateId)) {
-            return false;
-        }
-        if (BlockRenderFlags.skipRendering(flags) || BlockRenderFlags.hasFluid(flags)) {
+        int stateId = volume.state(SectionIndex.interior(x, y, z));
+        if (!FastPathCriteria.fromFixtureState(stateId).fastPath()) {
             return false;
         }
         int mask = OcclusionMask.visibleFaces(volume, x, y, z);

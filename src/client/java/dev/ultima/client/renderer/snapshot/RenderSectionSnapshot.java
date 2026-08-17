@@ -61,7 +61,7 @@ public final class RenderSectionSnapshot implements BlockAndTintGetter {
                     BlockState state = region.getBlockState(cursor);
                     int packed = SectionIndex.packed(x, y, z);
                     int stateId = this.internState(state);
-                    byte flags = flagsOf(state);
+                    int flags = flagsOf(state);
                     this.volume.setCell(packed, stateId, flags);
                     if (BlockRenderFlags.hasBlockEntity(flags) && SectionIndex.inInterior(x - 1, y - 1, z - 1)) {
                         BlockEntity blockEntity = region.getBlockEntity(cursor);
@@ -101,19 +101,51 @@ public final class RenderSectionSnapshot implements BlockAndTintGetter {
         return id;
     }
 
-    static byte flagsOf(final BlockState state) {
+    /**
+     * Production hot-path flags. Only bits {@code HybridSectionMesher} reads:
+     * air, solid render, block-entity, fluid, model. Does <em>not</em> call
+     * {@code getFaceOcclusionShape} or {@code skipRendering} — those are
+     * test-fixture heuristics and are computed by {@link #flagsOfForTest}.
+     */
+    public static int flagsOf(final BlockState state) {
+        boolean air = state.isAir();
+        return BlockRenderFlags.pack(
+                air,
+                !air && state.isSolidRender(),
+                !air && state.hasBlockEntity(),
+                !air && !state.getFluidState().isEmpty(),
+                !air && state.getRenderShape() == RenderShape.MODEL,
+                false,
+                false,
+                false);
+    }
+
+    /**
+     * Test/debug only. Walks all six faces for occlusion / skip bits. Never
+     * called from {@link #capture} or {@code HybridSectionMesher.compile}.
+     */
+    public static int flagsOfForTest(final BlockState state) {
         boolean air = state.isAir();
         boolean solid = !air && state.isSolidRender();
-        boolean emptyOccluder = air || state.getFaceOcclusionShape(Direction.DOWN) == Shapes.empty();
-        boolean skip = !air && state.skipRendering(state, Direction.DOWN);
+        boolean full = !air;
+        boolean empty = air;
+        boolean skip = !air;
+        if (!air) {
+            for (Direction direction : Direction.values()) {
+                var shape = state.getFaceOcclusionShape(direction);
+                full &= shape == Shapes.block();
+                empty &= shape == Shapes.empty();
+                skip &= state.skipRendering(state, direction);
+            }
+        }
         return BlockRenderFlags.pack(
                 air,
                 solid,
                 !air && state.hasBlockEntity(),
                 !air && !state.getFluidState().isEmpty(),
                 !air && state.getRenderShape() == RenderShape.MODEL,
-                solid,
-                emptyOccluder,
+                full,
+                empty,
                 skip);
     }
 

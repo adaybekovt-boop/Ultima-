@@ -12,23 +12,30 @@ public final class BlockRenderFlags {
     public static final int MODEL = 1 << 4;
     /**
      * Neighbor {@code getFaceOcclusionShape} is the {@code Shapes.block()} singleton
-     * on every face. Vanilla {@code Block.shouldRenderFace} culls immediately.
+     * on every face. Test-fixture / debug bit only. Production compile never
+     * reads this; it calls {@code Block.shouldRenderFace}.
      */
     public static final int FULL_BLOCK_OCCLUDER = 1 << 5;
     /**
-     * Occlusion shape is empty (air, glass, plants). Vanilla renders the adjacent
-     * face unless {@code skipRendering} applies.
+     * Occlusion shape is empty (air, glass, plants). Test-fixture / debug bit
+     * only. Production compile never reads this.
      */
     public static final int EMPTY_OCCLUDER = 1 << 6;
     /**
      * {@code skipRendering(self, self)} is true (leaves). Fast path refuses the cell.
+     * Test-fixture / debug bit only; production snapshots do not compute it.
      */
     public static final int SKIP_RENDERING = 1 << 7;
+    /**
+     * Translucent render layer (glass, ice, slime). Always vanilla fallback.
+     * Fixture bit; production rejects via {@code ChunkSectionLayer.TRANSLUCENT}.
+     */
+    public static final int TRANSLUCENT = 1 << 8;
 
     private BlockRenderFlags() {
     }
 
-    public static byte pack(
+    public static int pack(
             final boolean air,
             final boolean solidRender,
             final boolean hasBlockEntity,
@@ -37,6 +44,19 @@ public final class BlockRenderFlags {
             final boolean fullBlockOccluder,
             final boolean emptyOccluder,
             final boolean skipRendering) {
+        return pack(air, solidRender, hasBlockEntity, hasFluid, model, fullBlockOccluder, emptyOccluder, skipRendering, false);
+    }
+
+    public static int pack(
+            final boolean air,
+            final boolean solidRender,
+            final boolean hasBlockEntity,
+            final boolean hasFluid,
+            final boolean model,
+            final boolean fullBlockOccluder,
+            final boolean emptyOccluder,
+            final boolean skipRendering,
+            final boolean translucent) {
         int flags = 0;
         if (air) {
             flags |= AIR;
@@ -62,7 +82,10 @@ public final class BlockRenderFlags {
         if (skipRendering) {
             flags |= SKIP_RENDERING;
         }
-        return (byte)flags;
+        if (translucent) {
+            flags |= TRANSLUCENT;
+        }
+        return flags;
     }
 
     public static boolean air(final int flags) {
@@ -95,5 +118,9 @@ public final class BlockRenderFlags {
 
     public static boolean skipRendering(final int flags) {
         return (flags & SKIP_RENDERING) != 0;
+    }
+
+    public static boolean translucent(final int flags) {
+        return (flags & TRANSLUCENT) != 0;
     }
 }

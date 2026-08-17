@@ -40,24 +40,18 @@ public final class VanillaCubeOracle {
             final boolean ambientOcclusion,
             final CardinalLighting lighting,
             final List<MeshEquivalence.TerrainVertex> out) {
-        int packed = SectionIndex.interior(x, y, z);
-        int flags = volume.flags(packed);
-        int stateId = volume.state(packed);
-        if (BlockRenderFlags.air(flags) || !SectionFixtures.fixtureAllowsFastPath(stateId)) {
+        int stateId = volume.state(SectionIndex.interior(x, y, z));
+        if (!FastPathCriteria.fromFixtureState(stateId).fastPath()) {
             return false;
         }
-        if (BlockRenderFlags.skipRendering(flags) || BlockRenderFlags.hasFluid(flags)) {
+        int mask = OcclusionMask.visibleFaces(volume, x, y, z);
+        if (mask == OcclusionMask.COMPLEX) {
             return false;
         }
         FullCubeTemplates.CubeMaterial material = FullCubeTemplates.materialOf(stateId);
         boolean useAo = ambientOcclusion && stateId != SectionFixtures.LIGHT;
         for (Direction direction : DIRECTIONS) {
-            int neighbor = volume.neighborFlags(x, y, z, direction.getStepX(), direction.getStepY(), direction.getStepZ());
-            int face = OcclusionMask.simpleShouldRenderFace(flags, neighbor);
-            if (face < 0) {
-                return false;
-            }
-            if (face == 1) {
+            if (OcclusionMask.visible(mask, direction)) {
                 CubeFaceEmitter.emit(out, volume, lights, x, y, z, direction, material, useAo, lighting);
             }
         }

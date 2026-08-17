@@ -17,7 +17,7 @@ public final class VanillaVisitOracle {
             final int originY,
             final int originZ,
             final int[][][] states,
-            final byte[][][] flags,
+            final int[][][] flags,
             final int[][][] entitySlots) {
         requireExtent(states);
         requireExtent(flags);
@@ -67,11 +67,4 @@ public final class VanillaVisitOracle {
         }
     }
 
-    private static void requireExtent(final byte[][][] data) {
-        if (data.length != SectionIndex.EXTENT
-                || data[0].length != SectionIndex.EXTENT
-                || data[0][0].length != SectionIndex.EXTENT) {
-            throw new IllegalArgumentException("halo flag array must be 18³");
-        }
-    }
 }
