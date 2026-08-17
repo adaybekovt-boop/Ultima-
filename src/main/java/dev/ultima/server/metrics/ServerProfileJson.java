@@ -128,6 +128,9 @@ public final class ServerProfileJson {
     private static void appendModules(final StringBuilder json) {
         json.append("  \"modules\": [\n");
         try {
+            if (FabricLoader.getInstance().getConfigDir() == null) {
+                throw new IllegalStateException("config dir unavailable");
+            }
             List<UltimaConfig.ResolvedModule> modules = UltimaConfig.get().resolvedModules();
             for (int i = 0; i < modules.size(); i++) {
                 UltimaConfig.ResolvedModule module = modules.get(i);

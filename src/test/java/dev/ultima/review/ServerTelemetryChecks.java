@@ -1,6 +1,6 @@
 package dev.ultima.review;
 
-import dev.ultima.command.UltimaCommands;
+import dev.ultima.command.UltimaProfilePermissions;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.server.metrics.MetricId;
 import dev.ultima.server.metrics.SampleRing;
@@ -12,9 +12,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
-import net.minecraft.commands.Commands;
-import net.minecraft.server.permissions.PermissionSet;
-import net.minecraft.server.permissions.Permissions;
 
 /**
  * Unit coverage for server-side telemetry: counters, percentiles, profile timer, gating, and
@@ -126,6 +123,7 @@ final class ServerTelemetryChecks {
         Path output = tempFile("ultima-server-metrics-profile", "profile.json");
         AtomicLong clock = new AtomicLong();
         ServerMetrics.resetForTest(true, clock::get, 64);
+        ServerMetrics.setLagTickThresholdNs(0L);
         List<String> lines = new ArrayList<>();
         ServerMetrics.startProfile(2, lines::add, output);
         assertTrue(ServerMetrics.isProfiling(), "profile is active after start");
@@ -198,16 +196,18 @@ final class ServerTelemetryChecks {
     }
 
     private static void testProfilePermission() {
+        assertTrue(!UltimaProfilePermissions.mayProfile(0), "permission level ALL cannot profile");
+        assertTrue(!UltimaProfilePermissions.mayProfile(1), "moderators cannot profile");
+        assertTrue(UltimaProfilePermissions.mayProfile(2), "gamemaster/operator can profile");
+        assertTrue(UltimaProfilePermissions.mayProfile(4), "owner/console can profile");
+        assertEquals(2, UltimaProfilePermissions.OPERATOR_LEVEL_ID, "operator level is GAMEMASTERS (2)");
+        String commandSource = read(Path.of("src/main/java/dev/ultima/command/UltimaCommands.java"));
         assertTrue(
-                UltimaCommands.PROFILE_PERMISSION == Commands.LEVEL_GAMEMASTERS,
-                "/ultima profile must use the gamemaster/operator permission check");
-        assertTrue(!UltimaCommands.mayProfile(PermissionSet.NO_PERMISSIONS), "non-ops cannot profile");
-        assertTrue(UltimaCommands.mayProfile(PermissionSet.ALL_PERMISSIONS), "console/all permissions can profile");
-        PermissionSet moderatorOnly = permission -> permission == Permissions.COMMANDS_MODERATOR;
-        PermissionSet gamemaster = permission -> permission == Permissions.COMMANDS_GAMEMASTER;
-        assertTrue(!UltimaCommands.mayProfile(moderatorOnly), "moderator is below operator for this diagnostic");
-        assertTrue(UltimaCommands.mayProfile(gamemaster), "gamemaster/operator can profile");
-        assertEquals("ultima", UltimaCommands.root().getLiteral(), "command root is /ultima");
+                commandSource.contains("Commands.LEVEL_GAMEMASTERS"),
+                "/ultima profile must require Commands.LEVEL_GAMEMASTERS");
+        assertTrue(
+                commandSource.contains("requires(Commands.hasPermission(PROFILE_PERMISSION))"),
+                "the profile literal must be permission-gated, not the whole /ultima tree");
         assertTrue(
                 UltimaModules.isInstrumentation("server_metrics"),
                 "server_metrics is classified as instrumentation like terrain_metrics");

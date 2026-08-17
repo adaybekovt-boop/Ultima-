@@ -474,7 +474,7 @@ public final class ServerMetrics {
                 return;
             }
             this.depth[ordinal] = next;
-            if (next == 0 && this.startNs[ordinal] != 0L) {
+            if (next == 0) {
                 long dt = now - this.startNs[ordinal];
                 if (dt < 0L) {
                     dt = 0L;
