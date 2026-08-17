@@ -127,10 +127,19 @@ public final class SettingsScreenLogicTest {
 
     private static void testLockedConflictRow() {
         UltimaConfig config = defaults();
-        SettingsRowView row = SettingsRowView.from(UltimaSettingsCatalog.require("retained_terrain"), config);
-        assertTrue(!row.locked(), "no renderer conflict in the unit-test loader");
-        assertTrue(!row.displayOn(), "retained terrain stays default-off");
-        assertTrue(row.fullTooltip().contains("require restarting the game"), "restart warning in tooltip");
+        SettingsRowView simulation = SettingsRowView.from(UltimaSettingsCatalog.require("cursor_step"), config);
+        assertTrue(!simulation.locked(), "common simulation modules are not environment-locked");
+        assertTrue(simulation.displayOn(), "cursor_step stays default-on");
+        assertTrue(simulation.fullTooltip().contains("require restarting the game"), "restart warning in tooltip");
+
+        SettingsRowView client = SettingsRowView.from(UltimaSettingsCatalog.require("retained_terrain"), config);
+        assertTrue(!client.displayOn(), "retained terrain stays default-off");
+        if (client.locked()) {
+            assertTrue("not_client_environment".equals(client.statusReason()),
+                    "headless JavaExec is not a client, so client modules lock via resolve()");
+            assertTrue(client.lockReason().contains("client-only"), "lock copy names the environment");
+        }
+        assertTrue(client.fullTooltip().contains("require restarting the game"), "retained tooltip warns about restart");
     }
 
     private static void testTogglePersistsToExistingFile() {
