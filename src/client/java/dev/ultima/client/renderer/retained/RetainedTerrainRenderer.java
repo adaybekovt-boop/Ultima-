@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 public final class RetainedTerrainRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-retained-terrain");
     private static final RetainedTerrainRenderer INSTANCE = new RetainedTerrainRenderer();
+    private static final boolean A2_DEBUG = RetainedVisibilityDebug.ENABLED;
 
     private final RetainedGpuResources gpu = new RetainedGpuResources();
     private RetainedSectionRecord[] sections = new RetainedSectionRecord[0];
@@ -88,6 +89,7 @@ public final class RetainedTerrainRenderer {
         this.currentlyVisible.clear();
         this.opaqueReady = false;
         this.failedOpen = false;
+        RetainedVisibilityDebug.reset();
         RetainedTerrainPipelines.invalidate();
         RetainedTerrainCapabilities.invalidate();
     }
@@ -258,6 +260,8 @@ public final class RetainedTerrainRenderer {
             return;
         }
         VertexFormat format = layer.pipeline().getVertexFormatBinding(0);
+        boolean wasHiddenBeforeCapture = A2_DEBUG
+                && (slot.debugHiddenBeforeReentry || (slot.group != null && slot.instanceCount == 0));
         boolean meshChanged = slot.capture(draw, slice, format, meshId);
         if (!slot.alive || slot.vertexBuffer == null) {
             this.hideSlot(slot);
@@ -278,6 +282,12 @@ public final class RetainedTerrainRenderer {
         } else if (slot.instanceCount == 0) {
             slot.group.setVisible(slot, true);
         }
+        if (A2_DEBUG && meshChanged && wasHiddenBeforeCapture) {
+            RetainedVisibilityDebug.recordReentry(slot.instanceCount != 0);
+            slot.debugHiddenBeforeReentry = false;
+        } else if (A2_DEBUG && slot.instanceCount != 0) {
+            slot.debugHiddenBeforeReentry = false;
+        }
         slot.seenThisFrame = true;
         this.currentlyVisible.add(slot);
         this.frameSectionLayers++;
@@ -285,6 +295,9 @@ public final class RetainedTerrainRenderer {
     }
 
     private void hideSlot(final RetainedSectionRecord.LayerSlot slot) {
+        if (A2_DEBUG && slot.group != null) {
+            slot.debugHiddenBeforeReentry = true;
+        }
         if (slot.group != null && slot.instanceCount != 0) {
             slot.group.setVisible(slot, false);
         }

@@ -65,6 +65,8 @@ public final class RetainedSectionRecord {
         public int commandIndex = -1;
         public int instanceCount;
         public boolean seenThisFrame;
+        /** Set only by the opt-in A2 visibility diagnostic. */
+        public boolean debugHiddenBeforeReentry;
 
         public boolean capture(
                 final SectionMesh.SectionDraw draw,
@@ -118,6 +120,7 @@ public final class RetainedSectionRecord {
             this.baseVertex = 0;
             this.commandGeneration++;
             this.instanceCount = 0;
+            this.debugHiddenBeforeReentry = false;
         }
 
         @Override
