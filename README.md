@@ -1,6 +1,9 @@
 # Ultima
 
-Agent-ready Fabric mod workspace for Minecraft Java Edition 26.2.
+Performance mod for Minecraft Java Edition 26.2 (Fabric). Ultima ships measured,
+behaviour-preserving optimizations to server/client simulation (collision and
+entity-index lookups) and an opt-in retained-terrain renderer path, plus an
+agent-ready workspace for continuing the work.
 
 ## What is already wired
 
@@ -56,22 +59,29 @@ renderer mods.
 A 6-pair dedicated-server entity-farm A/B measured **8.333 → 6.518 ms/tick (−21.78%)**. That is
 integrated-server / hitch work, not a GPU FPS claim.
 
-### GPU performance claim status — provenance recovery in progress
+### GPU performance claim status — retained-terrain foundation: KEEP
 
-Prompt #2.1–2.4 previously reported a retained-terrain KEEP result, including
-**+27.85% average FPS** and **+12.87% 1% low** in chunk-flight. Those numbers are
-currently **quarantined and are not release-valid claims**: the reported tested commit
-`4d518325d974c2e6b504208fe3d9262c8bbbfcb5` is not present in the remote repository,
-and the `main` tree that was merged did not contain the bounded command compaction
-described by that test report.
+An earlier reported retained-terrain result (`4d518325d974c2e6b504208fe3d9262c8bbbfcb5`,
++27.85% FPS / +12.87% 1% low) could not be traced to the released tree and was
+quarantined (Prompt #2.5, see `CHANGELOG.md`). The foundation was rebuilt with bounded
+command compaction and re-tested on real RTX 3090 hardware; that retest is the
+currently valid performance claim:
 
-Prompt #2.5 is recovering the documented compaction behavior, fixing CI so it validates
-the actual triggering HEAD, and requires a repeat real-hardware A/B on the exact released
-SHA before the GPU numbers may be advertised again. See `CHANGELOG.md` and the provenance
-recovery report.
+- average FPS: 301.36 → 394.14, **+30.8%** (paired 95% CI +70.44…+115.13 FPS)
+- 1% low: 77.79 → 84.26, **+8.3%** (CI +1.03…+11.92 FPS)
+- terrain CPU total: **−42.9%**; 0 crashes, 0 `GL_INVALID_OPERATION`, 0 Mixin failures
+  across all 12 logs
 
-`retained_terrain` stays **opt-in** (default off). Experimental lab PR #3 is not in
-`main` and stays draft / default off.
+**FOUNDATION VERDICT: KEEP.** Full methodology, the visual-diff audit, and the
+provenance chain from the tested SHA to the released SHA are in the
+[`ultima-foundation-final-2.6.1` release](https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1)
+(tag `ultima-foundation-final-2.6.1`, commit `55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79`).
+The hardware A/B dataset itself was collected on ancestor commit `6572f2e`; commits after
+it are opt-in diagnostics only and do not change the release path — see the release notes'
+provenance section for the exact chain.
+
+`retained_terrain` stays **opt-in** (default off). Experimental lab PR #3 and the
+mesher fast-path PR #4 are not in `main` and stay draft / experimental / default off.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 

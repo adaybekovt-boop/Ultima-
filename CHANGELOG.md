@@ -1,5 +1,38 @@
 # Changelog
 
+## Prompt #2.6.1 — retained foundation closed out: KEEP
+
+PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance
+recovery: visual differences are explained by same-mode route variation (functional
+parity PASS), A2 visibility re-entry is same-frame (2 same-frame, 0 one-frame-late
+over 3,000 sampled frames), and bounded compaction is active and stable (37 triggers
+over an 18,000-frame smoke run, no unbounded growth, no errors).
+
+The six-pair counterbalanced chunk-flight A/B from SHA `6572f2e` remains the valid
+performance dataset (diagnostic-only commits since then do not alter the release path):
+
+- average FPS: 301.36 → 394.14, **+30.8%**, paired 95% CI +70.44…+115.13 FPS
+- 1% low: 77.79 → 84.26, **+8.3%**, CI +1.03…+11.92 FPS
+- terrain CPU total: 1,254,679 → 716,923 ns, **−42.9%**
+- P99 frame time: 9.151 → 7.748 ms
+- all 12 logs: 0 query-object errors, 0 `GL_INVALID_OPERATION`, 0 Mixin apply failures, 0 crashes
+
+**FOUNDATION VERDICT: KEEP.**
+
+Released as tag `ultima-foundation-final-2.6.1` at commit
+`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (main HEAD, PR #7 merge commit):
+https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1
+
+`Tested SHA = Released SHA`: **YES** for the diagnostic/compaction code tree (merge SHA
+rebuilt, tree equals `858359f`). The six-pair FPS dataset SHA equals the released SHA:
+**NO** — that dataset was collected on ancestor `6572f2e`; the commits after it
+(`cf83913`, `858359f`) are opt-in diagnostics and do not change the default release path.
+
+PR #3 (lab, base `cursor/forensic-review-9efc`) and PR #4 (mesher fast path, base `main`)
+remain separate open drafts, isolated from `retained_terrain`, not merged, default off.
+
+---
+
 ## Prompt #2.5 — provenance recovery (P0)
 
 The previous KEEP documentation referenced hardware-tested commit
