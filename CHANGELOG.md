@@ -1,5 +1,16 @@
 # Changelog
 
+## FSR1 spatial upscaling (EASU + RCAS) — draft, default off
+
+New isolated client module `fsr_upscaling` (default **off**). Ports AMD FSR 1.0.2
+EASU+RCAS to GLSL 330, renders the world to an internal target, upscales to
+native before HUD/GUI. Auto-off with Iris/Canvas; Sodium-only is allowed.
+Does not touch retained-terrain or mesher production code. No hardware A/B yet.
+**SAFE TO MERGE: NO.** See `FSR_UPSCALING.md` and
+`THIRD_PARTY_LICENSES/AMD_FSR1_LICENSE.md`.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

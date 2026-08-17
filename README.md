@@ -47,6 +47,9 @@ Ultima's modules are configured in `config/ultima.properties`.
 - Enabled by default on the client only (instrumentation / no visual change): `terrain_metrics`, `temporal`
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
   `retained_terrain`, `render_snapshot`, `java_mesher`, `section_task_queue`, `rgss_endpoint`
+- Opt-in FSR1 spatial upscaling (default off; auto-off with Iris/Canvas only;
+  Sodium without Iris is allowed): `fsr_upscaling`. See `FSR_UPSCALING.md`.
+  Not a hardware FPS claim.
 - Opt-in instrumentation only: `client_benchmark`
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`

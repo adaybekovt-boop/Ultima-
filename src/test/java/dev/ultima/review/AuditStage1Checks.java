@@ -368,6 +368,8 @@ final class AuditStage1Checks {
                 "retained_terrain is an opt-in experiment");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("temporal")) == UltimaModules.Kind.SHIPPED_DEFAULT,
                 "temporal Native passthrough is a shipped client default");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("fsr_upscaling")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
+                "fsr_upscaling is an opt-in experiment");
         assertFalse(UltimaModules.isOptInExperiment("entity_section_lookup"), "defaults are not experimental");
         assertTrue(UltimaModules.isOptInExperiment("java_mesher"), "java_mesher remains experimental");
     }

@@ -45,6 +45,7 @@ public final class ForensicRegressionTest {
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
         testTemporalMathAndSettings();
+        FsrUpscalingChecks.run();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         System.out.println("Forensic regression checks passed.");
@@ -266,6 +267,7 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
+            assertFalse(defaults.get("fsr_upscaling"), "FSR1 upscaling must remain opt-in");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
                     "temporal must declare Sodium incompatibility");
@@ -275,6 +277,15 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("terrain_metrics").incompatibleMods().contains("iris"),
                     "terrain metrics must declare Iris incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("iris"),
+                    "FSR must declare Iris incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("canvas"),
+                    "FSR must declare Canvas incompatibility");
+            assertFalse(
+                    UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("sodium"),
+                    "FSR must not blanket-disable for Sodium");
             assertTrue(
                     UltimaModules.byKey("collision_shell_skip").dependencies().contains("cursor_step"),
                     "shell dependency must be declared in the registry");
@@ -318,6 +329,10 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
                     "retained terrain remains inactive, not " + retainedReason);
+            String fsrReason = defaultConfig.resolve("fsr_upscaling").reason();
+            assertTrue(
+                    "disabled_by_default".equals(fsrReason) || "not_client_environment".equals(fsrReason),
+                    "FSR1 upscaling remains inactive, not " + fsrReason);
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
                     "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),
