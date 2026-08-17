@@ -54,6 +54,11 @@ final class FsrUpscalingChecks {
         assertEqualsDouble(1.0 / 3.0, FsrQualityPreset.ULTRA_PERFORMANCE.scaleFactor(), 1e-12, "ultra performance scale");
         assertTrue(FsrQualityPreset.fromKey("ultra-quality") == FsrQualityPreset.ULTRA_QUALITY, "preset key parse");
         assertTrue(FsrQualityPreset.fromKey("not-a-preset") == FsrQualityPreset.QUALITY, "unknown preset is Quality");
+        assertTrue("Ultra Quality".equals(FsrQualityPreset.ULTRA_QUALITY.displayName()), "Ultra Quality label");
+        assertTrue("Quality".equals(FsrQualityPreset.QUALITY.displayName()), "Quality label");
+        assertTrue("Balanced".equals(FsrQualityPreset.BALANCED.displayName()), "Balanced label");
+        assertTrue("Performance".equals(FsrQualityPreset.PERFORMANCE.displayName()), "Performance label");
+        assertTrue("Ultra Performance".equals(FsrQualityPreset.ULTRA_PERFORMANCE.displayName()), "Ultra Performance label");
     }
 
     private static void testInternalResolutionRounding() {
@@ -300,6 +305,8 @@ final class FsrUpscalingChecks {
         assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");
         assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");
         assertFalse(module.incompatibleMods().contains("sodium"), "Sodium is not a blanket disable");
+        assertTrue(module.incompatibleMods().equals(FsrCompatibility.disablingModIds()),
+                "registry incompatibleMods is FsrCompatibility.disablingModIds()");
         assertFalse(module.incompatibleMods().contains("lithium"), "FSR is not a simulation module");
         assertTrue(module.dependencies().isEmpty(), "FSR is isolated from retained/mesher modules");
         assertFalse(module.enabledByDefault(), "FSR is default off");

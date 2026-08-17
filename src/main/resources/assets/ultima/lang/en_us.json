@@ -3,5 +3,6 @@
   "ultima.settings.title_button": "Ultima...",
   "ultima.settings.title_button.tooltip": "Ultima optimization modules",
   "ultima.settings.persist_hint": "Saved to ultima.properties. Mixins apply after a game restart.",
-  "ultima.settings.pending_restart": "Restart the game to apply pending module changes."
+  "ultima.settings.pending_restart": "Restart the game to apply pending module changes.",
+  "ultima.settings.fsr.preset": "FSR quality"
 }

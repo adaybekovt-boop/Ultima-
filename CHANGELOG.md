@@ -1,5 +1,17 @@
 # Changelog
 
+## FSR1 in the in-game settings screen
+
+`fsr_upscaling` is now a Rendering row on the Ultima settings screen (Mod Menu,
+title-screen button, `/ultima config`), with the same `RESTART_GAME` warning as
+`retained_terrain` / `java_mesher`. A quality `CycleButton` (Ultra Quality →
+Ultra Performance) is shown only while FSR is requested. Disable reasons still
+come from `UltimaConfig.resolve()`; Iris/Canvas map to `incompatible_mod`.
+RCAS sharpness stays at default 0.2 — **no sharpness slider in this iteration**.
+`TemporalMode.FSR_*` remains unsupported; this is not a TemporalBackend.
+
+---
+
 ## FSR1 spatial upscaling (EASU + RCAS) — draft, default off
 
 New isolated client module `fsr_upscaling` (default **off**). Ports AMD FSR 1.0.2

@@ -19,7 +19,9 @@ License text and the pinned AMD source are in
 - Internal world color+depth target at `native * scale`.
 - Native-resolution HUD/GUI/chat/menus drawn **after** upscale, onto vanilla
   `GameRenderer.mainRenderTarget` (never resized away from the window).
-- Quality presets and RCAS sharpness in `config/ultima.properties`.
+- Quality presets in the in-game settings screen and `config/ultima.properties`.
+  RCAS sharpness is stored in the properties file (default 0.2) but has **no**
+  in-game slider yet.
 - Fail-open: a compile or evaluate exception disables FSR for the session and
   leaves vanilla native rendering. The internal **world** target is parked
   (kept alive) until `GameRenderer.close` so a captured `SkyRenderer` cannot
@@ -120,6 +122,22 @@ owns a persistent internal world target and only redirects reads of
 | Ultra Performance | 3.0× | 1/3 ≈ 0.333 |
 
 Integer size: `round(native * scale)`, then clamp to `[1, native]`.
+
+### In-game settings
+
+The Rendering category of Ultima Settings now exposes:
+
+- Toggle **FSR upscaling** (`fsr_upscaling`), with the same restart warning and
+  Iris/Canvas `incompatible_mod` lock as other rendering modules.
+- **FSR quality** `CycleButton` (Ultra Quality / Quality / Balanced /
+  Performance / Ultra Performance). Hidden while the module is off.
+
+This is the isolated `fsr_upscaling` module. It is **not** a `TemporalMode`
+graphics-menu entry; `TemporalMode.FSR_*` stays `isSupported() == false`.
+
+**Left for a future iteration:** RCAS sharpness slider. Sharpness remains the
+default `0.2` stops (`fsr_upscaling.sharpness` in `ultima.properties`). There is
+no in-game control for it in this revision.
 
 `config/ultima.properties`:
 

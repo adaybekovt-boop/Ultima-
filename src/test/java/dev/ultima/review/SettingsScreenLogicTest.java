@@ -3,12 +3,17 @@ package dev.ultima.review;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.config.settings.ApplyPolicy;
+import dev.ultima.config.settings.FsrPresetRowView;
 import dev.ultima.config.settings.ModuleDisableMessages;
 import dev.ultima.config.settings.SettingsCategory;
 import dev.ultima.config.settings.SettingsRowView;
 import dev.ultima.config.settings.UltimaCompatibilityReport;
 import dev.ultima.config.settings.UltimaSettingsCatalog;
 import dev.ultima.config.settings.UltimaSettingsController;
+import dev.ultima.fsr.FsrCompatibility;
+import dev.ultima.fsr.FsrQualityPreset;
+import dev.ultima.fsr.FsrSettings;
+import dev.ultima.temporal.TemporalMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,12 +33,16 @@ public final class SettingsScreenLogicTest {
     public static void run() {
         testCatalogCoversEveryModule();
         testCategoriesAndApplyPolicies();
+        testFsrIsIndependentOfTemporalMode();
         testDisableReasons();
+        testFsrIrisCanvasDisableReason();
         testLockedConflictRow();
         testTogglePersistsToExistingFile();
         testUnknownToggleRejected();
         testPendingRestartAndDependency();
         testCompatibilityReportUsesResolve();
+        testFsrPresetHiddenWhenModuleOff();
+        testFsrPresetRoundTrip();
         System.out.println("Settings screen logic checks passed.");
     }
 
@@ -42,8 +51,12 @@ public final class SettingsScreenLogicTest {
                 "catalog must include every UltimaModules key: " + UltimaSettingsCatalog.missingModuleKeys());
         assertTrue(UltimaSettingsCatalog.unknownCatalogKeys().isEmpty(),
                 "catalog must not invent modules: " + UltimaSettingsCatalog.unknownCatalogKeys());
-        assertTrue(UltimaSettingsCatalog.byKey("fsr_upscaling") == null,
-                "FSR is not implemented and must not appear as a module");
+        assertTrue(UltimaSettingsCatalog.byKey("fsr_upscaling") != null,
+                "fsr_upscaling must appear in the settings catalog");
+        assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
+                "fsr_upscaling is a Rendering row");
+        assertTrue("FSR upscaling".equals(UltimaSettingsCatalog.require("fsr_upscaling").displayName()),
+                "player-facing FSR name");
         assertTrue(UltimaSettingsCatalog.byKey("mesher_fast_path") == null,
                 "mesher fast-path is the java_mesher module, not a separate key");
         assertEquals((long)UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
@@ -55,13 +68,15 @@ public final class SettingsScreenLogicTest {
     }
 
     private static void testCategoriesAndApplyPolicies() {
-        assertEquals(4L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
+        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
         assertEquals(4L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         assertTrue(UltimaSettingsCatalog.require("retained_terrain").category() == SettingsCategory.RENDERING,
                 "retained terrain is rendering");
         assertTrue(UltimaSettingsCatalog.require("java_mesher").category() == SettingsCategory.RENDERING,
                 "java mesher is rendering");
+        assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
+                "FSR is rendering");
         assertTrue(UltimaSettingsCatalog.require("cursor_step").category() == SettingsCategory.SIMULATION,
                 "cursor step is simulation");
         assertTrue(UltimaSettingsCatalog.require("client_benchmark").category() == SettingsCategory.ADVANCED,
@@ -75,6 +90,38 @@ public final class SettingsScreenLogicTest {
         assertTrue(
                 UltimaSettingsCatalog.require("retained_terrain").tooltip().contains("Rejoining the world is not enough"),
                 "retained terrain must not pretend a world rejoin is sufficient");
+        assertTrue(
+                UltimaSettingsCatalog.require("fsr_upscaling").tooltip().contains("Iris"),
+                "FSR tooltip names Iris");
+        assertTrue(
+                UltimaSettingsCatalog.require("fsr_upscaling").applyPolicy() == ApplyPolicy.RESTART_GAME,
+                "FSR uses the same restart policy as other rendering modules");
+    }
+
+    private static void testFsrIsIndependentOfTemporalMode() {
+        assertTrue(!TemporalMode.FSR_QUALITY.isSupported(), "TemporalMode.FSR_* stays unsupported");
+        assertTrue(!TemporalMode.FSR_BALANCED.isSupported(), "TemporalMode.FSR_BALANCED stays unsupported");
+        assertTrue(!TemporalMode.FSR_PERFORMANCE.isSupported(), "TemporalMode.FSR_PERFORMANCE stays unsupported");
+        assertTrue(!TemporalMode.DLSS_QUALITY.isSupported(), "TemporalMode.DLSS_* stays unsupported");
+        assertTrue(TemporalMode.NATIVE.isSupported(), "Native passthrough remains the only TemporalMode");
+        for (TemporalMode mode : TemporalMode.values()) {
+            assertTrue(UltimaSettingsCatalog.byKey(mode.name()) == null,
+                    "catalog must not add TemporalMode." + mode.name() + " as a row");
+            assertTrue(UltimaSettingsCatalog.byKey(mode.displayName()) == null,
+                    "catalog must not add TemporalMode display name " + mode.displayName());
+        }
+        assertTrue(UltimaModules.byKey("fsr_upscaling") != null, "FSR is an UltimaModules key");
+        assertTrue(
+                UltimaSettingsCatalog.require("fsr_upscaling").tooltip().contains("TemporalMode"),
+                "FSR tooltip states it is not TemporalMode");
+        assertTrue(
+                UltimaSettingsCatalog.require("temporal").tooltip().contains("FSR upscaling"),
+                "temporal row points players at the separate FSR module");
+        UltimaConfig config = defaults();
+        SettingsRowView fsr = SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), config);
+        assertTrue(
+                fsr.statusReason().equals(config.resolve("fsr_upscaling").reason()),
+                "FSR row disable reason is UltimaConfig.resolve(), not TemporalMode");
     }
 
     private static void testDisableReasons() {
@@ -125,6 +172,65 @@ public final class SettingsScreenLogicTest {
         assertTrue(ModuleDisableMessages.isHardLock(serverOnly), "dedicated-server client module is locked");
     }
 
+    private static void testFsrIrisCanvasDisableReason() {
+        assertTrue(
+                UltimaModules.byKey("fsr_upscaling").incompatibleMods().equals(FsrCompatibility.disablingModIds()),
+                "module incompatibleMods must be FsrCompatibility.disablingModIds()");
+        assertTrue(
+                FsrCompatibility.disablingModIds().equals(List.of("iris", "canvas")),
+                "Iris then Canvas is the FSR disable list");
+        assertTrue(
+                !UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("sodium"),
+                "Sodium is not an FSR hard-disable");
+
+        UltimaConfig.ResolvedModule iris = new UltimaConfig.ResolvedModule(
+                "fsr_upscaling",
+                true,
+                false,
+                false,
+                true,
+                "incompatible_mod",
+                "Disabled because incompatible mod(s) are loaded: iris.",
+                List.of(),
+                FsrCompatibility.disablingModIds(),
+                List.of("iris"),
+                null,
+                "opt_in_experiment");
+        assertTrue(ModuleDisableMessages.isHardLock(iris), "Iris incompatible_mod is a hard lock");
+        assertTrue(
+                ModuleDisableMessages.playerFacing(iris)
+                        .equals("Disabled: Iris detected — this module conflicts with Iris shaders"),
+                "FSR Iris copy matches other rendering modules");
+
+        UltimaConfig.ResolvedModule canvas = new UltimaConfig.ResolvedModule(
+                "fsr_upscaling",
+                true,
+                false,
+                false,
+                true,
+                "incompatible_mod",
+                "Disabled because incompatible mod(s) are loaded: canvas.",
+                List.of(),
+                FsrCompatibility.disablingModIds(),
+                List.of("canvas"),
+                null,
+                "opt_in_experiment");
+        assertTrue(ModuleDisableMessages.isHardLock(canvas), "Canvas incompatible_mod is a hard lock");
+        assertTrue(
+                ModuleDisableMessages.playerFacing(canvas)
+                        .equals("Disabled: Canvas detected — this module conflicts with Canvas's renderer"),
+                "FSR Canvas copy matches other rendering modules");
+
+        UltimaConfig config = defaults();
+        UltimaConfig.ResolvedModule live = config.resolve("fsr_upscaling");
+        SettingsRowView row = SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), config);
+        assertTrue(row.statusReason().equals(live.reason()), "FSR SettingsRowView.reason == resolve()");
+        assertTrue(row.statusDetail().equals(live.detail()), "FSR SettingsRowView.detail == resolve()");
+        assertTrue(
+                "disabled_by_default".equals(live.reason()) || "not_client_environment".equals(live.reason()),
+                "default FSR reason comes from resolve(), not " + live.reason());
+    }
+
     private static void testLockedConflictRow() {
         UltimaConfig config = defaults();
         SettingsRowView simulation = SettingsRowView.from(UltimaSettingsCatalog.require("cursor_step"), config);
@@ -140,6 +246,14 @@ public final class SettingsScreenLogicTest {
             assertTrue(client.lockReason().contains("client-only"), "lock copy names the environment");
         }
         assertTrue(client.fullTooltip().contains("require restarting the game"), "retained tooltip warns about restart");
+
+        SettingsRowView fsr = SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), config);
+        assertTrue(!fsr.displayOn(), "FSR stays default-off");
+        assertTrue(fsr.fullTooltip().contains("require restarting the game"), "FSR tooltip warns about restart");
+        if (fsr.locked()) {
+            assertTrue("not_client_environment".equals(fsr.statusReason()),
+                    "headless FSR lock is still resolve() not_client_environment");
+        }
     }
 
     private static void testTogglePersistsToExistingFile() {
@@ -166,6 +280,8 @@ public final class SettingsScreenLogicTest {
             assertTrue("false".equals(properties.getProperty("cursor_step")), "saved cursor_step=false");
             assertTrue("true".equals(properties.getProperty("entity_section_lookup")), "other keys remain");
             assertTrue("false".equals(properties.getProperty("retained_terrain")), "opt-in default stays false");
+            assertTrue("false".equals(properties.getProperty("fsr_upscaling")), "FSR default stays false");
+            assertTrue(properties.getProperty(FsrSettings.PRESET_KEY) != null, "FSR preset key is written");
             String text = Files.readString(file, StandardCharsets.UTF_8);
             assertTrue(text.contains("cursor_step=false"), "file uses the existing properties format");
         } catch (Exception e) {
@@ -180,8 +296,9 @@ public final class SettingsScreenLogicTest {
 
     private static void testUnknownToggleRejected() {
         UltimaSettingsController controller = new UltimaSettingsController(defaults());
-        assertTrue(!controller.setRequested("fsr_upscaling", true), "unknown keys cannot be written");
+        assertTrue(UltimaSettingsCatalog.byKey("fsr_upscaling") != null, "FSR is a known catalog key");
         assertTrue(!controller.setRequested("not_a_module", false), "unknown keys cannot be written");
+        assertTrue(!controller.setRequested("FSR_QUALITY", true), "TemporalMode names cannot be written");
     }
 
     private static void testPendingRestartAndDependency() {
@@ -201,13 +318,101 @@ public final class SettingsScreenLogicTest {
         UltimaConfig config = defaults();
         String json = UltimaCompatibilityReport.toJson(config);
         assertTrue(json.contains("\"key\": \"entity_section_lookup\""), "report lists modules");
+        assertTrue(json.contains("\"key\": \"fsr_upscaling\""), "report lists FSR");
         assertTrue(json.contains("\"reason\":"), "report includes resolve() reason");
         assertTrue(json.contains("\"loadedIncompatibleMods\""), "report includes loaded incompat list");
         assertTrue(json.contains("\"playerFacing\""), "report includes UI copy");
         String chat = UltimaCompatibilityReport.toChatLines(config);
         assertTrue(chat.contains("entity_section_lookup"), "chat listing includes keys");
+        assertTrue(chat.contains("fsr_upscaling"), "chat listing includes FSR");
         UltimaConfig.ResolvedModule resolved = config.resolve("entity_section_lookup");
         assertTrue(json.contains(resolved.reason()), "JSON reason matches resolve()");
+        assertTrue(json.contains(config.resolve("fsr_upscaling").reason()), "FSR JSON reason matches resolve()");
+    }
+
+    private static void testFsrPresetHiddenWhenModuleOff() {
+        UltimaConfig off = defaults();
+        UltimaSettingsController controller = new UltimaSettingsController(off);
+        FsrPresetRowView hidden = controller.fsrPresetRow();
+        assertTrue(!off.isRequested("fsr_upscaling"), "FSR default request is false");
+        assertTrue(!hidden.visible(), "preset control is hidden when FSR is off");
+        assertTrue(!hidden.active(), "preset control is inactive when FSR is off");
+        assertTrue(!controller.setFsrPreset(FsrQualityPreset.BALANCED), "preset cannot change while FSR is off");
+        assertTrue(off.fsrSettings().preset() == FsrQualityPreset.QUALITY, "default preset stays Quality");
+
+        Map<String, Boolean> requested = defaultMap();
+        requested.put("fsr_upscaling", true);
+        UltimaConfig on = UltimaConfig.createForTests(requested);
+        UltimaSettingsController onController = new UltimaSettingsController(on);
+        onController.setCategory(SettingsCategory.SIMULATION);
+        assertTrue(!onController.fsrPresetRow().visible(), "preset is hidden outside Rendering");
+        onController.setCategory(SettingsCategory.RENDERING);
+        FsrPresetRowView shown = onController.fsrPresetRow();
+        assertTrue(shown.visible(), "preset is visible in Rendering when FSR is requested");
+        assertTrue(shown.preset() == FsrQualityPreset.QUALITY, "default visible preset is Quality");
+        if (SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), on).locked()) {
+            assertTrue(!shown.active(), "preset is inactive when the FSR row is hard-locked");
+        }
+    }
+
+    private static void testFsrPresetRoundTrip() {
+        Map<String, Boolean> requested = defaultMap();
+        requested.put("fsr_upscaling", true);
+        UltimaConfig config = UltimaConfig.createForTests(requested, FsrSettings.defaults());
+        UltimaSettingsController controller = new UltimaSettingsController(config);
+        assertTrue(config.isRequested("fsr_upscaling"), "FSR requested for the round-trip");
+        assertTrue(controller.setFsrPreset(FsrQualityPreset.BALANCED), "preset can be written while FSR is requested");
+        assertTrue(config.fsrSettings().preset() == FsrQualityPreset.BALANCED, "in-memory preset updates");
+        assertEqualsFloat(FsrSettings.DEFAULT_SHARPNESS_STOPS, config.fsrSettings().sharpnessStops(),
+                "sharpness stays at the default; no UI slider in this iteration");
+        assertTrue(controller.setFsrPreset(FsrQualityPreset.ULTRA_PERFORMANCE), "Ultra Performance is selectable");
+        assertTrue(config.fsrSettings().preset() == FsrQualityPreset.ULTRA_PERFORMANCE, "in-memory Ultra Performance");
+
+        Path file;
+        try {
+            file = Files.createTempFile("ultima-fsr-settings", ".properties");
+        } catch (Exception e) {
+            throw new AssertionError("could not create temp FSR config", e);
+        }
+        try {
+            controller.persistTo(file);
+            Properties properties = new Properties();
+            try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
+            assertTrue("true".equals(properties.getProperty("fsr_upscaling")), "saved fsr_upscaling=true");
+            assertTrue(
+                    "ultra_performance".equals(properties.getProperty(FsrSettings.PRESET_KEY)),
+                    "saved fsr_upscaling.preset=" + properties.getProperty(FsrSettings.PRESET_KEY));
+            assertTrue(
+                    properties.getProperty(FsrSettings.SHARPNESS_KEY) != null,
+                    "sharpness key is still written for a later UI");
+            FsrSettings parsed = FsrSettings.fromProperties(properties);
+            assertTrue(parsed.preset() == FsrQualityPreset.ULTRA_PERFORMANCE, "fromProperties reads Ultra Performance");
+            assertEqualsFloat(FsrSettings.DEFAULT_SHARPNESS_STOPS, parsed.sharpnessStops(), "reloaded sharpness default");
+
+            Map<String, Boolean> reloadedModules = new LinkedHashMap<>();
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                Boolean value = parseBoolean(properties.getProperty(module.key()));
+                reloadedModules.put(module.key(), value == null ? module.enabledByDefault() : value);
+            }
+            UltimaConfig reloaded = UltimaConfig.createForTests(reloadedModules, parsed);
+            assertTrue(reloaded.isRequested("fsr_upscaling"), "restarted config still requests FSR");
+            assertTrue(
+                    reloaded.fsrSettings().preset() == FsrQualityPreset.ULTRA_PERFORMANCE,
+                    "restarted config keeps Ultra Performance");
+            UltimaSettingsController restarted = new UltimaSettingsController(reloaded);
+            assertTrue(
+                    restarted.fsrPresetRow().preset() == FsrQualityPreset.ULTRA_PERFORMANCE,
+                    "settings row shows the reloaded preset");
+        } catch (Exception e) {
+            throw new AssertionError("could not persist or reread FSR preset", e);
+        } finally {
+            try {
+                Files.deleteIfExists(file);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private static UltimaConfig defaults() {
@@ -222,6 +427,20 @@ public final class SettingsScreenLogicTest {
         return modules;
     }
 
+    private static @org.jspecify.annotations.Nullable Boolean parseBoolean(final String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        if ("true".equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        return null;
+    }
+
     private static void assertTrue(final boolean value, final String message) {
         if (!value) {
             throw new AssertionError(message);
@@ -230,6 +449,12 @@ public final class SettingsScreenLogicTest {
 
     private static void assertEquals(final long expected, final long actual, final String message) {
         if (expected != actual) {
+            throw new AssertionError(message + ": expected=" + expected + ", actual=" + actual);
+        }
+    }
+
+    private static void assertEqualsFloat(final float expected, final float actual, final String message) {
+        if (Float.floatToIntBits(expected) != Float.floatToIntBits(actual)) {
             throw new AssertionError(message + ": expected=" + expected + ", actual=" + actual);
         }
     }

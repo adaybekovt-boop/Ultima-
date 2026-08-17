@@ -5,7 +5,10 @@ package dev.ultima.temporal;
  * implemented. Other values exist so the renderer can talk about a mode without
  * pretending it works.
  *
- * <p>Do not add graphics-menu entries for unsupported modes.
+ * <p>Do not add graphics-menu entries for unsupported modes. Spatial FSR1 lives
+ * in the separate {@code fsr_upscaling} module and is not a {@code TemporalMode}
+ * / {@code TemporalBackend}. The Ultima settings catalog never iterates this
+ * enum when building rows.
  */
 public enum TemporalMode {
     NATIVE("Native", true),

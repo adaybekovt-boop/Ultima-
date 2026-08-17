@@ -35,6 +35,19 @@ public enum FsrQualityPreset {
         return 1.0 / this.displayScale;
     }
 
+    /**
+     * @return player-facing label for the settings {@code CycleButton}
+     */
+    public String displayName() {
+        return switch (this) {
+            case ULTRA_QUALITY -> "Ultra Quality";
+            case QUALITY -> "Quality";
+            case BALANCED -> "Balanced";
+            case PERFORMANCE -> "Performance";
+            case ULTRA_PERFORMANCE -> "Ultra Performance";
+        };
+    }
+
     public static FsrQualityPreset defaultPreset() {
         return QUALITY;
     }

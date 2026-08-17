@@ -2,6 +2,8 @@ package dev.ultima.config;
 
 import java.util.List;
 
+import dev.ultima.fsr.FsrCompatibility;
+
 /**
  * The registry of Ultima optimization modules.
  *
@@ -53,10 +55,12 @@ public final class UltimaModules {
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
     private static final List<String> RENDERER_FAMILY = List.of("sodium", "iris", "canvas");
     /**
-     * FSR1 hooks GameRenderer's post-world color output. Iris and Canvas own that
-     * stage. Sodium without Iris does not, so it is not listed here.
+     * FSR1 hooks GameRenderer's post-world color output. The disabling mod ids
+     * come from {@link FsrCompatibility} so Mixin gating, {@code resolve()}, and
+     * the settings UI cannot drift from that policy. Sodium without Iris is not
+     * listed.
      */
-    private static final List<String> FSR_POST_PROCESS_OWNERS = List.of("iris", "canvas");
+    private static final List<String> FSR_POST_PROCESS_OWNERS = FsrCompatibility.disablingModIds();
 
     private static final List<Module> ALL = List.of(
             new Module("entity_section_lookup", true,

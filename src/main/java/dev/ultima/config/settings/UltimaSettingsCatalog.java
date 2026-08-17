@@ -11,11 +11,10 @@ import dev.ultima.config.UltimaModules;
  * Human-readable labels, categories, and apply policies for every registered Ultima module.
  *
  * <p>This is the settings-screen source of display text. Enablement and auto-disable reasons still
- * come from {@link dev.ultima.config.UltimaConfig#resolve(String)}.
- *
- * <p>{@code fsr_upscaling} is not a module in this build: {@code temporal} is Native passthrough
- * only, and {@link dev.ultima.temporal.TemporalMode} forbids graphics-menu entries for unsupported
- * FSR/DLSS modes. {@code java_mesher} is the shipped mesher fast-path; it has no extra sub-options.
+ * come from {@link dev.ultima.config.UltimaConfig#resolve(String)} — the catalog never consults
+ * {@link dev.ultima.temporal.TemporalMode}. Spatial FSR1 is the {@code fsr_upscaling} module
+ * (Rendering). {@code TemporalMode.FSR_*} remains unsupported and has no menu entries.
+ * {@code java_mesher} is the shipped mesher fast-path; it has no extra sub-options.
  */
 public final class UltimaSettingsCatalog {
     private static final Map<String, ModuleSettingSpec> BY_KEY = new LinkedHashMap<>();
@@ -50,6 +49,18 @@ public final class UltimaSettingsCatalog {
                 "Section compile task queue",
                 "Compacts cancelled section compile tasks in one pass and parks workers on upload "
                         + "backpressure instead of spinning. Preserves vanilla nearest-task policy.",
+                SettingsCategory.RENDERING,
+                ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "fsr_upscaling",
+                "FSR upscaling",
+                "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal "
+                        + "resolution and upscales to native before HUD, GUI, and chat. Default off. "
+                        + "This is a standalone module, not a TemporalMode / TemporalBackend — "
+                        + "TemporalMode.FSR_* stays unsupported. Auto-off when Iris or Canvas is "
+                        + "loaded because they own the post-process framebuffer. Sodium without Iris "
+                        + "is allowed. A quality preset appears under this toggle when it is on. "
+                        + "RCAS sharpness stays at 0.2; there is no sharpness slider in this menu yet.",
                 SettingsCategory.RENDERING,
                 ApplyPolicy.RESTART_GAME));
 
@@ -101,8 +112,9 @@ public final class UltimaSettingsCatalog {
                 "temporal",
                 "Temporal frame contract",
                 "Captures current and previous view-projection, depth/color views, and history-reset "
-                        + "events. Native passthrough only — FSR and DLSS backends are not implemented "
-                        + "and have no quality preset in this menu. Does not change pixels.",
+                        + "events. Native passthrough only — TemporalMode FSR/DLSS backends are not "
+                        + "implemented and have no quality preset on this row. Spatial FSR1 is the "
+                        + "separate Rendering option \"FSR upscaling\". Does not change pixels.",
                 SettingsCategory.ADVANCED,
                 ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(

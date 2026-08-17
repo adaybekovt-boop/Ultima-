@@ -5,10 +5,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.fsr.FsrQualityPreset;
 
 /**
  * Screen/command logic over {@link UltimaConfig}. Toggles write the existing
  * {@code ultima.properties} map; they do not invent a second store.
+ *
+ * <p>FSR quality is a sub-control of {@code fsr_upscaling}, not a TemporalMode
+ * entry. Disable reasons still come from {@link UltimaConfig#resolve(String)}.
  */
 public final class UltimaSettingsController {
     private final UltimaConfig config;
@@ -60,6 +64,23 @@ public final class UltimaSettingsController {
             return false;
         }
         return this.config.setRequested(key, requested);
+    }
+
+    public FsrPresetRowView fsrPresetRow() {
+        return FsrPresetRowView.from(this.config, this.category);
+    }
+
+    /**
+     * Writes {@code fsr_upscaling.preset} when FSR is requested. Allowed even if
+     * the module row is environment-locked so a dedicated-server or headless
+     * write still round-trips into {@code ultima.properties}.
+     */
+    public boolean setFsrPreset(final FsrQualityPreset preset) {
+        if (preset == null || !this.config.isRequested("fsr_upscaling")) {
+            return false;
+        }
+        this.config.setFsrPreset(preset);
+        return true;
     }
 
     public boolean hasPendingRestart() {

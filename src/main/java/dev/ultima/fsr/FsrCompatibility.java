@@ -1,8 +1,15 @@
 package dev.ultima.fsr;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Capability-based conflict policy for {@code fsr_upscaling}. This is not a
  * blanket "any renderer mod → disable" switch.
+
+ * <p>{@link #disablingModIds()} is the single list {@code UltimaModules} registers
+ * as {@code incompatibleMods}. {@link dev.ultima.config.UltimaConfig#resolve(String)}
+ * and the settings UI both read that list; they do not re-evaluate this class.
  *
  * <ul>
  *   <li><b>Iris</b> owns the shader / post-process / framebuffer pipeline. FSR
@@ -56,5 +63,22 @@ public final class FsrCompatibility {
 
     public static boolean allowsWithSodiumOnly(final boolean sodiumLoaded, final boolean irisLoaded, final boolean canvasLoaded) {
         return evaluate(irisLoaded, canvasLoaded, sodiumLoaded) == DisableReason.NONE;
+    }
+
+    /**
+     * Mod ids that auto-disable {@code fsr_upscaling}. Order matches
+     * {@link #evaluate(boolean, boolean, boolean)} (Iris before Canvas).
+     * {@link dev.ultima.config.UltimaModules} copies this into the module
+     * registry so Mixin gating, {@code resolve()}, and the settings screen
+     * share one source of truth.
+     */
+    public static List<String> disablingModIds() {
+        List<String> ids = new ArrayList<>();
+        for (DisableReason reason : DisableReason.values()) {
+            if (reason.modId() != null) {
+                ids.add(reason.modId());
+            }
+        }
+        return List.copyOf(ids);
     }
 }
