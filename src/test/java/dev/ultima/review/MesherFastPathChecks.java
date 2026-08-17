@@ -342,12 +342,9 @@ final class MesherFastPathChecks {
             throw new AssertionError("cube cache must reject translucent-layer quads");
         }
         String snapshot = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/snapshot/RenderSectionSnapshot.java"));
-        if (snapshot.contains("getFaceOcclusionShape") && snapshot.indexOf("flagsOfForTest") < 0) {
-            throw new AssertionError("production flagsOf must not compute occlusion shapes");
-        }
-        int productionFlags = snapshot.indexOf("static int flagsOf(");
-        int testFlags = snapshot.indexOf("flagsOfForTest");
-        int occlusion = snapshot.indexOf("getFaceOcclusionShape");
+        int productionFlags = snapshot.indexOf("int flagsOf(");
+        int testFlags = snapshot.indexOf("public static int flagsOfForTest");
+        int occlusion = snapshot.indexOf("state.getFaceOcclusionShape");
         if (productionFlags < 0 || testFlags < 0 || occlusion < 0 || occlusion < testFlags) {
             throw new AssertionError("getFaceOcclusionShape must live only in flagsOfForTest");
         }

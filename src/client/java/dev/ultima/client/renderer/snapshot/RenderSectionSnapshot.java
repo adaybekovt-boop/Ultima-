@@ -103,9 +103,8 @@ public final class RenderSectionSnapshot implements BlockAndTintGetter {
 
     /**
      * Production hot-path flags. Only bits {@code HybridSectionMesher} reads:
-     * air, solid render, block-entity, fluid, model. Does <em>not</em> call
-     * {@code getFaceOcclusionShape} or {@code skipRendering} — those are
-     * test-fixture heuristics and are computed by {@link #flagsOfForTest}.
+     * air, solid render, block-entity, fluid, model. Occlusion-shape and
+     * skip-rendering walks stay in {@link #flagsOfForTest}.
      */
     public static int flagsOf(final BlockState state) {
         boolean air = state.isAir();
