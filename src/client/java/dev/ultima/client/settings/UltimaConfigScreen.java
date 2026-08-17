@@ -162,9 +162,8 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
 
     private CycleButton<FsrQualityPreset> fsrPresetButton(final FsrPresetRowView row) {
         CycleButton<FsrQualityPreset> button = CycleButton
-                .builder((FsrQualityPreset preset) -> Component.literal(preset.displayName()))
+                .builder((FsrQualityPreset preset) -> Component.literal(preset.displayName()), row.preset())
                 .withValues(FsrPresetRowView.values())
-                .withInitialValue(row.preset())
                 .withTooltip(value -> Tooltip.create(Component.literal(row.tooltip())))
                 .create(
                         0,
