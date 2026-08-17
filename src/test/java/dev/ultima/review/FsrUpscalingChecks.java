@@ -8,8 +8,10 @@ import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResolution;
 import dev.ultima.fsr.FsrResourcePlan;
+import dev.ultima.fsr.FsrScreenshotPolicy;
 import dev.ultima.fsr.FsrSettings;
 import dev.ultima.fsr.FsrSize;
+import dev.ultima.fsr.FsrSkySafetyModel;
 import dev.ultima.fsr.FsrTargetModel;
 import java.lang.reflect.Constructor;
 import java.util.LinkedHashMap;
@@ -18,7 +20,8 @@ import java.util.Properties;
 
 /**
  * GPU-free coverage for FSR1 planning, AMD constant setup, resize lifecycle,
- * default-off gating, and Sodium/Iris compatibility policy.
+ * C1 SkyRenderer park/rebind, H1 screenshot deferral, default-off gating,
+ * and Sodium/Iris compatibility policy.
  */
 final class FsrUpscalingChecks {
     private FsrUpscalingChecks() {
@@ -33,6 +36,9 @@ final class FsrUpscalingChecks {
         testRcasConstants();
         testResizeLifecycleNotStale();
         testDisabledPlanAllocatesNothing();
+        testFailOpenParksWorldTargetAndRebindsSky();
+        testOneByOneParkDoesNotDestroyWorldTarget();
+        testScreenshotDeferredUntilAfterRcas();
         testCompatibilityPolicy();
         testPipelineGate();
         testModuleRegistryAndDefaults();
@@ -180,13 +186,93 @@ final class FsrUpscalingChecks {
         assertEquals(0, disabled.extraColorTargets(), "disabled extra targets");
         assertTrue(disabled.internal().equalsSize(1920, 1080), "disabled internal equals native");
 
+        FsrTargetModel neverOn = new FsrTargetModel();
+        neverOn.apply(disabled);
+        assertFalse(neverOn.hasLiveTargets(), "never-enabled plan allocates nothing");
+        assertEquals(0, neverOn.allocations(), "zero allocations when FSR was never on");
+        assertFalse(neverOn.consumeSkyResetRequired(), "no sky reset when nothing was captured");
+
         FsrTargetModel model = new FsrTargetModel();
         model.apply(FsrResourcePlan.decide(true, FsrQualityPreset.QUALITY, 1920, 1080));
         assertTrue(model.hasLiveTargets(), "precondition: targets exist");
+        model.consumeSkyResetRequired();
         model.apply(disabled);
-        assertFalse(model.hasLiveTargets(), "disabling releases Ultima targets");
-        assertEquals(0, model.liveTargetCount(), "zero live targets when off");
-        assertTrue(model.outlineSize().equalsSize(1920, 1080), "outline restored to native when off");
+        assertTrue(model.hasLiveTargets(), "C1: mid-session inactive plan parks the world target");
+        assertTrue(model.isParked(), "world target is parked, not destroyed");
+        assertTrue(model.worldSize() != null, "parked world size remains");
+        assertTrue(model.easuSize() == null, "EASU ping buffer may be released");
+        assertTrue(model.consumeSkyResetRequired(), "park requests SkyRenderer rebind");
+        assertTrue(model.outlineSize().equalsSize(1920, 1080), "outline restored to native when parked");
+        model.destroyForLifecycle();
+        assertFalse(model.hasLiveTargets(), "lifecycle close is the only world-target destroy");
+    }
+
+    private static void testFailOpenParksWorldTargetAndRebindsSky() {
+        FsrSkySafetyModel.SkyRendererStub sky = new FsrSkySafetyModel.SkyRendererStub();
+        FsrSkySafetyModel oldBug = new FsrSkySafetyModel();
+        oldBug.allocateWorld();
+        sky.bind(oldBug.world());
+        oldBug.destroyWorldWithoutSkyReset();
+        boolean crashed = false;
+        try {
+            sky.drawSkyPass();
+        } catch (IllegalStateException e) {
+            crashed = true;
+            assertTrue(e.getMessage().contains("closed FSR world target"), "old bug is a closed-target use");
+        }
+        assertTrue(crashed, "pre-fix destroy-without-reset must throw on the next sky pass");
+
+        FsrSkySafetyModel.SkyRendererStub safeSky = new FsrSkySafetyModel.SkyRendererStub();
+        FsrSkySafetyModel fixed = new FsrSkySafetyModel();
+        fixed.allocateWorld();
+        safeSky.bind(fixed.world());
+        safeSky.drawSkyPass();
+        fixed.failOpenPark();
+        assertFalse(fixed.worldDestroyed(), "C1 (a): fail-open does not destroy the world target");
+        assertTrue(fixed.isParked(), "fail-open parks the world target");
+        fixed.nextSkyPass(safeSky);
+        assertTrue(safeSky.bound() == fixed.vanillaMain(), "C1 (b): next sky pass rebinds to vanilla main");
+        safeSky.drawSkyPass();
+    }
+
+    private static void testOneByOneParkDoesNotDestroyWorldTarget() {
+        FsrTargetModel model = new FsrTargetModel();
+        model.apply(FsrResourcePlan.decide(true, FsrQualityPreset.QUALITY, 1920, 1080));
+        model.consumeSkyResetRequired();
+        FsrResourcePlan tiny = FsrResourcePlan.decide(true, FsrQualityPreset.PERFORMANCE, 1, 1);
+        assertFalse(tiny.runUpscale(), "1x1 Performance is native-equal");
+        assertTrue(model.isStale(tiny) || model.hasLiveTargets(), "1x1 after 1080 still has a live world target");
+        model.apply(tiny);
+        assertTrue(model.isParked(), "1x1 parks instead of close()");
+        assertTrue(model.worldSize() != null, "1x1 must not destroy the captured world target");
+        assertTrue(model.consumeSkyResetRequired(), "1x1 requests sky rebind to vanilla");
+
+        FsrSkySafetyModel safety = new FsrSkySafetyModel();
+        FsrSkySafetyModel.SkyRendererStub sky = new FsrSkySafetyModel.SkyRendererStub();
+        safety.allocateWorld();
+        sky.bind(safety.world());
+        safety.parkForInactivePlan();
+        safety.nextSkyPass(sky);
+        sky.drawSkyPass();
+        assertFalse(safety.worldDestroyed(), "1x1 park leaves the world handle usable");
+    }
+
+    private static void testScreenshotDeferredUntilAfterRcas() {
+        assertTrue(
+                FsrScreenshotPolicy.onVanillaScreenshotCall(true) == FsrScreenshotPolicy.Action.DEFER_UNTIL_AFTER_RCAS,
+                "H1: world-pass screenshot is deferred until after RCAS");
+        assertTrue(
+                FsrScreenshotPolicy.onVanillaScreenshotCall(false) == FsrScreenshotPolicy.Action.TAKE_NOW,
+                "menu / non-FSR frames take the vanilla screenshot immediately");
+        assertTrue(
+                FsrScreenshotPolicy.captureAfterRcas(true, true),
+                "deferred screenshot fires after a successful upscale");
+        assertFalse(
+                FsrScreenshotPolicy.captureAfterRcas(true, false),
+                "fail-open after renderLevel skips the empty vanilla-main capture");
+        assertFalse(
+                FsrScreenshotPolicy.captureAfterRcas(false, true),
+                "no capture when nothing was deferred");
     }
 
     private static void testCompatibilityPolicy() {

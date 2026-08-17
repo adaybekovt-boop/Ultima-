@@ -21,7 +21,9 @@ License text and the pinned AMD source are in
   `GameRenderer.mainRenderTarget` (never resized away from the window).
 - Quality presets and RCAS sharpness in `config/ultima.properties`.
 - Fail-open: a compile or evaluate exception disables FSR for the session and
-  leaves vanilla native rendering.
+  leaves vanilla native rendering. The internal **world** target is parked
+  (kept alive) until `GameRenderer.close` so a captured `SkyRenderer` cannot
+  hold a destroyed texture. Sky is rebound to vanilla main on the next pass.
 
 Pinned algorithm source: AMD FidelityFX FSR **1.0.2**, header `ffx_fsr1.h`
 **v1.20210629**, commit `a21ffb8f6c13233ba336352bdff293894c706575`
@@ -67,7 +69,9 @@ Ultima, when `fsr_upscaling` is actually enabled:
 ```text
 1. Plan internal size = round(native * presetScale), clamped to [1, native]
 2. Allocate Ultima world RT (internal, color+depth) and EASU RT (native, color)
-   only if internal != native. Zero extra targets when the module is off.
+   only if internal != native. Zero extra targets when the module was never on.
+   Mid-session deactivate (fail-open, 1×1) parks the world target instead of
+   destroying it.
 3. World pass flag ON. GameRenderer.mainRenderTarget() and GETFIELD uses in
    render/renderLevel resolve to the Ultima world RT.
 4. LevelRenderer framegraph, hand, screen effects, entity outline, potion
@@ -166,6 +170,20 @@ Independent of `retained_terrain` and mesher modules. Either can be on or off.
 8. **Temporal Native capture uses `mainRenderTarget()`** so, when both modules
    are on, it snapshots the redirected world target rather than the empty
    vanilla main. Temporal still does not change pixels.
+9. **C1 SkyRenderer safety.** Vanilla `SkyRenderer` captures
+   `gameRenderer.mainRenderTarget()` once. Fail-open / 1×1 must not
+   `destroyBuffers()` on that object. Chosen fix: **(a) park the world target
+   for the rest of the session** (close only on `GameRenderer.close`), plus
+   the necessary **(b) `shouldResetSkyRenderer`** on both `LevelRenderState`
+   (this frame; extract already ran) and `LevelExtractor` (next extract).
+   (a) alone would leave sky drawing into the parked unused RT. (c) was
+   rejected as a more fragile intercept.
+10. **H1 world-icon screenshot.** `takeAutoScreenshot` reads the raw
+    `mainRenderTarget` field from a method that was not in the GETFIELD
+    redirect list, so it captured empty vanilla main. Chosen fix: **(b)**
+    defer `tryTakeScreenshotIfNeeded` until after RCAS writes the upscaled
+    frame to vanilla main (native resolution). If upscale fails, the capture
+    is skipped so `hasWorldScreenshot` can retry.
 
 ---
 
@@ -183,8 +201,10 @@ There is no GPU in this environment. Still required on real hardware:
 - Iris/Canvas auto-disable log lines in a real loader
 - Window resize / fullscreen toggle without stale targets
 - Resource-pack reload (pipelines invalidate and recompile)
-- World-icon auto-screenshot (`tryTakeScreenshotIfNeeded`) still runs after
-  `renderLevel` and therefore captures the internal target when FSR is active
+- World-icon auto-screenshot now runs **after RCAS** on vanilla main (native
+  resolution, includes outline + potion post). Confirm the icon is not a
+  solid clear-color square and is not permanently stuck via `hasWorldScreenshot`
+- Fail-open and 1×1 minimize/restore: no crash, sky visible on vanilla main
 - `gl_FragCoord` vs `texCoord` Y-origin on real GL drivers
 - First-person hand / screen-effect sharpness (they stay on the internal target)
 

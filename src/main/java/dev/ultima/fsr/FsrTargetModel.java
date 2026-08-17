@@ -3,7 +3,8 @@ package dev.ultima.fsr;
 /**
  * Allocation / resize state machine for FSR1 targets, without touching the GPU.
  * The client runtime follows the same rules: create or resize only when the
- * plan asks for a different size; release everything when the plan is inactive.
+ * plan asks for a different size; park (do not destroy) the world target when
+ * the plan goes inactive mid-session; destroy only on a true lifecycle close.
  */
 public final class FsrTargetModel {
     private int worldWidth;
@@ -17,15 +18,20 @@ public final class FsrTargetModel {
     private int resizes;
     private boolean worldAlive;
     private boolean easuAlive;
+    private boolean parked;
+    private boolean skyResetRequired;
 
     public void apply(final FsrResourcePlan plan) {
         if (plan == null || !plan.allocateWorldTarget()) {
-            this.releaseAll();
+            this.park();
             if (plan != null) {
                 this.ensureOutline(plan.output());
             }
             return;
         }
+        boolean wasParked = this.parked;
+        boolean wasAlive = this.worldAlive;
+        this.parked = false;
         this.ensureWorld(plan.internal());
         if (plan.allocateEasuTarget()) {
             this.ensureEasu(plan.output());
@@ -33,10 +39,48 @@ public final class FsrTargetModel {
             this.releaseEasu();
         }
         this.ensureOutline(plan.internal());
+        if (wasParked || !wasAlive) {
+            this.skyResetRequired = true;
+        }
     }
 
     public void onNativeResize(final FsrResourcePlan plan) {
         this.apply(plan);
+    }
+
+    /**
+     * C1 (a): keep the world target. EASU is only a ping buffer and is released.
+     */
+    public void park() {
+        if (this.worldAlive) {
+            this.parked = true;
+            this.skyResetRequired = true;
+        }
+        this.releaseEasu();
+    }
+
+    /**
+     * GameRenderer.close / process teardown. The only path that destroys the
+     * world target after SkyRenderer may have captured it.
+     */
+    public void destroyForLifecycle() {
+        this.releaseAll();
+        this.parked = false;
+        this.skyResetRequired = true;
+    }
+
+    public boolean isParked() {
+        return this.parked;
+    }
+
+    public boolean consumeSkyResetRequired() {
+        boolean required = this.skyResetRequired;
+        this.skyResetRequired = false;
+        return required;
+    }
+
+    public boolean peekSkyResetRequired() {
+        return this.skyResetRequired;
     }
 
     public boolean hasLiveTargets() {
@@ -80,9 +124,9 @@ public final class FsrTargetModel {
 
     public boolean isStale(final FsrResourcePlan plan) {
         if (plan == null || !plan.allocateWorldTarget()) {
-            return this.hasLiveTargets();
+            return this.easuAlive;
         }
-        if (!this.worldAlive || !plan.internal().equalsSize(this.worldWidth, this.worldHeight)) {
+        if (this.parked || !this.worldAlive || !plan.internal().equalsSize(this.worldWidth, this.worldHeight)) {
             return true;
         }
         if (plan.allocateEasuTarget()

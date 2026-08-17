@@ -10,8 +10,9 @@ import dev.ultima.fsr.FsrTargetModel;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Ultima-owned FSR1 color targets. Created only when {@link FsrResourcePlan}
- * asks for them. The vanilla main target is never replaced.
+ * Ultima-owned FSR1 color targets. The world target is parked (kept alive)
+ * when a session plan goes inactive so {@code SkyRenderer}'s captured
+ * reference cannot dangle. Destroy happens only on {@link #close()}.
  */
 final class FsrTargets implements AutoCloseable {
     private final FsrTargetModel model = new FsrTargetModel();
@@ -26,15 +27,14 @@ final class FsrTargets implements AutoCloseable {
         RenderSystem.assertOnRenderThread();
         this.model.apply(plan);
         if (!plan.allocateWorldTarget()) {
-            this.close();
+            this.releaseEasu();
             return;
         }
         this.world = ensureTarget(this.world, "Ultima FSR world", plan.internal(), true);
         if (plan.allocateEasuTarget()) {
             this.easu = ensureTarget(this.easu, "Ultima FSR EASU", plan.output(), false);
-        } else if (this.easu != null) {
-            this.easu.destroyBuffers();
-            this.easu = null;
+        } else {
+            this.releaseEasu();
         }
     }
 
@@ -48,6 +48,17 @@ final class FsrTargets implements AutoCloseable {
 
     boolean hasLiveTargets() {
         return this.world != null || this.easu != null;
+    }
+
+    boolean hasLiveWorldTarget() {
+        return this.world != null;
+    }
+
+    private void releaseEasu() {
+        if (this.easu != null) {
+            this.easu.destroyBuffers();
+            this.easu = null;
+        }
     }
 
     private static TextureTarget ensureTarget(
@@ -78,10 +89,7 @@ final class FsrTargets implements AutoCloseable {
             this.world.destroyBuffers();
             this.world = null;
         }
-        if (this.easu != null) {
-            this.easu.destroyBuffers();
-            this.easu = null;
-        }
-        this.model.apply(FsrResourcePlan.inactive(1, 1));
+        this.releaseEasu();
+        this.model.destroyForLifecycle();
     }
 }

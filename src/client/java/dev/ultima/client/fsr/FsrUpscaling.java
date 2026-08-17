@@ -15,6 +15,7 @@ import dev.ultima.fsr.FsrEasuConstants;
 import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResourcePlan;
+import dev.ultima.fsr.FsrScreenshotPolicy;
 import dev.ultima.fsr.FsrSettings;
 import dev.ultima.fsr.FsrSize;
 import dev.ultima.fsr.FsrTargetModel;
@@ -50,6 +51,7 @@ public final class FsrUpscaling {
     private boolean hudAfterUpscaleThisFrame;
     private boolean loggedActive;
     private boolean loggedWaitingForPipelines;
+    private boolean worldIconScreenshotPending;
 
     private FsrUpscaling() {
     }
@@ -88,6 +90,34 @@ public final class FsrUpscaling {
 
     public boolean hasLiveTargets() {
         return this.targets.hasLiveTargets();
+    }
+
+    public boolean hasLiveWorldTarget() {
+        return this.targets.hasLiveWorldTarget();
+    }
+
+    /**
+     * Apply a pending C1 sky rebind: set both the current-frame
+     * {@code LevelRenderState} flag (extract already ran) and the extractor
+     * flag (survives the next extract).
+     */
+    public boolean consumeSkyRendererReset() {
+        return this.targets.model().consumeSkyResetRequired();
+    }
+
+    public boolean shouldDeferWorldIconScreenshot() {
+        return FsrScreenshotPolicy.onVanillaScreenshotCall(this.isWorldPass())
+                == FsrScreenshotPolicy.Action.DEFER_UNTIL_AFTER_RCAS;
+    }
+
+    public void markWorldIconScreenshotPending() {
+        this.worldIconScreenshotPending = true;
+    }
+
+    public boolean consumeWorldIconScreenshotAfterUpscale() {
+        boolean capture = FsrScreenshotPolicy.captureAfterRcas(this.worldIconScreenshotPending, this.evaluatedThisFrame);
+        this.worldIconScreenshotPending = false;
+        return capture;
     }
 
     public RenderTarget resolveWorldTarget(final RenderTarget vanillaMain) {
@@ -218,7 +248,12 @@ public final class FsrUpscaling {
         this.failedOpen = true;
         this.worldPass = false;
         this.loggedActive = false;
-        this.shutdown();
+        this.worldIconScreenshotPending = false;
+        FsrResourcePlan parked = FsrResourcePlan.inactive(
+                this.activePlan == null ? 1 : this.activePlan.output().width(),
+                this.activePlan == null ? 1 : this.activePlan.output().height());
+        this.targets.apply(parked);
+        this.activePlan = parked;
     }
 
     private void releaseIfInactive(final int nativeWidth, final int nativeHeight) {

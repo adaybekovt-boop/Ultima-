@@ -15,6 +15,7 @@ import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -38,6 +39,9 @@ public abstract class GameRendererMixin {
     @Shadow
     @Final
     private GlobalSettingsUniform globalSettingsUniform;
+
+    @Invoker("tryTakeScreenshotIfNeeded")
+    abstract void ultima$tryTakeScreenshotIfNeeded();
 
     @Redirect(
             method = {"render", "renderLevel"},
@@ -72,10 +76,24 @@ public abstract class GameRendererMixin {
         int nativeWidth = this.gameRenderState.windowRenderState.width;
         int nativeHeight = this.gameRenderState.windowRenderState.height;
         FsrResourcePlan plan = FsrUpscaling.get().beginWorldPass(nativeWidth, nativeHeight);
+        this.ultimaFsrApplySkyReset();
         this.ultimaFsrSyncOutline(nativeWidth, nativeHeight);
         if (plan.redirectMainTarget()) {
             this.ultimaFsrRefreshGlobals(plan.internal().width(), plan.internal().height(), deltaTracker);
         }
+    }
+
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/GameRenderer;tryTakeScreenshotIfNeeded()V"))
+    private void ultimaFsrDeferWorldIconScreenshot(final GameRenderer self) {
+        if (FsrUpscaling.get().shouldDeferWorldIconScreenshot()) {
+            FsrUpscaling.get().markWorldIconScreenshotPending();
+            return;
+        }
+        this.ultima$tryTakeScreenshotIfNeeded();
     }
 
     @Inject(
@@ -90,9 +108,13 @@ public abstract class GameRendererMixin {
         FsrUpscaling.get().endWorldPassAndUpscale(
                 this.mainRenderTarget,
                 UltimaConfig.get().fsrSettings().resolved().sharpnessStops());
+        this.ultimaFsrApplySkyReset();
         if (redirected) {
             this.ultimaFsrRefreshGlobals(nativeWidth, nativeHeight, deltaTracker);
             this.ultimaFsrSyncOutline(nativeWidth, nativeHeight);
+        }
+        if (FsrUpscaling.get().consumeWorldIconScreenshotAfterUpscale()) {
+            this.ultima$tryTakeScreenshotIfNeeded();
         }
     }
 
@@ -104,12 +126,21 @@ public abstract class GameRendererMixin {
     @Inject(method = "resize", at = @At("RETURN"))
     private void ultimaFsrResize(final int width, final int height, final CallbackInfo ci) {
         FsrUpscaling.get().onNativeResize(width, height);
+        this.ultimaFsrApplySkyReset();
         this.ultimaFsrSyncOutline(width, height);
     }
 
     @Inject(method = "close", at = @At("HEAD"))
     private void ultimaFsrClose(final CallbackInfo ci) {
         FsrUpscaling.get().shutdown();
+    }
+
+    private void ultimaFsrApplySkyReset() {
+        if (!FsrUpscaling.get().consumeSkyRendererReset()) {
+            return;
+        }
+        this.gameRenderState.levelRenderState.shouldResetSkyRenderer = true;
+        ((LevelExtractorAccessor)this.minecraft.levelExtractor).ultima$setShouldResetSkyRenderer(true);
     }
 
     private void ultimaFsrSyncOutline(final int nativeWidth, final int nativeHeight) {
