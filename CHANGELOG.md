@@ -1,5 +1,15 @@
 # Changelog
 
+## Hopper sleeping proof-of-correctness prototype (default off)
+
+New opt-in server module `blockentity_sleeping`. First subscriber is vanilla
+`HopperBlockEntity` only. Sleep is allowed only when every vanilla mutation that
+could change the next `tryMoveItems` has a synchronous wake channel; unknown
+neighbours (furnaces, composters, loot chests, modded inventories) stay on
+vanilla polling. Lithium/Canary/Radium auto-disable the module. Not live-tested.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

@@ -14,6 +14,14 @@
     "entity_section_lookup.EntitySectionStorageMixin",
     "supporting_block_shape_skip.BlockCollisionsMixin",
     "supporting_block_shape_skip.CollisionGetterMixin",
-    "full_cube_move.VoxelShapeMixin"
+    "full_cube_move.VoxelShapeMixin",
+    "blockentity_sleeping.HopperBlockEntityAccessor",
+    "blockentity_sleeping.HopperBlockEntityMixin",
+    "blockentity_sleeping.CompoundContainerAccessor",
+    "blockentity_sleeping.BaseContainerBlockEntityMixin",
+    "blockentity_sleeping.BlockEntityMixin",
+    "blockentity_sleeping.LevelSetBlockMixin",
+    "blockentity_sleeping.EntitySetPosRawMixin",
+    "blockentity_sleeping.PersistentEntitySectionManagerMixin"
   ]
 }

@@ -3,6 +3,7 @@ package dev.ultima.review;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
+import dev.ultima.sleeping.HopperSleepEquivalenceTest;
 import dev.ultima.temporal.MotionVectorMath;
 import dev.ultima.temporal.MotionVectorSemantic;
 import dev.ultima.temporal.TemporalMode;
@@ -45,6 +46,7 @@ public final class ForensicRegressionTest {
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
         testTemporalMathAndSettings();
+        HopperSleepEquivalenceTest.run();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         System.out.println("Forensic regression checks passed.");
@@ -265,6 +267,10 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
+            assertFalse(defaults.get("blockentity_sleeping"), "block-entity sleeping stays opt-in until live-tested");
+            assertTrue(
+                    UltimaModules.byKey("blockentity_sleeping").incompatibleMods().contains("lithium"),
+                    "block-entity sleeping must declare Lithium incompatibility");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
@@ -318,6 +324,10 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
                     "retained terrain remains inactive, not " + retainedReason);
+            String beSleepReason = defaultConfig.resolve("blockentity_sleeping").reason();
+            assertTrue(
+                    "disabled_by_default".equals(beSleepReason),
+                    "block-entity sleeping remains inactive, not " + beSleepReason);
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
                     "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),
