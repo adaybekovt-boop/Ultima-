@@ -100,7 +100,7 @@ public final class FsrEasuConstants {
         return new RcasCon(linear, Float.floatToIntBits(linear));
     }
 
-    static float rcp(final float value) {
+    public static float rcp(final float value) {
         return 1.0F / value;
     }
 

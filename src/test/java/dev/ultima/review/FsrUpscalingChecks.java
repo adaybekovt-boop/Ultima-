@@ -92,20 +92,25 @@ final class FsrUpscalingChecks {
 
     private static void testEasuConstantsAgainstOfficialFormula() {
         FsrEasuConstants.EasuCon con = FsrEasuConstants.easuSameViewportAndInput(1280, 720, 1920, 1080);
-        assertEqualsFloat(1280.0F / 1920.0F, con.con0()[0], "con0.x viewportX/outputX");
-        assertEqualsFloat(720.0F / 1080.0F, con.con0()[1], "con0.y viewportY/outputY");
-        assertEqualsFloat(0.5F * 1280.0F / 1920.0F - 0.5F, con.con0()[2], "con0.z");
-        assertEqualsFloat(0.5F * 720.0F / 1080.0F - 0.5F, con.con0()[3], "con0.w");
-        assertEqualsFloat(1.0F / 1280.0F, con.con1()[0], "con1.x 1/inputX");
-        assertEqualsFloat(1.0F / 720.0F, con.con1()[1], "con1.y 1/inputY");
-        assertEqualsFloat(1.0F / 1280.0F, con.con1()[2], "con1.z");
-        assertEqualsFloat(-1.0F / 720.0F, con.con1()[3], "con1.w");
-        assertEqualsFloat(-1.0F / 1280.0F, con.con2()[0], "con2.x");
-        assertEqualsFloat(2.0F / 720.0F, con.con2()[1], "con2.y");
-        assertEqualsFloat(1.0F / 1280.0F, con.con2()[2], "con2.z");
-        assertEqualsFloat(2.0F / 720.0F, con.con2()[3], "con2.w");
+        // Official FsrEasuCon multiplies by ARcpF1(x) == 1.0f/x, not a/b.
+        float rcpOutX = FsrEasuConstants.rcp(1920.0F);
+        float rcpOutY = FsrEasuConstants.rcp(1080.0F);
+        float rcpInX = FsrEasuConstants.rcp(1280.0F);
+        float rcpInY = FsrEasuConstants.rcp(720.0F);
+        assertEqualsFloat(1280.0F * rcpOutX, con.con0()[0], "con0.x viewportX/outputX");
+        assertEqualsFloat(720.0F * rcpOutY, con.con0()[1], "con0.y viewportY/outputY");
+        assertEqualsFloat(0.5F * 1280.0F * rcpOutX - 0.5F, con.con0()[2], "con0.z");
+        assertEqualsFloat(0.5F * 720.0F * rcpOutY - 0.5F, con.con0()[3], "con0.w");
+        assertEqualsFloat(rcpInX, con.con1()[0], "con1.x 1/inputX");
+        assertEqualsFloat(rcpInY, con.con1()[1], "con1.y 1/inputY");
+        assertEqualsFloat(1.0F * rcpInX, con.con1()[2], "con1.z");
+        assertEqualsFloat(-1.0F * rcpInY, con.con1()[3], "con1.w");
+        assertEqualsFloat(-1.0F * rcpInX, con.con2()[0], "con2.x");
+        assertEqualsFloat(2.0F * rcpInY, con.con2()[1], "con2.y");
+        assertEqualsFloat(1.0F * rcpInX, con.con2()[2], "con2.z");
+        assertEqualsFloat(2.0F * rcpInY, con.con2()[3], "con2.w");
         assertEqualsFloat(0.0F, con.con3()[0], "con3.x");
-        assertEqualsFloat(4.0F / 720.0F, con.con3()[1], "con3.y");
+        assertEqualsFloat(4.0F * rcpInY, con.con3()[1], "con3.y");
         assertEqualsFloat(0.0F, con.con3()[2], "con3.z");
         assertEqualsFloat(0.0F, con.con3()[3], "con3.w");
         assertEquals(Float.floatToIntBits(con.con0()[0]), con.conBits()[0][0], "AU1_AF1 con0.x");
@@ -115,14 +120,18 @@ final class FsrUpscalingChecks {
     private static void testEasuOfficialWorkedExample() {
         // Comment in ffx_fsr1.h: viewport 1920x1080, input 3840x2160, output 2560x1440.
         FsrEasuConstants.EasuCon con = FsrEasuConstants.easu(1920.0F, 1080.0F, 3840.0F, 2160.0F, 2560.0F, 1440.0F);
-        assertEqualsFloat(1920.0F / 2560.0F, con.con0()[0], "official example con0.x");
-        assertEqualsFloat(1080.0F / 1440.0F, con.con0()[1], "official example con0.y");
-        assertEqualsFloat(0.5F * 1920.0F / 2560.0F - 0.5F, con.con0()[2], "official example con0.z");
-        assertEqualsFloat(0.5F * 1080.0F / 1440.0F - 0.5F, con.con0()[3], "official example con0.w");
-        assertEqualsFloat(1.0F / 3840.0F, con.con1()[0], "official example con1.x");
-        assertEqualsFloat(1.0F / 2160.0F, con.con1()[1], "official example con1.y");
-        assertEqualsFloat(-1.0F / 3840.0F, con.con2()[0], "official example con2.x");
-        assertEqualsFloat(4.0F / 2160.0F, con.con3()[1], "official example con3.y");
+        float rcpOutX = FsrEasuConstants.rcp(2560.0F);
+        float rcpOutY = FsrEasuConstants.rcp(1440.0F);
+        float rcpInX = FsrEasuConstants.rcp(3840.0F);
+        float rcpInY = FsrEasuConstants.rcp(2160.0F);
+        assertEqualsFloat(1920.0F * rcpOutX, con.con0()[0], "official example con0.x");
+        assertEqualsFloat(1080.0F * rcpOutY, con.con0()[1], "official example con0.y");
+        assertEqualsFloat(0.5F * 1920.0F * rcpOutX - 0.5F, con.con0()[2], "official example con0.z");
+        assertEqualsFloat(0.5F * 1080.0F * rcpOutY - 0.5F, con.con0()[3], "official example con0.w");
+        assertEqualsFloat(rcpInX, con.con1()[0], "official example con1.x");
+        assertEqualsFloat(rcpInY, con.con1()[1], "official example con1.y");
+        assertEqualsFloat(-1.0F * rcpInX, con.con2()[0], "official example con2.x");
+        assertEqualsFloat(4.0F * rcpInY, con.con3()[1], "official example con3.y");
     }
 
     private static void testRcasConstants() {
