@@ -364,6 +364,8 @@ final class AuditStage1Checks {
                 "terrain_metrics is instrumentation");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("client_benchmark")) == UltimaModules.Kind.INSTRUMENTATION,
                 "client_benchmark is instrumentation");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("server_metrics")) == UltimaModules.Kind.INSTRUMENTATION,
+                "server_metrics is instrumentation");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("retained_terrain")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
                 "retained_terrain is an opt-in experiment");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("temporal")) == UltimaModules.Kind.SHIPPED_DEFAULT,

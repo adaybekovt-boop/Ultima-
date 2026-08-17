@@ -91,6 +91,11 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
+            new Module("server_metrics", true,
+                    "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
+                            + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "
+                            + "Expected cost: two nanoTime calls and one atomic add per instrumented phase, no "
+                            + "allocations on the always-on path."),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),
@@ -145,7 +150,7 @@ public final class UltimaModules {
     }
 
     public static boolean isInstrumentation(final String key) {
-        return "client_benchmark".equals(key) || "terrain_metrics".equals(key);
+        return "client_benchmark".equals(key) || "terrain_metrics".equals(key) || "server_metrics".equals(key);
     }
 
     public static boolean isOptInExperiment(final String key) {

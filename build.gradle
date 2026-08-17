@@ -101,12 +101,14 @@ tasks.register("commandCompactionRecoveryTest", JavaExec) {
     mainClass = "dev.ultima.review.CommandCompactionRecoveryTest"
 }
 
-test {
-    failOnNoDiscoveredTests = false
-}
-
 check.dependsOn forensicRegressionTest
 check.dependsOn commandCompactionRecoveryTest
+
+test {
+    failOnNoDiscoveredTests = false
+    dependsOn forensicRegressionTest
+    dependsOn commandCompactionRecoveryTest
+}
 
 java {
     withSourcesJar()

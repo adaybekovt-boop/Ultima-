@@ -1,5 +1,14 @@
 # Changelog
 
+## Server-side MSPT telemetry (`server_metrics`)
+
+Cheap always-on server subsystem counters and an operator-only `/ultima profile`
+opt-in trace. This is diagnostics for later multiplayer work (chunk pipeline,
+per-player delivery, networking), not an optimization. Gameplay is unchanged.
+See `SERVER_TELEMETRY.md`.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

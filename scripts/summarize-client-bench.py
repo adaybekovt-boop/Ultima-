@@ -85,7 +85,7 @@ def pair_key(path: Path) -> tuple[str, str] | None:
     return match.group("pair"), match.group("side").lower()
 
 
-INSTRUMENTATION_KEYS = frozenset({"client_benchmark", "terrain_metrics"})
+INSTRUMENTATION_KEYS = frozenset({"client_benchmark", "terrain_metrics", "server_metrics"})
 SHIPPED_DEFAULT_KEYS_MUST_INCLUDE = (
     "entity_section_lookup",
     "block_collision_shape",
@@ -378,6 +378,8 @@ def test_module_classification() -> None:
         raise SystemExit("client_benchmark must remain opt-in instrumentation")
     if defaults.get("terrain_metrics") is not True:
         raise SystemExit("terrain_metrics must remain default-on instrumentation")
+    if defaults.get("server_metrics") is not True:
+        raise SystemExit("server_metrics must remain default-on instrumentation")
 
     default_on = {
         "modules": [
