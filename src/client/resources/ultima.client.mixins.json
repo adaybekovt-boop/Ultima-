@@ -28,6 +28,7 @@
     "temporal.GameRendererMixin",
     "temporal.MinecraftMixin",
     "temporal.ShaderManagerMixin",
-    "temporal.LevelRendererMixin"
+    "temporal.LevelRendererMixin",
+    "TitleScreenMixin"
   ]
 }

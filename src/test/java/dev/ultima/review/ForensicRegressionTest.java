@@ -41,6 +41,7 @@ public final class ForensicRegressionTest {
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
+        SettingsScreenLogicTest.run();
         testOffsetCubeMatchesVanillaMove();
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();

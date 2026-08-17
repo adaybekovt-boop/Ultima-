@@ -22,8 +22,9 @@ import org.slf4j.LoggerFactory;
  * Ultima's optimization modules are individually switchable so that a single incompatible
  * optimization can be disabled without giving up the rest of the mod.
  *
- * <p>The configuration is read once, before any Mixin is applied, and must therefore not touch
- * Minecraft classes.
+ * <p>The configuration is read before Mixins are applied and must therefore not touch Minecraft
+ * classes during load. In-game settings write the same {@code ultima.properties} file immediately,
+ * but Mixin application still follows the values that were resolved at launch.
  */
 public final class UltimaConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-config");
@@ -32,9 +33,27 @@ public final class UltimaConfig {
     private static volatile UltimaConfig instance;
 
     private final Map<String, Boolean> modules;
+    private final Map<String, Boolean> launchRequested;
+    private final Map<String, Boolean> launchEnabled;
 
     private UltimaConfig(final Map<String, Boolean> modules) {
         this.modules = modules;
+        Map<String, Boolean> requested = new LinkedHashMap<>();
+        Map<String, Boolean> enabled = new LinkedHashMap<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            requested.put(module.key(), Boolean.TRUE.equals(modules.get(module.key())));
+            enabled.put(module.key(), this.isEnabled(module.key()));
+        }
+        this.launchRequested = Map.copyOf(requested);
+        this.launchEnabled = Map.copyOf(enabled);
+    }
+
+    /**
+     * Builds a config from an explicit requested-state map. Used by tests and does not touch the
+     * singleton or the config directory.
+     */
+    public static UltimaConfig createForTests(final Map<String, Boolean> modules) {
+        return new UltimaConfig(new LinkedHashMap<>(modules));
     }
 
     public static UltimaConfig get() {
@@ -109,6 +128,66 @@ public final class UltimaConfig {
      */
     public boolean isRequested(final String module) {
         return Boolean.TRUE.equals(this.modules.get(module));
+    }
+
+    /**
+     * Updates the requested flag for a known module. Does not apply Mixins; persist with
+     * {@link #save()} or {@link #saveTo(Path)}.
+     *
+     * @return {@code false} when the name is not a registered module
+     */
+    public boolean setRequested(final String module, final boolean requested) {
+        if (UltimaModules.byKey(module) == null) {
+            return false;
+        }
+        this.modules.put(module, requested);
+        return true;
+    }
+
+    public boolean wasRequestedAtLaunch(final String module) {
+        return Boolean.TRUE.equals(this.launchRequested.get(module));
+    }
+
+    public boolean wasEnabledAtLaunch(final String module) {
+        return Boolean.TRUE.equals(this.launchEnabled.get(module));
+    }
+
+    public boolean hasPendingRestart(final String module) {
+        return this.isRequested(module) != this.wasRequestedAtLaunch(module);
+    }
+
+    public boolean hasPendingRestart() {
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (this.hasPendingRestart(module.key())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static String fileName() {
+        return FILE_NAME;
+    }
+
+    public static @org.jspecify.annotations.Nullable Path resolveConfigPath() {
+        try {
+            return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public void save() {
+        Path path = resolveConfigPath();
+        if (path == null) {
+            LOGGER.warn("Cannot save Ultima config; the config directory is unavailable.");
+            return;
+        }
+        write(path, this.modules);
+    }
+
+    public void saveTo(final Path path) {
+        write(path, this.modules);
     }
 
     public List<ResolvedModule> resolvedModules() {
@@ -280,16 +359,6 @@ public final class UltimaConfig {
     }
 
     private static void writeIfChanged(final Path path, final Map<String, Boolean> modules, final Properties existing) {
-        List<String> lines = new ArrayList<>();
-        lines.add("# Ultima optimization modules.");
-        lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
-        lines.add("# Missing keys use the documented module default.");
-        for (UltimaModules.Module module : UltimaModules.all()) {
-            lines.add("");
-            lines.add("# " + module.description());
-            lines.add(module.key() + "=" + modules.get(module.key()));
-        }
-
         boolean upToDate = existing.size() == modules.size();
         if (upToDate) {
             for (Map.Entry<String, Boolean> entry : modules.entrySet()) {
@@ -305,8 +374,27 @@ public final class UltimaConfig {
             return;
         }
 
+        write(path, modules);
+    }
+
+    private static void write(final Path path, final Map<String, Boolean> modules) {
+        List<String> lines = new ArrayList<>();
+        lines.add("# Ultima optimization modules.");
+        lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
+        lines.add("# Missing keys use the documented module default.");
+        lines.add("# In-game changes are written here immediately; Mixins still apply at next launch.");
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            boolean value = modules.getOrDefault(module.key(), module.enabledByDefault());
+            lines.add("");
+            lines.add("# " + module.description());
+            lines.add(module.key() + "=" + value);
+        }
+
         try {
-            Files.createDirectories(path.getParent());
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             Files.write(path, lines, StandardCharsets.UTF_8);
         } catch (IOException | UncheckedIOException | SecurityException e) {
             LOGGER.warn("Could not write {}; Ultima keeps running with the values it resolved.", path, e);

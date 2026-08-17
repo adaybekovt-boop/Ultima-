@@ -1,5 +1,14 @@
 # Changelog
 
+## In-game settings screen
+
+Ultima now has a client settings screen for every registered module, grouped as
+Rendering / Simulation / Advanced. Access: Mod Menu (soft dependency), a title-screen
+fallback button when Mod Menu is absent, and `/ultima config`. Compatibility reasons
+come from `UltimaConfig.resolve()` and are also dumped by `/ultima debug compatibility`.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance
