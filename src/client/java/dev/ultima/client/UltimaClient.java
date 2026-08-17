@@ -1,5 +1,6 @@
 package dev.ultima.client;
 
+import dev.ultima.client.command.UltimaClientCommands;
 import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import net.fabricmc.api.ClientModInitializer;
@@ -32,5 +33,6 @@ public final class UltimaClient implements ClientModInitializer {
                 LOGGER.info("FSR1 is inactive: {}", fsr.detail());
             }
         }
+        UltimaClientCommands.register();
     }
 }

@@ -32,6 +32,7 @@
     "fsr_upscaling.GameRendererMixin",
     "fsr_upscaling.LevelRendererAccessor",
     "fsr_upscaling.LevelExtractorAccessor",
-    "fsr_upscaling.ShaderManagerMixin"
+    "fsr_upscaling.ShaderManagerMixin",
+    "TitleScreenMixin"
   ]
 }

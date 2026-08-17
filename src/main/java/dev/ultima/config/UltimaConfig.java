@@ -24,8 +24,9 @@ import org.slf4j.LoggerFactory;
  * Ultima's optimization modules are individually switchable so that a single incompatible
  * optimization can be disabled without giving up the rest of the mod.
  *
- * <p>The configuration is read once, before any Mixin is applied, and must therefore not touch
- * Minecraft classes.
+ * <p>The configuration is read before Mixins are applied and must therefore not touch Minecraft
+ * classes during load. In-game settings write the same {@code ultima.properties} file immediately,
+ * but Mixin application still follows the values that were resolved at launch.
  */
 public final class UltimaConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-config");
@@ -34,7 +35,9 @@ public final class UltimaConfig {
     private static volatile UltimaConfig instance;
 
     private final Map<String, Boolean> modules;
-    private final FsrSettings fsrSettings;
+    private FsrSettings fsrSettings;
+    private final Map<String, Boolean> launchRequested;
+    private final Map<String, Boolean> launchEnabled;
 
     private UltimaConfig(final Map<String, Boolean> modules) {
         this(modules, FsrSettings.defaults());
@@ -43,10 +46,30 @@ public final class UltimaConfig {
     private UltimaConfig(final Map<String, Boolean> modules, final FsrSettings fsrSettings) {
         this.modules = modules;
         this.fsrSettings = fsrSettings == null ? FsrSettings.defaults() : fsrSettings;
+        Map<String, Boolean> requested = new LinkedHashMap<>();
+        Map<String, Boolean> enabled = new LinkedHashMap<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            requested.put(module.key(), Boolean.TRUE.equals(modules.get(module.key())));
+            enabled.put(module.key(), this.isEnabled(module.key()));
+        }
+        this.launchRequested = Map.copyOf(requested);
+        this.launchEnabled = Map.copyOf(enabled);
     }
 
     public FsrSettings fsrSettings() {
         return this.fsrSettings;
+    }
+
+    /**
+     * Builds a config from an explicit requested-state map. Used by tests and does not touch the
+     * singleton or the config directory.
+     */
+    public static UltimaConfig createForTests(final Map<String, Boolean> modules) {
+        return createForTests(modules, FsrSettings.defaults());
+    }
+
+    public static UltimaConfig createForTests(final Map<String, Boolean> modules, final FsrSettings fsrSettings) {
+        return new UltimaConfig(new LinkedHashMap<>(modules), fsrSettings);
     }
 
     public static UltimaConfig get() {
@@ -121,6 +144,77 @@ public final class UltimaConfig {
      */
     public boolean isRequested(final String module) {
         return Boolean.TRUE.equals(this.modules.get(module));
+    }
+
+    /**
+     * Updates the requested flag for a known module. Does not apply Mixins; persist with
+     * {@link #save()} or {@link #saveTo(Path)}.
+     *
+     * @return {@code false} when the name is not a registered module
+     */
+    public boolean setRequested(final String module, final boolean requested) {
+        if (UltimaModules.byKey(module) == null) {
+            return false;
+        }
+        this.modules.put(module, requested);
+        return true;
+    }
+
+    /**
+     * Updates the FSR1 quality preset stored in this config. Sharpness is unchanged.
+     * Persist with {@link #save()} or {@link #saveTo(Path)}.
+     */
+    public void setFsrPreset(final FsrQualityPreset preset) {
+        FsrSettings current = this.fsrSettings;
+        this.fsrSettings = new FsrSettings(
+                preset == null ? FsrQualityPreset.defaultPreset() : preset,
+                current.sharpnessStops());
+    }
+
+    public boolean wasRequestedAtLaunch(final String module) {
+        return Boolean.TRUE.equals(this.launchRequested.get(module));
+    }
+
+    public boolean wasEnabledAtLaunch(final String module) {
+        return Boolean.TRUE.equals(this.launchEnabled.get(module));
+    }
+
+    public boolean hasPendingRestart(final String module) {
+        return this.isRequested(module) != this.wasRequestedAtLaunch(module);
+    }
+
+    public boolean hasPendingRestart() {
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (this.hasPendingRestart(module.key())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static String fileName() {
+        return FILE_NAME;
+    }
+
+    public static @org.jspecify.annotations.Nullable Path resolveConfigPath() {
+        try {
+            return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public void save() {
+        Path path = resolveConfigPath();
+        if (path == null) {
+            LOGGER.warn("Cannot save Ultima config; the config directory is unavailable.");
+            return;
+        }
+        write(path, this.modules, this.fsrSettings);
+    }
+
+    public void saveTo(final Path path) {
+        write(path, this.modules, this.fsrSettings);
     }
 
     public List<ResolvedModule> resolvedModules() {
@@ -311,22 +405,6 @@ public final class UltimaConfig {
             final Map<String, Boolean> modules,
             final FsrSettings fsrSettings,
             final Properties existing) {
-        List<String> lines = new ArrayList<>();
-        lines.add("# Ultima optimization modules.");
-        lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
-        lines.add("# Missing keys use the documented module default.");
-        for (UltimaModules.Module module : UltimaModules.all()) {
-            lines.add("");
-            lines.add("# " + module.description());
-            lines.add(module.key() + "=" + modules.get(module.key()));
-        }
-        lines.add("");
-        lines.add("# FSR1 quality preset when fsr_upscaling=true: ultra_quality, quality, balanced,");
-        lines.add("# performance, ultra_performance. Scale factors are 1/1.3, 1/1.5, 1/1.7, 1/2, 1/3.");
-        lines.add(FsrSettings.PRESET_KEY + "=" + fsrSettings.presetKey());
-        lines.add("# RCAS sharpness in stops (0 = maximum sharpening, higher = softer). Default 0.2.");
-        lines.add(FsrSettings.SHARPNESS_KEY + "=" + fsrSettings.sharpnessStops());
-
         boolean upToDate = existing.size() == modules.size() + 2;
         if (upToDate) {
             for (Map.Entry<String, Boolean> entry : modules.entrySet()) {
@@ -353,8 +431,35 @@ public final class UltimaConfig {
             return;
         }
 
+        write(path, modules, fsrSettings);
+    }
+
+    private static void write(final Path path, final Map<String, Boolean> modules, final FsrSettings fsrSettings) {
+        FsrSettings settings = fsrSettings == null ? FsrSettings.defaults() : fsrSettings;
+        List<String> lines = new ArrayList<>();
+        lines.add("# Ultima optimization modules.");
+        lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
+        lines.add("# Missing keys use the documented module default.");
+        lines.add("# In-game changes are written here immediately; Mixins still apply at next launch.");
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            boolean value = modules.getOrDefault(module.key(), module.enabledByDefault());
+            lines.add("");
+            lines.add("# " + module.description());
+            lines.add(module.key() + "=" + value);
+        }
+        lines.add("");
+        lines.add("# FSR1 quality preset when fsr_upscaling=true: ultra_quality, quality, balanced,");
+        lines.add("# performance, ultra_performance. Scale factors are 1/1.3, 1/1.5, 1/1.7, 1/2, 1/3.");
+        lines.add(FsrSettings.PRESET_KEY + "=" + settings.presetKey());
+        lines.add("# RCAS sharpness in stops (0 = maximum sharpening, higher = softer). Default 0.2.");
+        lines.add("# Sharpness has no in-game slider in this iteration; edit this key or leave the default.");
+        lines.add(FsrSettings.SHARPNESS_KEY + "=" + settings.sharpnessStops());
+
         try {
-            Files.createDirectories(path.getParent());
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             Files.write(path, lines, StandardCharsets.UTF_8);
         } catch (IOException | UncheckedIOException | SecurityException e) {
             LOGGER.warn("Could not write {}; Ultima keeps running with the values it resolved.", path, e);

@@ -1,0 +1,39 @@
+package dev.ultima.mixin;
+
+import dev.ultima.client.settings.UltimaConfigScreen;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.network.chat.Component;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/**
+ * Fallback title-screen entry when Mod Menu is not installed. Always applied
+ * (this class sits outside a module package segment).
+ */
+@Mixin(TitleScreen.class)
+public abstract class TitleScreenMixin extends Screen {
+    protected TitleScreenMixin(final Component title) {
+        super(title);
+    }
+
+    @Inject(method = "init", at = @At("RETURN"))
+    private void ultimaAddSettingsButton(final CallbackInfo ci) {
+        if (FabricLoader.getInstance().isModLoaded("modmenu")) {
+            return;
+        }
+        this.addRenderableWidget(Button.builder(
+                        Component.translatableWithFallback("ultima.settings.title_button", "Ultima..."),
+                        button -> this.minecraft.gui.setScreen(new UltimaConfigScreen(this)))
+                .bounds(4, this.height - 24, 80, 20)
+                .tooltip(Tooltip.create(Component.translatableWithFallback(
+                        "ultima.settings.title_button.tooltip",
+                        "Ultima optimization modules")))
+                .build());
+    }
+}

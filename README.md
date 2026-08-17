@@ -39,7 +39,9 @@ Built mod JARs appear in `build/libs/`.
 
 ## Release-candidate defaults
 
-Ultima's modules are configured in `config/ultima.properties`.
+Ultima's modules are configured in `config/ultima.properties` and from the in-game
+**Ultima Settings** screen (Mod Menu config button, or `/ultima config` on the client).
+Toggles write that same file immediately. Mixins still apply at the next game launch.
 
 - Enabled by default (dedicated server, integrated server, and client physics):
   `cursor_step`, `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
