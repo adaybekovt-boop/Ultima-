@@ -28,6 +28,10 @@
     "temporal.GameRendererMixin",
     "temporal.MinecraftMixin",
     "temporal.ShaderManagerMixin",
-    "temporal.LevelRendererMixin"
+    "temporal.LevelRendererMixin",
+    "fsr_upscaling.GameRendererMixin",
+    "fsr_upscaling.LevelRendererAccessor",
+    "fsr_upscaling.LevelExtractorAccessor",
+    "fsr_upscaling.ShaderManagerMixin"
   ]
 }

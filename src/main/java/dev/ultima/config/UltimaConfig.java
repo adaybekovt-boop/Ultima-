@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import dev.ultima.fsr.FsrQualityPreset;
+import dev.ultima.fsr.FsrSettings;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -32,9 +34,19 @@ public final class UltimaConfig {
     private static volatile UltimaConfig instance;
 
     private final Map<String, Boolean> modules;
+    private final FsrSettings fsrSettings;
 
     private UltimaConfig(final Map<String, Boolean> modules) {
+        this(modules, FsrSettings.defaults());
+    }
+
+    private UltimaConfig(final Map<String, Boolean> modules, final FsrSettings fsrSettings) {
         this.modules = modules;
+        this.fsrSettings = fsrSettings == null ? FsrSettings.defaults() : fsrSettings;
+    }
+
+    public FsrSettings fsrSettings() {
+        return this.fsrSettings;
     }
 
     public static UltimaConfig get() {
@@ -265,7 +277,22 @@ public final class UltimaConfig {
             }
         }
 
-        UltimaConfig resolved = new UltimaConfig(modules);
+        FsrSettings fsrSettings = FsrSettings.fromProperties(properties);
+        String presetValue = properties.getProperty(FsrSettings.PRESET_KEY);
+        if (presetValue != null && !presetValue.isBlank()
+                && FsrQualityPreset.fromKey(presetValue) == FsrQualityPreset.defaultPreset()
+                && !presetValue.trim().equalsIgnoreCase(FsrQualityPreset.defaultPreset().name())
+                && !presetValue.trim().equalsIgnoreCase("quality")) {
+            LOGGER.warn("Ignoring unknown FSR preset '{}' in {}; using {}.",
+                    presetValue, path, FsrQualityPreset.defaultPreset().name().toLowerCase());
+        }
+        String sharpnessValue = properties.getProperty(FsrSettings.SHARPNESS_KEY);
+        if (sharpnessValue != null && !sharpnessValue.isBlank() && FsrSettings.parseFloat(sharpnessValue) == null) {
+            LOGGER.warn("Ignoring invalid FSR sharpness '{}' in {}; using {}.",
+                    sharpnessValue, path, FsrSettings.DEFAULT_SHARPNESS_STOPS);
+        }
+
+        UltimaConfig resolved = new UltimaConfig(modules, fsrSettings);
         for (UltimaModules.Module module : UltimaModules.all()) {
             if (isApplicableInCurrentEnvironment(module)
                     && Boolean.TRUE.equals(modules.get(module.key()))
@@ -275,11 +302,15 @@ public final class UltimaConfig {
             }
         }
 
-        writeIfChanged(path, modules, properties);
+        writeIfChanged(path, modules, fsrSettings, properties);
         return resolved;
     }
 
-    private static void writeIfChanged(final Path path, final Map<String, Boolean> modules, final Properties existing) {
+    private static void writeIfChanged(
+            final Path path,
+            final Map<String, Boolean> modules,
+            final FsrSettings fsrSettings,
+            final Properties existing) {
         List<String> lines = new ArrayList<>();
         lines.add("# Ultima optimization modules.");
         lines.add("# Set a module to false to fall back to vanilla behaviour for that optimization only.");
@@ -289,14 +320,31 @@ public final class UltimaConfig {
             lines.add("# " + module.description());
             lines.add(module.key() + "=" + modules.get(module.key()));
         }
+        lines.add("");
+        lines.add("# FSR1 quality preset when fsr_upscaling=true: ultra_quality, quality, balanced,");
+        lines.add("# performance, ultra_performance. Scale factors are 1/1.3, 1/1.5, 1/1.7, 1/2, 1/3.");
+        lines.add(FsrSettings.PRESET_KEY + "=" + fsrSettings.presetKey());
+        lines.add("# RCAS sharpness in stops (0 = maximum sharpening, higher = softer). Default 0.2.");
+        lines.add(FsrSettings.SHARPNESS_KEY + "=" + fsrSettings.sharpnessStops());
 
-        boolean upToDate = existing.size() == modules.size();
+        boolean upToDate = existing.size() == modules.size() + 2;
         if (upToDate) {
             for (Map.Entry<String, Boolean> entry : modules.entrySet()) {
                 String value = existing.getProperty(entry.getKey());
                 if (value == null || !entry.getValue().equals(parseBoolean(value))) {
                     upToDate = false;
                     break;
+                }
+            }
+            if (upToDate) {
+                String presetValue = existing.getProperty(FsrSettings.PRESET_KEY);
+                String sharpnessValue = existing.getProperty(FsrSettings.SHARPNESS_KEY);
+                Float parsedSharpness = sharpnessValue == null ? null : FsrSettings.parseFloat(sharpnessValue);
+                if (presetValue == null
+                        || FsrQualityPreset.fromKey(presetValue) != fsrSettings.preset()
+                        || parsedSharpness == null
+                        || parsedSharpness.floatValue() != fsrSettings.sharpnessStops()) {
+                    upToDate = false;
                 }
             }
         }
