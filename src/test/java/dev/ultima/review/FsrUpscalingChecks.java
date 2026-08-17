@@ -4,6 +4,7 @@ import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.fsr.FsrCompatibility;
 import dev.ultima.fsr.FsrEasuConstants;
+import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResolution;
 import dev.ultima.fsr.FsrResourcePlan;
@@ -33,6 +34,7 @@ final class FsrUpscalingChecks {
         testResizeLifecycleNotStale();
         testDisabledPlanAllocatesNothing();
         testCompatibilityPolicy();
+        testPipelineGate();
         testModuleRegistryAndDefaults();
         testSettingsParsing();
         System.out.println("FSR upscaling checks passed.");
@@ -216,6 +218,21 @@ final class FsrUpscalingChecks {
         assertTrue(module.dependencies().isEmpty(), "FSR is isolated from retained/mesher modules");
         assertFalse(module.enabledByDefault(), "FSR is default off");
         assertTrue(module.clientOnly(), "FSR is client-only");
+    }
+
+    private static void testPipelineGate() {
+        assertTrue(
+                FsrPipelineGate.decide(true, false) == FsrPipelineGate.Action.PROCEED,
+                "compiled pipelines proceed");
+        assertTrue(
+                FsrPipelineGate.decide(false, false) == FsrPipelineGate.Action.WAIT_FOR_PIPELINES,
+                "missing device/shaders wait and retry; do not fail-open");
+        assertTrue(
+                FsrPipelineGate.decide(false, true) == FsrPipelineGate.Action.FAIL_OPEN,
+                "hard compile failure fail-opens");
+        assertTrue(
+                FsrPipelineGate.decide(true, true) == FsrPipelineGate.Action.PROCEED,
+                "already-compiled wins over a stale failed flag");
     }
 
     private static void testModuleRegistryAndDefaults() {

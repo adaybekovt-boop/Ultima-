@@ -84,11 +84,17 @@ Ultima, when `fsr_upscaling` is actually enabled:
 ### How HUD-after-upscale is guaranteed without a GPU
 
 `GuiRenderer.render()` runs after `FogRenderer.endFrame()` in
-`GameRenderer.render`. The FSR evaluate inject is on that `endFrame` call, and
-`worldPass` is cleared in `finally` before GUI. GUI therefore samples the
-vanilla main target, which FSR just wrote at native size. The start-of-frame
+`GameRenderer.render` and binds `gameRenderer.mainRenderTarget()` (the method,
+not a captured field). The FSR evaluate inject is on that `endFrame` call;
+`worldPass` is cleared in `finally` before GUI, so the method returns vanilla
+main. RCAS has just written that target at native size. The start-of-frame
 window-size check also keeps vanilla main equal to the window, so FSR never
 permanently shrinks the HUD framebuffer.
+
+`worldPass` is also cleared at the **HEAD** of `GameRenderer.render`. Mixin
+`RETURN` injects do not run if `render()` throws; without the HEAD reset a
+leaked redirect would make the next frame's resize/clear hit the internal
+target.
 
 ### Why vanilla main is not resized every frame
 
@@ -155,6 +161,11 @@ Independent of `retained_terrain` and mesher modules. Either can be on or off.
    existing Ultima/vanilla `#version 330` and clamps edges (`CLAMP_TO_EDGE`).
 6. **Exact AMD display scales** 1.3 / 1.5 / 1.7 / 2.0 / 3.0 rather than the
    rounded 0.77 / 0.67 / 0.59 table values.
+7. **Missing shaders/device wait and retry** instead of a permanent fail-open.
+   Only a hard compile/link failure fail-opens for the session.
+8. **Temporal Native capture uses `mainRenderTarget()`** so, when both modules
+   are on, it snapshots the redirected world target rather than the empty
+   vanilla main. Temporal still does not change pixels.
 
 ---
 
@@ -172,5 +183,9 @@ There is no GPU in this environment. Still required on real hardware:
 - Iris/Canvas auto-disable log lines in a real loader
 - Window resize / fullscreen toggle without stale targets
 - Resource-pack reload (pipelines invalidate and recompile)
+- World-icon auto-screenshot (`tryTakeScreenshotIfNeeded`) still runs after
+  `renderLevel` and therefore captures the internal target when FSR is active
+- `gl_FragCoord` vs `texCoord` Y-origin on real GL drivers
+- First-person hand / screen-effect sharpness (they stay on the internal target)
 
 **SAFE TO MERGE: NO** until that hardware pass exists.

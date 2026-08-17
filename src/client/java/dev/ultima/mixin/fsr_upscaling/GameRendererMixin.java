@@ -56,6 +56,13 @@ public abstract class GameRendererMixin {
         }
     }
 
+    @Inject(method = "render", at = @At("HEAD"))
+    private void ultimaFsrResetWorldPass(final DeltaTracker deltaTracker, final boolean advanceGameTime, final CallbackInfo ci) {
+        // RETURN injects do not run if render() throws. Clear the redirect before
+        // the vanilla resize/clear GETFIELDs so a failed frame cannot leak into the next.
+        FsrUpscaling.get().abortWorldPass();
+    }
+
     @Inject(
             method = "render",
             at = @At(
@@ -79,11 +86,14 @@ public abstract class GameRendererMixin {
     private void ultimaFsrEndWorldPass(final DeltaTracker deltaTracker, final boolean advanceGameTime, final CallbackInfo ci) {
         int nativeWidth = this.gameRenderState.windowRenderState.width;
         int nativeHeight = this.gameRenderState.windowRenderState.height;
+        boolean redirected = FsrUpscaling.get().isWorldPass();
         FsrUpscaling.get().endWorldPassAndUpscale(
                 this.mainRenderTarget,
                 UltimaConfig.get().fsrSettings().resolved().sharpnessStops());
-        this.ultimaFsrRefreshGlobals(nativeWidth, nativeHeight, deltaTracker);
-        this.ultimaFsrSyncOutline(nativeWidth, nativeHeight);
+        if (redirected) {
+            this.ultimaFsrRefreshGlobals(nativeWidth, nativeHeight, deltaTracker);
+            this.ultimaFsrSyncOutline(nativeWidth, nativeHeight);
+        }
     }
 
     @Inject(method = "render", at = @At("RETURN"))

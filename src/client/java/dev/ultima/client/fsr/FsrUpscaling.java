@@ -12,11 +12,13 @@ import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.fsr.FsrEasuConstants;
+import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResourcePlan;
 import dev.ultima.fsr.FsrSettings;
 import dev.ultima.fsr.FsrSize;
 import dev.ultima.fsr.FsrTargetModel;
+import java.util.Locale;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
@@ -46,6 +48,8 @@ public final class FsrUpscaling {
     private @Nullable FsrResourcePlan activePlan;
     private boolean evaluatedThisFrame;
     private boolean hudAfterUpscaleThisFrame;
+    private boolean loggedActive;
+    private boolean loggedWaitingForPipelines;
 
     private FsrUpscaling() {
     }
@@ -113,8 +117,20 @@ public final class FsrUpscaling {
                 this.activePlan = plan;
                 return plan;
             }
-            if (!FsrPipelines.ensureCompiled()) {
-                this.failOpen("FSR1 pipelines are not available", null);
+            boolean compiled = FsrPipelines.ensureCompiled();
+            FsrPipelineGate.Action gate = FsrPipelineGate.decide(compiled, FsrPipelines.compileFailed());
+            if (gate == FsrPipelineGate.Action.FAIL_OPEN) {
+                this.failOpen("FSR1 pipelines failed to compile", null);
+                this.activePlan = FsrResourcePlan.inactive(nativeWidth, nativeHeight);
+                return this.activePlan;
+            }
+            if (gate == FsrPipelineGate.Action.WAIT_FOR_PIPELINES) {
+                if (!this.loggedWaitingForPipelines) {
+                    LOGGER.info("FSR1 is waiting for shader sources or the GPU device; this frame stays native.");
+                    this.loggedWaitingForPipelines = true;
+                }
+                this.targets.apply(FsrResourcePlan.inactive(nativeWidth, nativeHeight));
+                this.worldPass = false;
                 this.activePlan = FsrResourcePlan.inactive(nativeWidth, nativeHeight);
                 return this.activePlan;
             }
@@ -139,6 +155,7 @@ public final class FsrUpscaling {
             RenderTarget world = this.targets.world();
             RenderTarget easu = this.targets.easu();
             if (plan == null || !plan.runUpscale() || world == null || easu == null || vanillaMain == null) {
+                this.failOpen("evaluate missing FSR targets after a redirected world pass", null);
                 return;
             }
             if (!FsrPipelines.ensureCompiled()) {
@@ -149,6 +166,16 @@ public final class FsrUpscaling {
             this.dispatchRcas(easu, vanillaMain, plan, sharpnessStops);
             this.evaluatedThisFrame = true;
             this.hudAfterUpscaleThisFrame = true;
+            if (!this.loggedActive) {
+                LOGGER.info(
+                        "FSR1 EASU+RCAS active: {}x{} -> {}x{} preset={}",
+                        plan.internal().width(),
+                        plan.internal().height(),
+                        plan.output().width(),
+                        plan.output().height(),
+                        plan.preset().name().toLowerCase(Locale.ROOT));
+                this.loggedActive = true;
+            }
         } catch (RuntimeException e) {
             this.failOpen("evaluate", e);
         } finally {
@@ -190,6 +217,7 @@ public final class FsrUpscaling {
         }
         this.failedOpen = true;
         this.worldPass = false;
+        this.loggedActive = false;
         this.shutdown();
     }
 
@@ -229,7 +257,7 @@ public final class FsrUpscaling {
                 plan.internal().height(),
                 plan.output().width(),
                 plan.output().height());
-        this.uploadConstants(con, 0.0F, plan.internal(), plan.output());
+        this.uploadConstants(con, Float.NaN, plan.internal(), plan.output());
         this.drawPass("Ultima FSR EASU", FsrPipelines.easu(), input.getColorTextureView(), output.getColorTextureView());
     }
 
@@ -256,7 +284,7 @@ public final class FsrUpscaling {
         this.ensureConstants();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var data = Std140Builder.onStack(stack, CONSTANTS_BYTES)
-                    .putVec4(rcasLinear != 0.0F ? rcasLinear : con.con0()[0], con.con0()[1], con.con0()[2], con.con0()[3])
+                    .putVec4(Float.isNaN(rcasLinear) ? con.con0()[0] : rcasLinear, con.con0()[1], con.con0()[2], con.con0()[3])
                     .putVec4(con.con1()[0], con.con1()[1], con.con1()[2], con.con1()[3])
                     .putVec4(con.con2()[0], con.con2()[1], con.con2()[2], con.con2()[3])
                     .putVec4(con.con3()[0], con.con3()[1], con.con3()[2], con.con3()[3])

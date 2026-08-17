@@ -82,5 +82,6 @@ final class FsrTargets implements AutoCloseable {
             this.easu.destroyBuffers();
             this.easu = null;
         }
+        this.model.apply(FsrResourcePlan.inactive(1, 1));
     }
 }
