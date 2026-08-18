@@ -1,5 +1,17 @@
 # Changelog
 
+## Slot masks + entity-query empty early-outs (draft)
+
+Opt-in, default-off modules `container_slot_mask` and `entity_query_early_out`.
+
+- Slot masks are a conservative occupancy hint (LSB-to-MSB order, periodic verify, fail-open
+  for loot tables / modded / WorldlyContainer face arrays still preserve vanilla slot order).
+- Entity-query early-outs fire only when every intersecting accessible section has a zero
+  counter for the query kind. Non-empty queries always take the vanilla path.
+- Both auto-disable with Lithium/Canary/Radium. **SAFE TO MERGE: NO.**
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

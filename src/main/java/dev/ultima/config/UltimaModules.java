@@ -88,6 +88,22 @@ public final class UltimaModules {
                     List.of(),
                     LITHIUM_FAMILY,
                     false),
+            new Module("container_slot_mask", false,
+                    "Conservative non-empty slot mask for vanilla containers (chests, hoppers, furnaces, "
+                            + "brewing stands, comparators). Hint is verified against contents; unlisted or "
+                            + "modded inventories fall back to vanilla. Automatically disabled when Lithium "
+                            + "or a Lithium fork is loaded because Lithium tracks the same occupancy.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("entity_query_early_out", false,
+                    "Empty-only early-out for entity section queries (projectiles, fishing hooks, area "
+                            + "effect clouds, item/XP attraction, AI broad-phase). Reuses EntitySectionStorage "
+                            + "and SectionRangeMath from entity_section_lookup; never filters a non-empty "
+                            + "result. Automatically disabled when Lithium or a Lithium fork is loaded.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),

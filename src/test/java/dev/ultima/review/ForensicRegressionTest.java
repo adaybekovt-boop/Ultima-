@@ -47,6 +47,7 @@ public final class ForensicRegressionTest {
         testTemporalMathAndSettings();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
+        SlotMaskEntityQueryTest.run();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -265,6 +266,8 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
+            assertFalse(defaults.get("container_slot_mask"), "container slot mask is opt-in");
+            assertFalse(defaults.get("entity_query_early_out"), "entity query early-out is opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
@@ -293,6 +296,12 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
                     "full-cube move must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("container_slot_mask").incompatibleMods().contains("lithium"),
+                    "container slot mask must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("entity_query_early_out").incompatibleMods().contains("lithium"),
+                    "entity query early-out must declare Lithium incompatibility");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
@@ -318,6 +327,10 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
                     "retained terrain remains inactive, not " + retainedReason);
+            assertTrue("disabled_by_default".equals(defaultConfig.resolve("container_slot_mask").reason()),
+                    "container slot mask remains inactive by default");
+            assertTrue("disabled_by_default".equals(defaultConfig.resolve("entity_query_early_out").reason()),
+                    "entity query early-out remains inactive by default");
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
                     "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),

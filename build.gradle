@@ -101,12 +101,21 @@ tasks.register("commandCompactionRecoveryTest", JavaExec) {
     mainClass = "dev.ultima.review.CommandCompactionRecoveryTest"
 }
 
+tasks.register("slotMaskEntityQueryTest", JavaExec) {
+    group = "verification"
+    description = "Runs differential checks for container slot masks and entity-query empty early-outs."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.SlotMaskEntityQueryTest"
+}
+
 test {
     failOnNoDiscoveredTests = false
 }
 
 check.dependsOn forensicRegressionTest
 check.dependsOn commandCompactionRecoveryTest
+check.dependsOn slotMaskEntityQueryTest
 
 java {
     withSourcesJar()

@@ -47,11 +47,14 @@ Ultima's modules are configured in `config/ultima.properties`.
 - Enabled by default on the client only (instrumentation / no visual change): `terrain_metrics`, `temporal`
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
   `retained_terrain`, `render_snapshot`, `java_mesher`, `section_task_queue`, `rgss_endpoint`
+- Opt-in simulation experiments (default off, auto-off with Lithium/Canary/Radium):
+  `container_slot_mask`, `entity_query_early_out`
 - Opt-in instrumentation only: `client_benchmark`
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
 
-Lithium, Canary, and Radium automatically disable the overlapping collision/entity-index modules.
+Lithium, Canary, and Radium automatically disable the overlapping collision/entity-index modules,
+plus the opt-in `container_slot_mask` and `entity_query_early_out` experiments.
 Default-on client Mixins (`terrain_metrics`, `temporal`) auto-disable when Sodium, Iris, or Canvas
 is loaded. They do not change pixels. `retained_terrain` remains opt-in and also auto-off with those
 renderer mods.
