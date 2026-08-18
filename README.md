@@ -5,6 +5,20 @@ behaviour-preserving optimizations to server/client simulation (collision and
 entity-index lookups) and an opt-in retained-terrain renderer path, plus an
 agent-ready workspace for continuing the work.
 
+## Vanilla guests on an Ultima host
+
+Install Ultima on **your** dedicated server or on the Fabric client you use to
+Open to LAN. Friends can join with ordinary vanilla Minecraft 26.2 — they do
+**not** install Ultima.
+
+- Render modules (`retained_terrain`, `java_mesher`, temporal / FSR contract)
+  run only on the machine that has the mod.
+- Simulation modules (collisions, entity movement lookups) run on the server
+  and apply to every connected player automatically.
+
+See [`SERVER_HOSTING.md`](SERVER_HOSTING.md) for the handshake audit, who
+installs what, and the two-client hardware join scenario.
+
 ## What is already wired
 
 - Fabric Loom + Fabric API

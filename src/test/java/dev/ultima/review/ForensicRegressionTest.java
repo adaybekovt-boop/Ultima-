@@ -48,6 +48,7 @@ public final class ForensicRegressionTest {
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         MesherFastPathChecks.run();
+        VanillaClientHostingChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 
