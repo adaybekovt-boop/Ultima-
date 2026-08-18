@@ -329,7 +329,7 @@ public final class HopperSleepEquivalenceTest {
             throw new AssertionError("could not read Ultima initializer", e);
         }
         assertTrue(init.contains("ServerLifecycleEvents.SERVER_STOPPED"), "clears on dedicated/integrated stop");
-        assertTrue(init.contains("ServerWorldEvents.UNLOAD"), "clears on world unload including singleplayer leave");
+        assertTrue(init.contains("ServerLevelEvents.UNLOAD"), "clears on level unload including singleplayer leave");
         assertTrue(init.contains("BlockEntitySleepRuntime.clearAll()"), "SERVER_STOPPED calls clearAll");
         assertTrue(init.contains("BlockEntitySleepRuntime.clearLevel(world)"), "UNLOAD calls clearLevel");
     }

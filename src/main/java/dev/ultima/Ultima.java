@@ -5,8 +5,8 @@ import dev.ultima.config.UltimaConfig;
 import dev.ultima.server.metrics.ServerMetrics;
 import dev.ultima.sleeping.BlockEntitySleepRuntime;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +22,6 @@ public final class Ultima implements ModInitializer {
         ServerMetrics.setEnabled(UltimaConfig.get().isEnabled(ServerMetrics.MODULE_KEY));
         UltimaCommands.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> BlockEntitySleepRuntime.clearAll());
-        ServerWorldEvents.UNLOAD.register((server, world) -> BlockEntitySleepRuntime.clearLevel(world));
+        ServerLevelEvents.UNLOAD.register((server, world) -> BlockEntitySleepRuntime.clearLevel(world));
     }
 }

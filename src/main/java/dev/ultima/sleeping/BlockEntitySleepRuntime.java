@@ -72,7 +72,7 @@ public final class BlockEntitySleepRuntime {
 
     /**
      * Drop controllers and wake subscriptions for one unloaded level. Bound to
-     * {@code ServerWorldEvents.UNLOAD} (covers dedicated stop and singleplayer leave).
+     * {@code ServerLevelEvents.UNLOAD} (covers dedicated stop and singleplayer leave).
      */
     public static void clearLevel(final Level level) {
         if (level == null) {
