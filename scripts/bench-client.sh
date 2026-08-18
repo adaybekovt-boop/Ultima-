@@ -22,6 +22,10 @@
 #   CAMERA_Z_PER_FRAME    Blocks per frame for chunk_flight (default 0.8)
 #   SCENE              Label recorded in JSON
 #   PAIR_LABEL         Label recorded in JSON
+#   FORCE_MODULES      Optional comma-separated key=value overrides written into
+#                      ultima.properties after the mode table (mesher A/B uses
+#                      mesher_fast_path=true on the ON side). Does not change
+#                      shipped defaults.
 #   CAPTURE_SCREENSHOTS  Set to 1 to grab sample_start/sample_end screenshots
 #   EXIT_AFTER_WRITE   Default 1; close the client only after JSON is written
 set -euo pipefail
@@ -119,6 +123,25 @@ fi
     printf '%s=%s\n' "$key" "$state"
   done
 } > "${CONFIG_ROOT}/config/ultima.properties"
+
+if [[ -n "${FORCE_MODULES:-}" ]]; then
+  IFS=',' read -ra MODULE_OVERRIDES <<< "$FORCE_MODULES"
+  for override in "${MODULE_OVERRIDES[@]}"; do
+    override="${override// /}"
+    [[ -z "$override" ]] && continue
+    key="${override%%=*}"
+    value="${override#*=}"
+    if [[ ! "$key" =~ ^[a-z_]+$ || ! "$value" =~ ^(true|false)$ ]]; then
+      echo "FORCE_MODULES entry must be key=true|false, got: ${override}" >&2
+      exit 2
+    fi
+    if grep -q "^${key}=" "${CONFIG_ROOT}/config/ultima.properties"; then
+      sed -i "s/^${key}=.*/${key}=${value}/" "${CONFIG_ROOT}/config/ultima.properties"
+    else
+      printf '%s=%s\n' "$key" "$value" >> "${CONFIG_ROOT}/config/ultima.properties"
+    fi
+  done
+fi
 
 OUTPUT_UNIX="$PWD/run/ultima-client-benchmark-${LABEL}.json"
 OUTPUT_JAVA="$(to_java_path "$OUTPUT_UNIX")"

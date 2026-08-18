@@ -28,8 +28,37 @@ rebuilt, tree equals `858359f`). The six-pair FPS dataset SHA equals the release
 **NO** — that dataset was collected on ancestor `6572f2e`; the commits after it
 (`cf83913`, `858359f`) are opt-in diagnostics and do not change the default release path.
 
-PR #3 (lab, base `cursor/forensic-review-9efc`) and PR #4 (mesher fast path, base `main`)
-remain separate open drafts, isolated from `retained_terrain`, not merged, default off.
+PR #3 (lab, base `cursor/forensic-review-9efc`) remains a separate open draft,
+isolated from `retained_terrain`, not merged, default off.
+
+---
+
+## mesher_fast_path Phase 3.2 (weighted unit-cube coverage)
+
+Expand the unit-cube fast path to vanilla 26.2 `WeightedVariants` whose
+every alternative is a proven 6-quad opaque cube (stone, dirt, deepslate,
+sand, …). Pick the alternative with `BlockState.getSeed(pos)` + vanilla
+`WeightedList.getRandomOrThrow` so UVs stay bit-identical. Multipart,
+grass overlay, fluids, and true non-cubes stay fallback. Cache was
+already keyed by `BlockState` identity (furnace/log variants were already
+distinct SingleVariant entries). Default remains **OFF**. **No FPS/GPU
+claim.** See `MESHER_FAST_PATH.md`. Retained-terrain GPU-time hypothesis
+is in `RETAINED_GPU_TIME_HYPOTHESIS.md` (no retained code change).
+
+## mesher_fast_path Phase 3.1 (hardware-ready prep)
+
+Section-level fail-open + BlockState circuit breaker, unified
+`FastPathCriteria` (glass/translucent always vanilla), lean production
+snapshot flags, expanded equivalence + realistic CPU datasets, coverage
+JSON, and a three-scene hardware runbook. Default remains **OFF**.
+**No FPS/GPU claim.** See `MESHER_FAST_PATH.md` and `MESHER_HARDWARE_AB.md`.
+
+## mesher_fast_path (draft, isolated from main / PR #3)
+
+Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,
+cached vanilla cube quads, vanilla occlusion/lighting, vanilla fallback.
+Equivalence tests PASS. CPU meshing-time microbench only. **No FPS/GPU claim.**
+See `MESHER_FAST_PATH.md`. `gradlew test` / `gradlew build` PASS on this branch.
 
 ---
 
