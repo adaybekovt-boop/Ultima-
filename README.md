@@ -48,6 +48,8 @@ Ultima's modules are configured in `config/ultima.properties`.
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
   `retained_terrain`, `render_snapshot`, `java_mesher`, `section_task_queue`, `rgss_endpoint`
 - Opt-in instrumentation only: `client_benchmark`
+- Opt-in server/simulation experiment (default off, **not** auto-disabled with Lithium):
+  `recipe_match_cache` (crafting / furnace / brewing first-match cache)
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
 

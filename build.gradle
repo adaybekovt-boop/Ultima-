@@ -101,12 +101,21 @@ tasks.register("commandCompactionRecoveryTest", JavaExec) {
     mainClass = "dev.ultima.review.CommandCompactionRecoveryTest"
 }
 
+tasks.register("recipeMatchCacheTest", JavaExec) {
+    group = "verification"
+    description = "Runs first-match cache differential checks against a 26.2-faithful vanilla scan."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.recipe.RecipeMatchCacheTest"
+}
+
 test {
     failOnNoDiscoveredTests = false
 }
 
 check.dependsOn forensicRegressionTest
 check.dependsOn commandCompactionRecoveryTest
+check.dependsOn recipeMatchCacheTest
 
 java {
     withSourcesJar()

@@ -1,5 +1,21 @@
 # Changelog
 
+## Prompt — recipe / furnace / brewing first-match caches (opt-in)
+
+New module `recipe_match_cache` (default **off**). Clean-room first-match cache for
+`RecipeManager.getRecipeFor` (crafting, smelting, blasting, smoking, and other proven-pure
+types) and `PotionBrewing` ingredient/mix lookups.
+
+- Idea source only: FastWorkbench / FastFurnace / FastSuite (Shadows-of-Fire), all MIT on
+  their 26.1 branches. No code was ported.
+- Lithium coexistence: Lithium does **not** cache recipe first-match (issue #278 declined;
+  it only sleeps idle furnaces/brewing stands). Ultima does not auto-disable this module
+  when Lithium is loaded.
+- `SAFE TO MERGE: NO` until in-game datapack `/reload` and overlapping-recipe furnace hint
+  behaviour are signed off.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

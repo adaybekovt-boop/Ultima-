@@ -91,6 +91,12 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
+            new Module("recipe_match_cache", false,
+                    "Opt-in first-match cache for crafting, furnace/blast/smoker, and brewing lookups. "
+                            + "Stores the RecipeHolder (or brewing mix) vanilla's ordered scan would return first "
+                            + "for an identical input. Full invalidation on recipe reload. Special/impure recipes "
+                            + "fall back to vanilla. Lithium is not auto-disabled: it has no recipe-lookup cache "
+                            + "(only furnace/brewing block-entity sleeping). Default off."),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),

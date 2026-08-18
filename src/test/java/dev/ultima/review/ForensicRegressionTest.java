@@ -3,6 +3,7 @@ package dev.ultima.review;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
+import dev.ultima.recipe.RecipeMatchCacheTest;
 import dev.ultima.temporal.MotionVectorMath;
 import dev.ultima.temporal.MotionVectorSemantic;
 import dev.ultima.temporal.TemporalMode;
@@ -41,6 +42,7 @@ public final class ForensicRegressionTest {
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
+        RecipeMatchCacheTest.main(new String[0]);
         testOffsetCubeMatchesVanillaMove();
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
@@ -265,6 +267,7 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
+            assertFalse(defaults.get("recipe_match_cache"), "recipe first-match cache must remain opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
@@ -293,6 +296,11 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
                     "full-cube move must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("recipe_match_cache").incompatibleMods().isEmpty(),
+                    "recipe first-match cache coexists with Lithium");
+            assertTrue(UltimaModules.isOptInExperiment("recipe_match_cache"),
+                    "recipe first-match cache remains an opt-in experiment");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");

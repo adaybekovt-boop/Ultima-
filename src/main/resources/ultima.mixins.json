@@ -14,6 +14,8 @@
     "entity_section_lookup.EntitySectionStorageMixin",
     "supporting_block_shape_skip.BlockCollisionsMixin",
     "supporting_block_shape_skip.CollisionGetterMixin",
-    "full_cube_move.VoxelShapeMixin"
+    "full_cube_move.VoxelShapeMixin",
+    "recipe_match_cache.RecipeManagerMixin",
+    "recipe_match_cache.PotionBrewingMixin"
   ]
 }

@@ -370,6 +370,10 @@ final class AuditStage1Checks {
                 "temporal Native passthrough is a shipped client default");
         assertFalse(UltimaModules.isOptInExperiment("entity_section_lookup"), "defaults are not experimental");
         assertTrue(UltimaModules.isOptInExperiment("java_mesher"), "java_mesher remains experimental");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("recipe_match_cache")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
+                "recipe_match_cache is an opt-in experiment");
+        assertTrue(UltimaModules.byKey("recipe_match_cache").incompatibleMods().isEmpty(),
+                "recipe_match_cache coexists with Lithium");
     }
 
     private static void assertTrue(final boolean value, final String message) {
