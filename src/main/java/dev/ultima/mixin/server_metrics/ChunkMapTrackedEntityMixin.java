@@ -15,6 +15,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * Tracker pairing counters. {@code ServerEntity.addPairing}/{@code removePairing}
+ * INVOKE injects use {@code require = 0} so Lithium rewriting those calls skips
+ * the counter instead of failing Mixin apply.
+ */
 @Mixin(targets = "net.minecraft.server.level.ChunkMap$TrackedEntity")
 public abstract class ChunkMapTrackedEntityMixin {
     @Shadow
@@ -38,7 +43,8 @@ public abstract class ChunkMapTrackedEntityMixin {
             method = "updatePlayer",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/server/level/ServerEntity;addPairing(Lnet/minecraft/server/level/ServerPlayer;)V"))
+                    target = "Lnet/minecraft/server/level/ServerEntity;addPairing(Lnet/minecraft/server/level/ServerPlayer;)V"),
+            require = 0)
     private void ultimaTrackingAdded(final ServerPlayer player, final CallbackInfo ci) {
         ServerMetrics.addCount(MetricId.TRACKING_ADDED, 1);
     }
@@ -47,7 +53,8 @@ public abstract class ChunkMapTrackedEntityMixin {
             method = "removePlayer",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/server/level/ServerEntity;removePairing(Lnet/minecraft/server/level/ServerPlayer;)V"))
+                    target = "Lnet/minecraft/server/level/ServerEntity;removePairing(Lnet/minecraft/server/level/ServerPlayer;)V"),
+            require = 0)
     private void ultimaTrackingRemoved(final ServerPlayer player, final CallbackInfo ci) {
         ServerMetrics.addCount(MetricId.TRACKING_REMOVED, 1);
     }

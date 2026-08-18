@@ -280,6 +280,7 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertFalse(defaults.get("fsr_upscaling"), "FSR1 upscaling must remain opt-in");
             assertTrue(defaults.get("server_metrics"), "server metrics are default-on instrumentation");
+            assertTrue(defaults.get("settings_ui"), "title-screen settings button is default-on");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
                     "temporal must declare Sodium incompatibility");

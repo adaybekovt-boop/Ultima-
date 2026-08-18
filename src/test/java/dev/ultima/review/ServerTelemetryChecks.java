@@ -30,6 +30,8 @@ final class ServerTelemetryChecks {
         testProfilePermission();
         testJsonExportShape();
         testFutureOptimizationHooks();
+        testProductionHopperSleepTelemetry();
+        testFragileInvokeRequireZero();
         System.out.println("Server telemetry checks passed.");
     }
 
@@ -209,6 +211,12 @@ final class ServerTelemetryChecks {
                 commandSource.contains("requires(Commands.hasPermission(PROFILE_PERMISSION))"),
                 "the profile literal must be permission-gated, not the whole /ultima tree");
         assertTrue(
+                commandSource.contains("Commands.LEVEL_ALL"),
+                "/ultima config and debug compatibility stay LEVEL_ALL; profile stays GAMEMASTERS");
+        assertTrue(
+                !UltimaModules.byKey("server_metrics").incompatibleMods().contains("lithium"),
+                "server_metrics stays enabled with Lithium; fragile INVOKE injects use require=0");
+        assertTrue(
                 UltimaModules.isInstrumentation("server_metrics"),
                 "server_metrics is classified as instrumentation like terrain_metrics");
         assertTrue(
@@ -258,6 +266,35 @@ final class ServerTelemetryChecks {
         assertEquals(1, ServerMetrics.last(MetricId.BE_WAKEUPS), "wakeup count");
         assertEquals(2, ServerMetrics.last(MetricId.AI_CLEAN_SKIPS), "AI skip counter");
         assertEquals(1, ServerMetrics.last(MetricId.AI_INVALIDATIONS), "AI invalidation counter");
+    }
+
+    private static void testProductionHopperSleepTelemetry() {
+        AtomicLong clock = new AtomicLong();
+        ServerMetrics.resetForTest(true, clock::get, 4);
+        dev.ultima.sleeping.BlockEntitySleepMetrics.resetForTests();
+        dev.ultima.sleeping.BlockEntitySleepMetrics.onSleepEnter();
+        dev.ultima.sleeping.BlockEntitySleepMetrics.onWake(dev.ultima.sleeping.WakeChannel.SELF_INVENTORY);
+        dev.ultima.sleeping.BlockEntitySleepMetrics.onWake(dev.ultima.sleeping.WakeChannel.NEIGHBOR_INVENTORY);
+        dev.ultima.sleeping.BlockEntitySleepMetrics.onThrashTrip();
+        ServerMetrics.beginTick(1, 0);
+        ServerMetrics.endTick();
+        assertEquals(0, ServerMetrics.last(MetricId.BE_SLEEPING), "enter then two wakes leave the sleeping gauge at 0");
+        assertEquals(2, ServerMetrics.last(MetricId.BE_WAKEUPS), "neighbor inventory does not double-count wakeups");
+        assertEquals(1, ServerMetrics.last(MetricId.BE_THRASHES), "thrash pin exports be.thrashes");
+    }
+
+    private static void testFragileInvokeRequireZero() {
+        String serverLevel = read(Path.of("src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java"));
+        assertTrue(
+                serverLevel.contains("EntityTickList;forEach") && serverLevel.contains("require = 0"),
+                "EntityTickList.forEach injects must not fail Mixin apply when Lithium rewrites the call");
+        String tracked = read(Path.of("src/main/java/dev/ultima/mixin/server_metrics/ChunkMapTrackedEntityMixin.java"));
+        assertTrue(
+                tracked.contains("ServerEntity;addPairing") && tracked.contains("require = 0"),
+                "ServerEntity.addPairing inject must not fail Mixin apply when Lithium rewrites pairing");
+        assertTrue(
+                tracked.contains("ServerEntity;removePairing") && tracked.contains("require = 0"),
+                "ServerEntity.removePairing inject uses the same require=0 fail-soft");
     }
 
     private static Path tempFile(final String dirPrefix, final String fileName) {

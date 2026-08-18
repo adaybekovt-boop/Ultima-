@@ -65,9 +65,8 @@ final class VanillaClientHostingChecks {
             "section_task_queue",
             "rgss_endpoint",
             "temporal",
-            "fsr_upscaling");
-
-    private static final Set<String> CLIENT_UI_MIXINS = Set.of("TitleScreenMixin");
+            "fsr_upscaling",
+            "settings_ui");
 
     private VanillaClientHostingChecks() {
     }
@@ -166,8 +165,8 @@ final class VanillaClientHostingChecks {
 
         assertEquals(SIMULATION_MODULES, commonModules, "common Mixins are the server-safe simulation/instrumentation set");
         assertEquals(CLIENT_RENDER_MODULES, clientModules, "client Mixins are the render/instrumentation set");
-        assertTrue(clientMixins.getAsJsonArray("client").toString().contains("TitleScreenMixin"),
-                "title-screen settings button stays a client-only UI Mixin");
+        assertTrue(clientMixins.getAsJsonArray("client").toString().contains("settings_ui.TitleScreenMixin"),
+                "title-screen settings button is a settings_ui client Mixin");
 
         for (UltimaModules.Module module : UltimaModules.all()) {
             if (SIMULATION_MODULES.contains(module.key())) {
@@ -233,10 +232,7 @@ final class VanillaClientHostingChecks {
             String className = element.getAsString();
             int firstDot = className.indexOf('.');
             if (firstDot <= 0) {
-                if (!CLIENT_UI_MIXINS.contains(className)) {
-                    throw new AssertionError("mixin class is not packaged by module: " + className);
-                }
-                continue;
+                throw new AssertionError("mixin class is not packaged by module: " + className);
             }
             modules.add(className.substring(0, firstDot));
         }

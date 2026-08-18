@@ -379,6 +379,10 @@ final class AuditStage1Checks {
         assertTrue(UltimaModules.kind(UltimaModules.byKey("blockentity_sleeping")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
                 "blockentity_sleeping is an opt-in experiment");
         assertTrue(UltimaModules.isOptInExperiment("blockentity_sleeping"), "blockentity_sleeping remains experimental");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("settings_ui")) == UltimaModules.Kind.SHIPPED_DEFAULT,
+                "settings_ui is a shipped client default");
+        assertTrue(UltimaModules.byKey("settings_ui").clientOnly(), "settings_ui is client-only");
+        assertFalse(UltimaModules.isOptInExperiment("settings_ui"), "title-screen button is not experimental");
     }
 
     private static void assertTrue(final boolean value, final String message) {

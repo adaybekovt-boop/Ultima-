@@ -66,7 +66,11 @@ public final class WakeRegistry {
         long gameTime = level.getGameTime();
         List<SleepController> snapshot = new ArrayList<>(list);
         for (SleepController controller : snapshot) {
-            controller.wake(channel, gameTime);
+            try {
+                controller.wake(channel, gameTime);
+            } catch (Throwable error) {
+                HopperSleepFailOpen.failOpen("wake@" + packed, controller, error);
+            }
         }
     }
 
@@ -81,6 +85,26 @@ public final class WakeRegistry {
     public synchronized void clear() {
         this.watchers.clear();
         this.registrations.clear();
+    }
+
+    /**
+     * Drop every subscription for an unloaded level. Controllers are detached so they
+     * cannot keep a stale {@link Level} reference after {@code SERVER_STOPPED} / world unload.
+     */
+    public synchronized void clearLevel(final Level level) {
+        if (level == null) {
+            return;
+        }
+        List<SleepController> affected = new ArrayList<>();
+        for (var entry : List.copyOf(this.registrations.entrySet())) {
+            if (entry.getValue().level() == level) {
+                affected.add(entry.getKey());
+            }
+        }
+        for (SleepController controller : affected) {
+            controller.detach();
+        }
+        this.watchers.remove(level);
     }
 
     private record Registration(Level level, long[] positions) {

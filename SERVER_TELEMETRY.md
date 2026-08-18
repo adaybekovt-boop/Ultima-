@@ -31,7 +31,7 @@ Always-on cheap counters (module `server_metrics`, default on):
 | `network.queued_bytes` | Sum of Netty outbound pending bytes on serverbound connections |
 | `tracking.entity_candidates` | Players considered by entity tracker updates |
 | `tracking.added` / `tracking.removed` | Tracker pairings added/removed |
-| `be.sleeping` / `be.wakeups` | Ready for future block-entity sleeping (currently stay 0 unless written) |
+| `be.sleeping` / `be.wakeups` / `be.thrashes` | Live when `blockentity_sleeping` is on: current sleeping hopper count, wake events, and fail-open / circuit-breaker pins |
 | `ai.clean_skips` / `ai.invalidations` | Ready for future AI dirty-tracking |
 | `tracking.player_chunks_entered` | Chunks newly pending send to a player |
 | `chunk.generated_count` | Feature-generation passes completed |
@@ -86,7 +86,10 @@ is `ServerTelemetry` / `SemanticEventKind`. Built-in examples:
 - N chunks generated
 - packet bytes prepared
 
-Future optimizations should call `ServerTelemetry` instead of inventing a second log.
+Future AI/chunk optimizations should call `ServerTelemetry` instead of inventing a second log.
+Hopper sleeping already does: `BlockEntitySleepMetrics` writes `be.sleeping`, `be.wakeups`, and
+`be.thrashes`, and neighbor-inventory wakes emit `HOPPER_WAKE_ADJACENT_INVENTORY` during
+`/ultima profile`.
 
 ## JSON format
 

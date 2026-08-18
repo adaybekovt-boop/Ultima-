@@ -5,9 +5,12 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import dev.ultima.server.metrics.ServerTelemetry;
+
 /**
- * Local counters for hopper sleeping. Keys match the reserved {@code be.*} telemetry names
- * so a later server-metrics module can scrape {@link #snapshot()} without changing producers.
+ * Local counters for hopper sleeping. Keys match the reserved {@code be.*} telemetry names.
+ * Production enter/wake/thrash paths also write {@link ServerTelemetry} when
+ * {@code server_metrics} is enabled.
  */
 public final class BlockEntitySleepMetrics {
     private static final AtomicInteger SLEEPING = new AtomicInteger();
@@ -21,13 +24,24 @@ public final class BlockEntitySleepMetrics {
     }
 
     public static void onSleepEnter() {
-        SLEEPING.incrementAndGet();
+        int sleeping = SLEEPING.incrementAndGet();
         SLEEP_ENTERS.incrementAndGet();
+        ServerTelemetry.recordBeSleepingCount(sleeping);
     }
 
     public static void onWake() {
-        SLEEPING.updateAndGet(current -> Math.max(0, current - 1));
+        onWake(null);
+    }
+
+    public static void onWake(final WakeChannel channel) {
+        int sleeping = SLEEPING.updateAndGet(current -> Math.max(0, current - 1));
         WAKEUPS.incrementAndGet();
+        ServerTelemetry.recordBeSleepingCount(sleeping);
+        if (channel == WakeChannel.NEIGHBOR_INVENTORY) {
+            ServerTelemetry.recordHopperWakeAdjacentInventory();
+        } else {
+            ServerTelemetry.recordBeWakeup();
+        }
     }
 
     public static void onTickSkipped() {
@@ -40,6 +54,7 @@ public final class BlockEntitySleepMetrics {
 
     public static void onThrashTrip() {
         THRASH_TRIPS.incrementAndGet();
+        ServerTelemetry.recordBeThrash();
     }
 
     public static int sleeping() {

@@ -70,6 +70,10 @@ public final class SettingsScreenLogicTest {
                 "server_metrics must appear in the settings catalog");
         assertTrue("Server tick metrics".equals(UltimaSettingsCatalog.require("server_metrics").displayName()),
                 "player-facing server metrics name");
+        assertTrue(UltimaSettingsCatalog.byKey("settings_ui") != null,
+                "settings_ui must appear in the settings catalog");
+        assertTrue("Title-screen settings button".equals(UltimaSettingsCatalog.require("settings_ui").displayName()),
+                "player-facing title-screen button name");
         assertEquals((long)UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(!spec.displayName().equals(spec.key()),
@@ -81,7 +85,7 @@ public final class SettingsScreenLogicTest {
     private static void testCategoriesAndApplyPolicies() {
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(7L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
-        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
+        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         assertTrue(UltimaSettingsCatalog.require("retained_terrain").category() == SettingsCategory.RENDERING,
                 "retained terrain is rendering");
         assertTrue(UltimaSettingsCatalog.require("java_mesher").category() == SettingsCategory.RENDERING,
@@ -100,6 +104,8 @@ public final class SettingsScreenLogicTest {
                 "metrics are advanced");
         assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,
                 "server metrics are advanced");
+        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
+                "title-screen button is advanced");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,
                     spec.key() + " Mixins apply at launch, so the UI must warn about a restart");
@@ -122,6 +128,9 @@ public final class SettingsScreenLogicTest {
         assertTrue(
                 UltimaSettingsCatalog.require("server_metrics").applyPolicy() == ApplyPolicy.RESTART_GAME,
                 "server metrics uses the same restart policy");
+        assertTrue(
+                UltimaSettingsCatalog.require("settings_ui").applyPolicy() == ApplyPolicy.RESTART_GAME,
+                "title-screen button uses the same restart policy");
         assertTrue(
                 UltimaSettingsCatalog.require("blockentity_sleeping").tooltip().contains("Lithium"),
                 "hopper sleeping tooltip names Lithium");
@@ -297,6 +306,14 @@ public final class SettingsScreenLogicTest {
         assertTrue(serverMetrics.displayOn(), "server metrics stay default-on");
         assertTrue(!serverMetrics.locked(), "server metrics are not client-only");
         assertTrue(serverMetrics.fullTooltip().contains("require restarting the game"), "server metrics warn about restart");
+
+        SettingsRowView settingsUi = SettingsRowView.from(UltimaSettingsCatalog.require("settings_ui"), config);
+        assertTrue(settingsUi.displayOn(), "title-screen button stays default-on");
+        assertTrue(settingsUi.fullTooltip().contains("require restarting the game"), "title-screen button warns about restart");
+        if (settingsUi.locked()) {
+            assertTrue("not_client_environment".equals(settingsUi.statusReason()),
+                    "headless JavaExec is not a client, so settings_ui locks via resolve()");
+        }
     }
 
     private static void testTogglePersistsToExistingFile() {
@@ -368,6 +385,7 @@ public final class SettingsScreenLogicTest {
         assertTrue(json.contains("\"key\": \"mesher_fast_path\""), "report lists mesher fast path");
         assertTrue(json.contains("\"key\": \"server_metrics\""), "report lists server metrics");
         assertTrue(json.contains("\"key\": \"blockentity_sleeping\""), "report lists hopper sleeping");
+        assertTrue(json.contains("\"key\": \"settings_ui\""), "report lists title-screen button");
         assertTrue(json.contains("\"reason\":"), "report includes resolve() reason");
         assertTrue(json.contains("\"loadedIncompatibleMods\""), "report includes loaded incompat list");
         assertTrue(json.contains("\"playerFacing\""), "report includes UI copy");

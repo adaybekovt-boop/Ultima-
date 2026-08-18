@@ -31,6 +31,7 @@ public enum MetricId {
 
     BE_SLEEPING("be.sleeping", Kind.GAUGE, false),
     BE_WAKEUPS("be.wakeups", Kind.COUNT, false),
+    BE_THRASHES("be.thrashes", Kind.COUNT, false),
 
     AI_CLEAN_SKIPS("ai.clean_skips", Kind.COUNT, false),
     AI_INVALIDATIONS("ai.invalidations", Kind.COUNT, false),

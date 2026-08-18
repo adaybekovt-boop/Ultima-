@@ -167,6 +167,14 @@ public final class UltimaSettingsCatalog {
                         + "the next launch.",
                 SettingsCategory.ADVANCED,
                 ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "settings_ui",
+                "Title-screen settings button",
+                "Adds an Ultima button on the title screen when Mod Menu is not installed. "
+                        + "/ultima config and Mod Menu still work if this is off. Mixins apply at "
+                        + "the next launch.",
+                SettingsCategory.ADVANCED,
+                ApplyPolicy.RESTART_GAME));
     }
 
     private UltimaSettingsCatalog() {

@@ -10,6 +10,27 @@ with ordinary Minecraft 26.2 — no Ultima install, and no Fabric install.
 - **Everyone** on that server gets the simulation optimizations (collisions,
   entity-section lookup, cursor stepping, full-cube move). Those run where the
   world is simulated. A vanilla guest does not need the mod for that.
+- **Host-only diagnostics:** `server_metrics` (default on) records tick
+  subsystem timers. It does not change gameplay or packets. Operators can run
+  `/ultima profile [seconds]`. Fragile Lithium injection points use
+  `require = 0` so a rewritten target skips that one counter instead of
+  crashing the server.
+- **Opt-in hopper sleeping:** `blockentity_sleeping` (default off) is a
+  server-side simulation experiment. Auto-off with Lithium / Canary / Radium.
+  Unexpected inspector faults pin that hopper to vanilla polling.
+
+## Operator checklist (modules)
+
+Confirm these in `config/ultima.properties` and the boot log `resolve()` lines
+before a hardware session:
+
+| Key | Default | Side | Notes |
+|---|---|---|---|
+| `server_metrics` | ON | server (host) | Diagnostics only. Keep on for hopper-sleeping A/B. |
+| `blockentity_sleeping` | OFF | server simulation | Turn on only for the hopper sleeping hardware test. Lithium family auto-off. |
+| `mesher_fast_path` | OFF | client render | Host GPU only; vanilla guests unaffected. |
+| `settings_ui` | ON | client UI | Title-screen button when Mod Menu is absent. Not a network contract. |
+| collision / entity-section / cursor family | ON | server simulation | Vanilla guests benefit automatically. |
 
 Ultima does not add blocks, items, recipes, custom packets, or a required
 client counterpart. Fabric therefore has nothing to reject a vanilla guest for.
