@@ -1,5 +1,6 @@
 package dev.ultima;
 
+import dev.ultima.cache.RegistryCacheLifecycle;
 import dev.ultima.config.UltimaConfig;
 import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
@@ -14,5 +15,6 @@ public final class Ultima implements ModInitializer {
         LOGGER.info("Ultima initialized with {} of {} optimization modules enabled.",
                 UltimaConfig.get().enabledModuleCount(), UltimaConfig.get().knownModuleCount());
         UltimaConfig.get().logResolvedModules();
+        RegistryCacheLifecycle.register();
     }
 }

@@ -91,6 +91,25 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
+            new Module("tag_bitsets", false,
+                    "After tag bind/reload, answer Holder.is(TagKey) with a compact raw-id bitset. Unknown "
+                            + "tags and out-of-range ids fall back to vanilla contains(). Default off. "
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded because Lithium "
+                            + "caches overlapping tag-derived BlockState flags (mixin.util.block_tracking) and "
+                            + "dual HEAD-cancel Mixins on the same membership/pathing methods are unsafe.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("state_property_cache", false,
+                    "Lazy memo of proven-pure BlockState/FluidState properties (PathType, isSignalSource, "
+                            + "hasAnalogOutputSignal boolean, static-shape isRedstoneConductor, isPathfindable, "
+                            + "fluid source/amount/height). Modded classes and Fabric LandPathTypeRegistry "
+                            + "providers are never cached. Default off. Automatically disabled when Lithium or "
+                            + "a Lithium fork is loaded because Lithium PathNodeCache / BlockStateFlags occupy "
+                            + "the same methods.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),

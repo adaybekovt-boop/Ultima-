@@ -366,6 +366,10 @@ final class AuditStage1Checks {
                 "client_benchmark is instrumentation");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("retained_terrain")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
                 "retained_terrain is an opt-in experiment");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("tag_bitsets")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
+                "tag_bitsets is an opt-in experiment");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("state_property_cache")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
+                "state_property_cache is an opt-in experiment");
         assertTrue(UltimaModules.kind(UltimaModules.byKey("temporal")) == UltimaModules.Kind.SHIPPED_DEFAULT,
                 "temporal Native passthrough is a shipped client default");
         assertFalse(UltimaModules.isOptInExperiment("entity_section_lookup"), "defaults are not experimental");

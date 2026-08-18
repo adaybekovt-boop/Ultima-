@@ -1,5 +1,7 @@
 package dev.ultima.review;
 
+import dev.ultima.cache.StatePropertyCacheEquivalenceTest;
+import dev.ultima.cache.TagBitsetEquivalenceTest;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
@@ -47,6 +49,8 @@ public final class ForensicRegressionTest {
         testTemporalMathAndSettings();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
+        TagBitsetEquivalenceTest.run();
+        StatePropertyCacheEquivalenceTest.run();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -265,6 +269,8 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
+            assertFalse(defaults.get("tag_bitsets"), "tag bitsets must remain opt-in");
+            assertFalse(defaults.get("state_property_cache"), "state property cache must remain opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
@@ -293,6 +299,12 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
                     "full-cube move must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("tag_bitsets").incompatibleMods().contains("lithium"),
+                    "tag bitsets must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("state_property_cache").incompatibleMods().contains("lithium"),
+                    "state property cache must declare Lithium incompatibility");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
@@ -318,6 +330,10 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
                     "retained terrain remains inactive, not " + retainedReason);
+            assertTrue("disabled_by_default".equals(defaultConfig.resolve("tag_bitsets").reason()),
+                    "tag bitsets remain inactive by default");
+            assertTrue("disabled_by_default".equals(defaultConfig.resolve("state_property_cache").reason()),
+                    "state property cache remains inactive by default");
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
                     "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),

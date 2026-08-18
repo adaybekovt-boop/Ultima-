@@ -14,6 +14,12 @@
     "entity_section_lookup.EntitySectionStorageMixin",
     "supporting_block_shape_skip.BlockCollisionsMixin",
     "supporting_block_shape_skip.CollisionGetterMixin",
-    "full_cube_move.VoxelShapeMixin"
+    "full_cube_move.VoxelShapeMixin",
+    "tag_bitsets.HolderReferenceMixin",
+    "tag_bitsets.MappedRegistryMixin",
+    "state_property_cache.WalkNodeEvaluatorMixin",
+    "state_property_cache.BlockStateBaseMixin",
+    "state_property_cache.FluidStateMixin",
+    "state_property_cache.MappedRegistryMixin"
   ]
 }

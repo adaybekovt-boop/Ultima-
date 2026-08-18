@@ -1,5 +1,20 @@
 # Changelog
 
+## Tag bitsets + state-property caches (opt-in, default off)
+
+Two independent common/server modules, both **default OFF**, auto-disabled when Lithium/Canary/Radium
+is loaded. They do not touch retained terrain, mesher, FSR, or hopper sleeping.
+
+- `tag_bitsets`: compact `TagKey -> raw-id bitset` rebuilt on every tag bind/reload; unknown tags
+  and out-of-range ids fall back to vanilla `Holder.is(TagKey)`.
+- `state_property_cache`: lazy memo of proven-pure BlockState/FluidState properties. Modded classes
+  and Fabric `LandPathTypeRegistry` providers are never cached. Comparator analog *value* is not
+  cached.
+
+**SAFE TO MERGE: NO** until in-game `/reload` and a Lithium-absent datapack smoke check.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance
