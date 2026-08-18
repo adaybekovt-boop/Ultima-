@@ -9,6 +9,7 @@ import dev.ultima.temporal.TemporalMode;
 import dev.ultima.temporal.TemporalResolution;
 import dev.ultima.temporal.TemporalSettings;
 import dev.ultima.util.CursorMath;
+import dev.ultima.util.EntitySectionQueryRange;
 import dev.ultima.util.SectionRangeMath;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -45,6 +46,8 @@ public final class ForensicRegressionTest {
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
         testTemporalMathAndSettings();
+        ContainerSlotMaskEquivalenceTest.run();
+        EntityQueryEarlyOutEquivalenceTest.run();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         System.out.println("Forensic regression checks passed.");
@@ -102,7 +105,14 @@ public final class ForensicRegressionTest {
             }
 
             List<Long> vanilla = vanillaSectionOrder(populated, xMin, yMin, zMin, xMax, yMax, zMax);
-            List<Long> direct = directSectionOrder(populated, xMin, yMin, zMin, xMax, yMax, zMax);
+            EntitySectionQueryRange range = new EntitySectionQueryRange(xMin, yMin, zMin, xMax, yMax, zMax);
+            List<Long> direct = new ArrayList<>();
+            range.forEachKey(key -> {
+                if (populated.contains(key)) {
+                    direct.add(key);
+                }
+                return true;
+            });
             if (!vanilla.equals(direct)) {
                 throw new AssertionError("entity section order mismatch: vanilla=" + vanilla + ", direct=" + direct);
             }
@@ -127,38 +137,6 @@ public final class ForensicRegressionTest {
                 int z = SectionPos.z(key);
                 if (y >= yMin && y <= yMax && z >= zMin && z <= zMax) {
                     result.add(key);
-                }
-            }
-        }
-        return result;
-    }
-
-    private static List<Long> directSectionOrder(
-            final TreeSet<Long> populated,
-            final int xMin,
-            final int yMin,
-            final int zMin,
-            final int xMax,
-            final int yMax,
-            final int zMax) {
-        List<Long> result = new ArrayList<>();
-        for (long xCursor = xMin; xCursor <= xMax; xCursor++) {
-            int x = (int)xCursor;
-            for (int zHalf = 0; zHalf < 2; zHalf++) {
-                int zFrom = zHalf == 0 ? Math.max(zMin, 0) : zMin;
-                int zTo = zHalf == 0 ? zMax : Math.min(zMax, -1);
-                for (long zCursor = zFrom; zCursor <= zTo; zCursor++) {
-                    int z = (int)zCursor;
-                    for (int yHalf = 0; yHalf < 2; yHalf++) {
-                        int yFrom = yHalf == 0 ? Math.max(yMin, 0) : yMin;
-                        int yTo = yHalf == 0 ? yMax : Math.min(yMax, -1);
-                        for (long yCursor = yFrom; yCursor <= yTo; yCursor++) {
-                            long key = SectionPos.asLong(x, (int)yCursor, z);
-                            if (populated.contains(key)) {
-                                result.add(key);
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -259,6 +237,8 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("full_cube_move"), "full-cube move replacement is default-on");
             assertTrue(defaults.get("cursor_step"), "cursor step remains enabled by default");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
+            assertFalse(defaults.get("container_slot_mask"), "slot masks are default-off until mutation tracking is proven in-game");
+            assertFalse(defaults.get("entity_query_early_out"), "entity query early-out is default-off on the first iteration");
             assertTrue(defaults.get("terrain_metrics"), "terrain metrics are default-on for the client");
             assertFalse(defaults.get("retained_terrain"), "retained terrain must remain opt-in");
             assertFalse(defaults.get("render_snapshot"), "render snapshots must remain opt-in");
@@ -293,6 +273,18 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
                     "full-cube move must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("container_slot_mask").incompatibleMods().contains("lithium"),
+                    "slot masks must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("entity_query_early_out").incompatibleMods().contains("lithium"),
+                    "entity query early-out must declare Lithium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("entity_query_early_out").dependencies().isEmpty(),
+                    "entity query early-out must not depend on entity_section_lookup so the flags stay independent");
+            assertTrue(
+                    UltimaModules.byKey("container_slot_mask").dependencies().isEmpty(),
+                    "slot masks must not depend on hopper sleeping or other modules");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
