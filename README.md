@@ -53,7 +53,9 @@ Built mod JARs appear in `build/libs/`.
 
 ## Release-candidate defaults
 
-Ultima's modules are configured in `config/ultima.properties`.
+Ultima's modules are configured in `config/ultima.properties` and from the in-game
+**Ultima Settings** screen (Mod Menu config button, or `/ultima config` on the client).
+Toggles write that same file immediately. Mixins still apply at the next game launch.
 
 - Enabled by default (dedicated server, integrated server, and client physics):
   `cursor_step`, `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
@@ -62,6 +64,10 @@ Ultima's modules are configured in `config/ultima.properties`.
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
   `retained_terrain`, `render_snapshot`, `java_mesher`, `mesher_fast_path`,
   `section_task_queue`, `rgss_endpoint`
+- Opt-in FSR1 spatial upscaling (default off; auto-off with Iris/Canvas only;
+  Sodium without Iris is allowed): `fsr_upscaling`. Toggle and quality preset
+  are on the in-game Ultima Settings screen (Rendering). RCAS sharpness stays
+  at 0.2 with no slider yet. See `FSR_UPSCALING.md`. Not a hardware FPS claim.
 - Opt-in instrumentation only: `client_benchmark`
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`

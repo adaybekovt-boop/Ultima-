@@ -25,8 +25,7 @@ public abstract class GameRendererMixin {
     private GameRenderState gameRenderState;
 
     @Shadow
-    @Final
-    private RenderTarget mainRenderTarget;
+    public abstract RenderTarget mainRenderTarget();
 
     @Shadow
     @Final
@@ -46,7 +45,7 @@ public abstract class GameRendererMixin {
         CameraRenderState cameraState = this.gameRenderState.levelRenderState.cameraRenderState;
         Matrix4fc view = cameraState.viewRotationMatrix;
         TemporalPipeline.captureFromTarget(
-                this.mainRenderTarget,
+                this.mainRenderTarget(),
                 view,
                 projectionMatrix,
                 cameraState.pos.x,

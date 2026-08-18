@@ -2,6 +2,8 @@ package dev.ultima.config;
 
 import java.util.List;
 
+import dev.ultima.fsr.FsrCompatibility;
+
 /**
  * The registry of Ultima optimization modules.
  *
@@ -52,6 +54,13 @@ public final class UltimaModules {
 
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
     private static final List<String> RENDERER_FAMILY = List.of("sodium", "iris", "canvas");
+    /**
+     * FSR1 hooks GameRenderer's post-world color output. The disabling mod ids
+     * come from {@link FsrCompatibility} so Mixin gating, {@code resolve()}, and
+     * the settings UI cannot drift from that policy. Sodium without Iris is not
+     * listed.
+     */
+    private static final List<String> FSR_POST_PROCESS_OWNERS = FsrCompatibility.disablingModIds();
 
     private static final List<Module> ALL = List.of(
             new Module("entity_section_lookup", true,
@@ -134,7 +143,13 @@ public final class UltimaModules {
                     "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
                             + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
                             + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
-                    RENDERER_FAMILY));
+                    RENDERER_FAMILY),
+            Module.client("fsr_upscaling", false,
+                    "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
+                            + "and upscales to native before HUD/GUI. Default off. Isolated from retained_terrain and "
+                            + "mesher modules. Automatically disabled when Iris or Canvas is loaded because they own "
+                            + "the final framebuffer / post-process stage. Sodium without Iris is allowed.",
+                    FSR_POST_PROCESS_OWNERS));
 
     private UltimaModules() {
     }
