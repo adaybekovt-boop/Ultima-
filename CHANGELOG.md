@@ -1,5 +1,23 @@
 # Changelog
 
+## Container slot masks + entity query empty early-outs (opt-in, default off)
+
+Two independent simulation modules, both **default off** and auto-disabled with
+Lithium/Canary/Radium. Hopper insert/extract loops, retained terrain, mesher, FSR,
+and hopper sleeping are untouched.
+
+- `container_slot_mask`: conservative `NonEmptySlotMask` (LSB-to-MSB order, first-use
+  and periodic verify) on vanilla list-backed containers. Used for `isEmpty` and
+  comparator occupancy. Mutation source table is in `SlotMaskMutationSources`.
+- `entity_query_early_out`: per-`EntitySection` type counters with empty-only early-out
+  on `EntitySectionStorage.getEntities`. Shares `EntitySectionQueryRange` with
+  `entity_section_lookup`. Non-empty queries are 100% vanilla.
+
+**SAFE TO MERGE: NO** — first iteration, opt-in, needs in-game hopper-adjacent and
+entity-farm confirmation that Mixins apply and Lithium detection fires.
+
+---
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

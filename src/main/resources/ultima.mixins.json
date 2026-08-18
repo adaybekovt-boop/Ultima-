@@ -14,6 +14,21 @@
     "entity_section_lookup.EntitySectionStorageMixin",
     "supporting_block_shape_skip.BlockCollisionsMixin",
     "supporting_block_shape_skip.CollisionGetterMixin",
-    "full_cube_move.VoxelShapeMixin"
+    "full_cube_move.VoxelShapeMixin",
+    "container_slot_mask.NonNullListMixin",
+    "container_slot_mask.SimpleContainerMixin",
+    "container_slot_mask.BaseContainerBlockEntityMixin",
+    "container_slot_mask.InventoryMixin",
+    "container_slot_mask.AbstractContainerMenuMixin",
+    "container_slot_mask.AbstractMinecartContainerMixin",
+    "container_slot_mask.AbstractChestBoatMixin",
+    "container_slot_mask.ContainerEntityMixin",
+    "container_slot_mask.ListBackedContainerMixin",
+    "container_slot_mask.CrafterBlockEntityMixin",
+    "container_slot_mask.TransientCraftingContainerMixin",
+    "container_slot_mask.ResultContainerMixin",
+    "container_slot_mask.MerchantContainerMixin",
+    "entity_query_early_out.EntitySectionMixin",
+    "entity_query_early_out.EntitySectionStorageMixin"
   ]
 }

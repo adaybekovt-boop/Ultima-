@@ -88,6 +88,23 @@ public final class UltimaModules {
                     List.of(),
                     LITHIUM_FAMILY,
                     false),
+            new Module("container_slot_mask", false,
+                    "Conservative non-empty slot occupancy masks for vanilla containers (isEmpty and "
+                            + "comparator occupancy). First-use and periodic verification against live slots. "
+                            + "Does not rewrite hopper insert/extract loops. Automatically disabled when "
+                            + "Lithium or a Lithium fork is loaded because they mixin the same inventories.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("entity_query_early_out", false,
+                    "Skip entity section walks only when per-section type counters prove the query box "
+                            + "has no candidates. Reuses EntitySection + EntitySectionQueryRange from "
+                            + "entity_section_lookup; does not filter non-empty results. Automatically "
+                            + "disabled when Lithium or a Lithium fork is loaded because they replace the "
+                            + "same entity queries.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
