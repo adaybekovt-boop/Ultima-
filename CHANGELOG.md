@@ -1,5 +1,14 @@
 # Changelog
 
+## Server-side MSPT telemetry (`server_metrics`)
+
+Cheap always-on server subsystem counters and an operator-only `/ultima profile`
+opt-in trace. This is diagnostics for later multiplayer work (chunk pipeline,
+per-player delivery, networking), not an optimization. Gameplay is unchanged.
+See `SERVER_TELEMETRY.md`.
+
+---
+
 ## FSR1 in the in-game settings screen
 
 `fsr_upscaling` is now a Rendering row on the Ultima settings screen (Mod Menu,

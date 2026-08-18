@@ -47,6 +47,7 @@ public final class ForensicRegressionTest {
         testSectionVisibilityBits();
         testTemporalMathAndSettings();
         FsrUpscalingChecks.run();
+        ServerTelemetryChecks.run();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         MesherFastPathChecks.run();
@@ -272,6 +273,7 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
             assertFalse(defaults.get("fsr_upscaling"), "FSR1 upscaling must remain opt-in");
+            assertTrue(defaults.get("server_metrics"), "server metrics are default-on instrumentation");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
                     "temporal must declare Sodium incompatibility");
@@ -351,6 +353,8 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "enabled".equals(metricsReason) || "not_client_environment".equals(metricsReason),
                     "terrain metrics default is on in a client environment, not " + metricsReason);
+            assertTrue("enabled".equals(defaultConfig.resolve("server_metrics").reason()),
+                    "server metrics are enabled by default on dedicated and integrated servers");
             assertTrue("enabled".equals(defaultConfig.resolve("entity_section_lookup").reason()),
                     "entity section lookup is enabled by default");
             assertTrue("enabled".equals(defaultConfig.resolve("cursor_step").reason()),

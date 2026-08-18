@@ -60,6 +60,8 @@ Toggles write that same file immediately. Mixins still apply at the next game la
 - Enabled by default (dedicated server, integrated server, and client physics):
   `cursor_step`, `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
   `supporting_block_shape_skip`, `full_cube_move`
+- Enabled by default on dedicated and integrated servers (instrumentation / no gameplay change):
+  `server_metrics` — cheap MSPT subsystem counters plus opt-in `/ultima profile`
 - Enabled by default on the client only (instrumentation / no visual change): `terrain_metrics`, `temporal`
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
   `retained_terrain`, `render_snapshot`, `java_mesher`, `mesher_fast_path`,
