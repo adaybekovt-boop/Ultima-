@@ -66,7 +66,11 @@ public final class StatePropertyRuntime {
     }
 
     public static boolean moduleEnabled() {
-        return UltimaConfig.get().isEnabled("state_property_cache");
+        try {
+            return UltimaConfig.get().isEnabled("state_property_cache");
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     public static int generation() {

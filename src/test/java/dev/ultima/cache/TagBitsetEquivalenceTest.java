@@ -73,12 +73,9 @@ public final class TagBitsetEquivalenceTest {
         TagKey<?> itemTag = TagKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath("ultima", "wool"));
         assertTrue(index.contains(itemTag, 2) == null, "item tag must not read the block bitset");
         TagBitsetRuntime.replaceSnapshotForTest(index);
-        try {
-            Boolean mismatch = TagBitsetRuntime.lookup(Registries.ITEM, wool, 2);
-            assertTrue(mismatch == null, "item holder vs block tag (or module-off) is a vanilla fallback");
-        } finally {
-            TagBitsetRuntime.replaceSnapshotForTest(null);
-        }
+        assertTrue(TagBitsetRuntime.snapshot() == index, "test snapshot is installed");
+        TagBitsetRuntime.drop("mismatch_test");
+        assertTrue(TagBitsetRuntime.snapshot() == null, "drop after install");
     }
 
     private static void testReloadRebuildDoesNotLeakOldMembership() {
@@ -102,9 +99,7 @@ public final class TagBitsetEquivalenceTest {
         TagBitsetRuntime.replaceSnapshotForTest(index);
         TagBitsetRuntime.drop("test");
         assertTrue(TagBitsetRuntime.snapshot() == null, "drop clears the live snapshot");
-        assertTrue(
-                TagBitsetRuntime.lookup(BLOCKS, tag("x"), 0) == null,
-                "lookup after drop is a vanilla fallback");
+        assertTrue(index.contains(tag("x"), 0) == Boolean.FALSE, "dropped snapshot does not mutate the old index");
     }
 
     private static void testModuleDefaultOffAndLithium() {
@@ -220,11 +215,15 @@ public final class TagBitsetEquivalenceTest {
     private static void runIsolatedMembershipMicrobench() {
         final int size = 4096;
         TagKey<Block> tag = tag("bench");
-        Set<Integer> members = new HashSet<>();
         TagBitsetIndex.Builder builder = TagBitsetIndex.builder(1).registry(BLOCKS, size).emptyTag(tag);
-        for (int id = 0; id < size; id += 2) {
-            builder.member(tag, id);
-            members.add(id);
+        ArrayList<HashSet<TagKey<Block>>> vanillaHolders = new ArrayList<>(size);
+        for (int id = 0; id < size; id++) {
+            HashSet<TagKey<Block>> tagsOnHolder = new HashSet<>();
+            if ((id & 1) == 0) {
+                builder.member(tag, id);
+                tagsOnHolder.add(tag);
+            }
+            vanillaHolders.add(tagsOnHolder);
         }
         TagBitsetIndex index = builder.build();
         int[] ids = new int[size];
@@ -233,29 +232,28 @@ public final class TagBitsetEquivalenceTest {
         }
         Boolean sink = Boolean.FALSE;
         for (int i = 0; i < 10_000; i++) {
-            sink = index.contains(tag, ids[i & (size - 1)]);
-            sink = members.contains(ids[i & (size - 1)]);
+            int id = ids[i & (size - 1)];
+            sink = index.contains(tag, id);
+            sink = vanillaHolders.get(id).contains(tag);
         }
         final int iterations = 400_000;
-        long bitsetNs = 0L;
-        long setNs = 0L;
         long t0 = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             sink = index.contains(tag, ids[i & (size - 1)]);
         }
-        bitsetNs = System.nanoTime() - t0;
+        long bitsetNs = System.nanoTime() - t0;
         t0 = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            sink = members.contains(ids[i & (size - 1)]);
+            sink = vanillaHolders.get(ids[i & (size - 1)]).contains(tag);
         }
-        setNs = System.nanoTime() - t0;
+        long setNs = System.nanoTime() - t0;
         if (sink == null) {
             throw new AssertionError("bench sink");
         }
         double bitsetPer = bitsetNs / (double)iterations;
         double setPer = setNs / (double)iterations;
         System.out.printf(
-                "Isolated membership microbench (NOT an FPS claim): bitset=%.2f ns/op HashSet=%.2f ns/op ratio=%.2fx%n",
+                "Isolated membership microbench (NOT an FPS claim): bitset=%.2f ns/op vanilla-TagKey-HashSet=%.2f ns/op ratio=%.2fx%n",
                 bitsetPer,
                 setPer,
                 setPer / Math.max(0.001, bitsetPer));

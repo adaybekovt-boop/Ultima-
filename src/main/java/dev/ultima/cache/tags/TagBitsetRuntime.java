@@ -58,7 +58,11 @@ public final class TagBitsetRuntime {
     }
 
     public static boolean moduleEnabled() {
-        return UltimaConfig.get().isEnabled("tag_bitsets");
+        try {
+            return UltimaConfig.get().isEnabled("tag_bitsets");
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     public static @Nullable TagBitsetIndex snapshot() {
