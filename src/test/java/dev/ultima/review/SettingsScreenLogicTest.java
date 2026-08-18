@@ -308,11 +308,13 @@ public final class SettingsScreenLogicTest {
         assertTrue(serverMetrics.fullTooltip().contains("require restarting the game"), "server metrics warn about restart");
 
         SettingsRowView settingsUi = SettingsRowView.from(UltimaSettingsCatalog.require("settings_ui"), config);
-        assertTrue(settingsUi.displayOn(), "title-screen button stays default-on");
         assertTrue(settingsUi.fullTooltip().contains("require restarting the game"), "title-screen button warns about restart");
         if (settingsUi.locked()) {
             assertTrue("not_client_environment".equals(settingsUi.statusReason()),
                     "headless JavaExec is not a client, so settings_ui locks via resolve()");
+            assertTrue(!settingsUi.displayOn(), "locked client-only default-on row displays off on a dedicated/headless process");
+        } else {
+            assertTrue(settingsUi.displayOn(), "title-screen button stays default-on on a client");
         }
     }
 
