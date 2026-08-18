@@ -1,5 +1,23 @@
 # Changelog
 
+## Grand integration (PRs #11–#15)
+
+One integration branch that contains all five parallel drafts on current `main`:
+
+- PR #11 mesher fast-path weighted unit-cube coverage (`mesher_fast_path`, default **off**)
+- PR #12 vanilla-client hosting contract
+- PR #13 FSR1 upscaling C1/H1 + in-game settings UI (`fsr_upscaling`, default **off**)
+- PR #14 server MSPT telemetry (`server_metrics`, default **on**)
+- PR #15 hopper BlockEntity sleeping (`blockentity_sleeping`, default **off**)
+
+`retained_terrain` stays opt-in (default **off**), matching current `main`. The settings
+catalog now has a row for every registered module, including those that landed after
+the original settings PR: unit-cube mesher fast path (Rendering), hopper sleeping
+(Simulation), and server tick metrics (Advanced). All three use the same
+`resolve()` disable reasons and `RESTART_GAME` warning.
+
+---
+
 ## Hopper sleeping proof-of-correctness prototype (default off)
 
 New opt-in server module `blockentity_sleeping`. First subscriber is vanilla
@@ -48,6 +66,8 @@ Ultima now has a client settings screen for every registered module, grouped as
 Rendering / Simulation / Advanced. Access: Mod Menu (soft dependency), a title-screen
 fallback button when Mod Menu is absent, and `/ultima config`. Compatibility reasons
 come from `UltimaConfig.resolve()` and are also dumped by `/ultima debug compatibility`.
+The catalog includes later modules (`mesher_fast_path`, `server_metrics`,
+`blockentity_sleeping`) with the same restart warning.
 
 ---
 

@@ -51,7 +51,9 @@ final class VanillaClientHostingChecks {
             "collision_shell_skip",
             "supporting_block_shape_skip",
             "full_cube_move",
-            "cursor_step");
+            "cursor_step",
+            "blockentity_sleeping",
+            "server_metrics");
 
     private static final Set<String> CLIENT_RENDER_MODULES = Set.of(
             "client_benchmark",
@@ -59,9 +61,13 @@ final class VanillaClientHostingChecks {
             "retained_terrain",
             "render_snapshot",
             "java_mesher",
+            "mesher_fast_path",
             "section_task_queue",
             "rgss_endpoint",
-            "temporal");
+            "temporal",
+            "fsr_upscaling");
+
+    private static final Set<String> CLIENT_UI_MIXINS = Set.of("TitleScreenMixin");
 
     private VanillaClientHostingChecks() {
     }
@@ -158,8 +164,10 @@ final class VanillaClientHostingChecks {
         Set<String> commonModules = modulesFromMixinArray(commonMixins.getAsJsonArray("mixins"));
         Set<String> clientModules = modulesFromMixinArray(clientMixins.getAsJsonArray("client"));
 
-        assertEquals(SIMULATION_MODULES, commonModules, "common Mixins are exactly the simulation set");
-        assertEquals(CLIENT_RENDER_MODULES, clientModules, "client Mixins are exactly the render/instrumentation set");
+        assertEquals(SIMULATION_MODULES, commonModules, "common Mixins are the server-safe simulation/instrumentation set");
+        assertEquals(CLIENT_RENDER_MODULES, clientModules, "client Mixins are the render/instrumentation set");
+        assertTrue(clientMixins.getAsJsonArray("client").toString().contains("TitleScreenMixin"),
+                "title-screen settings button stays a client-only UI Mixin");
 
         for (UltimaModules.Module module : UltimaModules.all()) {
             if (SIMULATION_MODULES.contains(module.key())) {
@@ -184,7 +192,7 @@ final class VanillaClientHostingChecks {
                             hits.add(path + " contains " + token);
                         }
                     }
-                    if (source.contains("Registry.register")
+                    if (source.contains("Registry.register(")
                             || source.contains("BuiltInRegistries")
                             || source.contains("FabricItem")
                             || source.contains("FabricBlock")) {
@@ -225,7 +233,10 @@ final class VanillaClientHostingChecks {
             String className = element.getAsString();
             int firstDot = className.indexOf('.');
             if (firstDot <= 0) {
-                throw new AssertionError("mixin class is not packaged by module: " + className);
+                if (!CLIENT_UI_MIXINS.contains(className)) {
+                    throw new AssertionError("mixin class is not packaged by module: " + className);
+                }
+                continue;
             }
             modules.add(className.substring(0, firstDot));
         }

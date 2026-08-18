@@ -14,7 +14,7 @@ import dev.ultima.config.UltimaModules;
  * come from {@link dev.ultima.config.UltimaConfig#resolve(String)} — the catalog never consults
  * {@link dev.ultima.temporal.TemporalMode}. Spatial FSR1 is the {@code fsr_upscaling} module
  * (Rendering). {@code TemporalMode.FSR_*} remains unsupported and has no menu entries.
- * {@code java_mesher} is the shipped mesher fast-path; it has no extra sub-options.
+ * {@code java_mesher} and {@code mesher_fast_path} are separate Rendering rows.
  */
 public final class UltimaSettingsCatalog {
     private static final Map<String, ModuleSettingSpec> BY_KEY = new LinkedHashMap<>();
@@ -33,8 +33,18 @@ public final class UltimaSettingsCatalog {
                 "java_mesher",
                 "Faster section mesher",
                 "Uses a packed section compile loop with worker-owned scratch and tessellator reuse. "
-                        + "Visit order matches vanilla BlockPos.betweenClosed. No extra mesher "
-                        + "sub-settings exist in this build.",
+                        + "Visit order matches vanilla BlockPos.betweenClosed. Skipped when the unit-cube "
+                        + "mesher fast path is enabled. No extra mesher sub-settings exist in this build.",
+                SettingsCategory.RENDERING,
+                ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "mesher_fast_path",
+                "Unit-cube mesher fast path",
+                "Experimental hybrid mesher: cached vanilla unit-cube quads plus neighbor occlusion, "
+                        + "with ModelBlockRenderer/FluidRenderer fallback otherwise. Admits 26.2 weighted "
+                        + "unit cubes (stone, dirt, deepslate) using the vanilla BlockState seed. Default "
+                        + "off. Independent of retained terrain; wins over Faster section mesher when both "
+                        + "are on. Auto-off with Sodium, Iris, or Canvas. Mixins apply at the next launch.",
                 SettingsCategory.RENDERING,
                 ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(
@@ -107,6 +117,16 @@ public final class UltimaSettingsCatalog {
                         + "running index at every position. Required by Collision shell skip.",
                 SettingsCategory.SIMULATION,
                 ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "blockentity_sleeping",
+                "Hopper block-entity sleeping",
+                "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla "
+                        + "mutation has a synchronous wake channel. Proof-of-correctness prototype, "
+                        + "default off. Unknown neighbours (furnaces, composters, loot chests, "
+                        + "modded inventories) stay on vanilla polling. Auto-off with Lithium, "
+                        + "Canary, or Radium. Mixins apply at the next launch.",
+                SettingsCategory.SIMULATION,
+                ApplyPolicy.RESTART_GAME));
 
         register(new ModuleSettingSpec(
                 "temporal",
@@ -136,6 +156,15 @@ public final class UltimaSettingsCatalog {
                 "Client frame benchmark",
                 "Records reproducible client frame-time distributions when a benchmark is explicitly "
                         + "requested. Instrumentation only.",
+                SettingsCategory.ADVANCED,
+                ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "server_metrics",
+                "Server tick metrics",
+                "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile "
+                        + "tracing. Does not change gameplay. Default on. Operators can run "
+                        + "/ultima profile [seconds] for a detailed JSON trace. Mixins apply at "
+                        + "the next launch.",
                 SettingsCategory.ADVANCED,
                 ApplyPolicy.RESTART_GAME));
     }

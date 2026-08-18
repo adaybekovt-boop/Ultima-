@@ -57,8 +57,19 @@ public final class SettingsScreenLogicTest {
                 "fsr_upscaling is a Rendering row");
         assertTrue("FSR upscaling".equals(UltimaSettingsCatalog.require("fsr_upscaling").displayName()),
                 "player-facing FSR name");
-        assertTrue(UltimaSettingsCatalog.byKey("mesher_fast_path") == null,
-                "mesher fast-path is the java_mesher module, not a separate key");
+        assertTrue(UltimaSettingsCatalog.byKey("mesher_fast_path") != null,
+                "mesher_fast_path must appear as its own settings row");
+        assertTrue("Unit-cube mesher fast path".equals(UltimaSettingsCatalog.require("mesher_fast_path").displayName()),
+                "player-facing mesher fast-path name");
+        assertTrue(UltimaSettingsCatalog.byKey("blockentity_sleeping") != null,
+                "blockentity_sleeping must appear in the settings catalog");
+        assertTrue("Hopper block-entity sleeping".equals(
+                UltimaSettingsCatalog.require("blockentity_sleeping").displayName()),
+                "player-facing hopper sleeping name");
+        assertTrue(UltimaSettingsCatalog.byKey("server_metrics") != null,
+                "server_metrics must appear in the settings catalog");
+        assertTrue("Server tick metrics".equals(UltimaSettingsCatalog.require("server_metrics").displayName()),
+                "player-facing server metrics name");
         assertEquals((long)UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(!spec.displayName().equals(spec.key()),
@@ -68,21 +79,27 @@ public final class SettingsScreenLogicTest {
     }
 
     private static void testCategoriesAndApplyPolicies() {
-        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
-        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
-        assertEquals(4L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
+        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
+        assertEquals(7L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
+        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         assertTrue(UltimaSettingsCatalog.require("retained_terrain").category() == SettingsCategory.RENDERING,
                 "retained terrain is rendering");
         assertTrue(UltimaSettingsCatalog.require("java_mesher").category() == SettingsCategory.RENDERING,
                 "java mesher is rendering");
+        assertTrue(UltimaSettingsCatalog.require("mesher_fast_path").category() == SettingsCategory.RENDERING,
+                "mesher fast path is rendering");
         assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
                 "FSR is rendering");
         assertTrue(UltimaSettingsCatalog.require("cursor_step").category() == SettingsCategory.SIMULATION,
                 "cursor step is simulation");
+        assertTrue(UltimaSettingsCatalog.require("blockentity_sleeping").category() == SettingsCategory.SIMULATION,
+                "hopper sleeping is simulation");
         assertTrue(UltimaSettingsCatalog.require("client_benchmark").category() == SettingsCategory.ADVANCED,
                 "benchmark is advanced");
         assertTrue(UltimaSettingsCatalog.require("terrain_metrics").category() == SettingsCategory.ADVANCED,
                 "metrics are advanced");
+        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,
+                "server metrics are advanced");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,
                     spec.key() + " Mixins apply at launch, so the UI must warn about a restart");
@@ -96,6 +113,21 @@ public final class SettingsScreenLogicTest {
         assertTrue(
                 UltimaSettingsCatalog.require("fsr_upscaling").applyPolicy() == ApplyPolicy.RESTART_GAME,
                 "FSR uses the same restart policy as other rendering modules");
+        assertTrue(
+                UltimaSettingsCatalog.require("mesher_fast_path").applyPolicy() == ApplyPolicy.RESTART_GAME,
+                "mesher fast path uses the same restart policy");
+        assertTrue(
+                UltimaSettingsCatalog.require("blockentity_sleeping").applyPolicy() == ApplyPolicy.RESTART_GAME,
+                "hopper sleeping uses the same restart policy");
+        assertTrue(
+                UltimaSettingsCatalog.require("server_metrics").applyPolicy() == ApplyPolicy.RESTART_GAME,
+                "server metrics uses the same restart policy");
+        assertTrue(
+                UltimaSettingsCatalog.require("blockentity_sleeping").tooltip().contains("Lithium"),
+                "hopper sleeping tooltip names Lithium");
+        assertTrue(
+                UltimaSettingsCatalog.require("mesher_fast_path").tooltip().contains("weighted"),
+                "mesher fast path tooltip mentions weighted unit cubes");
     }
 
     private static void testFsrIsIndependentOfTemporalMode() {
@@ -254,6 +286,17 @@ public final class SettingsScreenLogicTest {
             assertTrue("not_client_environment".equals(fsr.statusReason()),
                     "headless FSR lock is still resolve() not_client_environment");
         }
+
+        SettingsRowView hopper = SettingsRowView.from(UltimaSettingsCatalog.require("blockentity_sleeping"), config);
+        assertTrue(!hopper.displayOn(), "hopper sleeping stays default-off");
+        assertTrue(!hopper.locked(), "hopper sleeping is not client-only, so it is not environment-locked");
+        assertTrue(hopper.fullTooltip().contains("require restarting the game"), "hopper tooltip warns about restart");
+        assertTrue(hopper.fullTooltip().contains("Lithium"), "hopper tooltip still names Lithium");
+
+        SettingsRowView serverMetrics = SettingsRowView.from(UltimaSettingsCatalog.require("server_metrics"), config);
+        assertTrue(serverMetrics.displayOn(), "server metrics stay default-on");
+        assertTrue(!serverMetrics.locked(), "server metrics are not client-only");
+        assertTrue(serverMetrics.fullTooltip().contains("require restarting the game"), "server metrics warn about restart");
     }
 
     private static void testTogglePersistsToExistingFile() {
@@ -281,6 +324,9 @@ public final class SettingsScreenLogicTest {
             assertTrue("true".equals(properties.getProperty("entity_section_lookup")), "other keys remain");
             assertTrue("false".equals(properties.getProperty("retained_terrain")), "opt-in default stays false");
             assertTrue("false".equals(properties.getProperty("fsr_upscaling")), "FSR default stays false");
+            assertTrue("false".equals(properties.getProperty("mesher_fast_path")), "mesher fast path default stays false");
+            assertTrue("false".equals(properties.getProperty("blockentity_sleeping")), "hopper sleeping default stays false");
+            assertTrue("true".equals(properties.getProperty("server_metrics")), "server metrics default stays true");
             assertTrue(properties.getProperty(FsrSettings.PRESET_KEY) != null, "FSR preset key is written");
             String text = Files.readString(file, StandardCharsets.UTF_8);
             assertTrue(text.contains("cursor_step=false"), "file uses the existing properties format");
@@ -319,6 +365,9 @@ public final class SettingsScreenLogicTest {
         String json = UltimaCompatibilityReport.toJson(config);
         assertTrue(json.contains("\"key\": \"entity_section_lookup\""), "report lists modules");
         assertTrue(json.contains("\"key\": \"fsr_upscaling\""), "report lists FSR");
+        assertTrue(json.contains("\"key\": \"mesher_fast_path\""), "report lists mesher fast path");
+        assertTrue(json.contains("\"key\": \"server_metrics\""), "report lists server metrics");
+        assertTrue(json.contains("\"key\": \"blockentity_sleeping\""), "report lists hopper sleeping");
         assertTrue(json.contains("\"reason\":"), "report includes resolve() reason");
         assertTrue(json.contains("\"loadedIncompatibleMods\""), "report includes loaded incompat list");
         assertTrue(json.contains("\"playerFacing\""), "report includes UI copy");
