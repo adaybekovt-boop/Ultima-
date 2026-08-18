@@ -1,5 +1,15 @@
 # Changelog
 
+## Hopper sleeping proof-of-correctness prototype (default off)
+
+New opt-in server module `blockentity_sleeping`. First subscriber is vanilla
+`HopperBlockEntity` only. Sleep is allowed only when every vanilla mutation that
+could change the next `tryMoveItems` has a synchronous wake channel; unknown
+neighbours (furnaces, composters, loot chests, modded inventories) stay on
+vanilla polling. Lithium/Canary/Radium auto-disable the module. Not live-tested.
+
+---
+
 ## Server-side MSPT telemetry (`server_metrics`)
 
 Cheap always-on server subsystem counters and an operator-only `/ultima profile`

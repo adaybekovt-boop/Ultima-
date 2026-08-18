@@ -100,6 +100,14 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
+            new Module("blockentity_sleeping", false,
+                    "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla mutation "
+                            + "has a synchronous wake channel. Proof-of-correctness prototype, default off. "
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded because they "
+                            + "replace the same hopper tick.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("server_metrics", true,
                     "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
                             + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "

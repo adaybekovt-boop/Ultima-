@@ -376,6 +376,9 @@ final class AuditStage1Checks {
         assertTrue(UltimaModules.isOptInExperiment("java_mesher"), "java_mesher remains experimental");
         assertTrue(UltimaModules.isOptInExperiment("mesher_fast_path"), "mesher_fast_path remains experimental");
         assertFalse(UltimaModules.byKey("mesher_fast_path").enabledByDefault(), "mesher_fast_path defaults OFF");
+        assertTrue(UltimaModules.kind(UltimaModules.byKey("blockentity_sleeping")) == UltimaModules.Kind.OPT_IN_EXPERIMENT,
+                "blockentity_sleeping is an opt-in experiment");
+        assertTrue(UltimaModules.isOptInExperiment("blockentity_sleeping"), "blockentity_sleeping remains experimental");
     }
 
     private static void assertTrue(final boolean value, final String message) {

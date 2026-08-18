@@ -70,6 +70,8 @@ Toggles write that same file immediately. Mixins still apply at the next game la
   Sodium without Iris is allowed): `fsr_upscaling`. Toggle and quality preset
   are on the in-game Ultima Settings screen (Rendering). RCAS sharpness stays
   at 0.2 with no slider yet. See `FSR_UPSCALING.md`. Not a hardware FPS claim.
+- Opt-in server simulation prototype (default off, auto-off with Lithium/Canary/Radium):
+  `blockentity_sleeping` — event-driven hopper sleeping with a proof-table wake framework
 - Opt-in instrumentation only: `client_benchmark`
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
