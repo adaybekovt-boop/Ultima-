@@ -292,20 +292,20 @@ final class FsrUpscalingChecks {
                 FsrCompatibility.evaluate(true, true, true) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
                 "Iris wins when both Iris and Canvas are present");
         assertTrue(
-                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.NONE,
-                "Sodium alone does not disable FSR");
-        assertTrue(
+                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.SODIUM_OWNS_RENDERER,
+                "Sodium disables FSR in the merged contract");
+        assertFalse(
                 FsrCompatibility.allowsWithSodiumOnly(true, false, false),
-                "Sodium-only is allowed");
+                "Sodium-only is deliberately rejected");
         assertFalse(
                 FsrCompatibility.allowsWithSodiumOnly(true, true, false),
                 "Sodium+Iris is not allowed");
 
         UltimaModules.Module module = UltimaModules.byKey("fsr_upscaling");
         assertTrue(module != null, "fsr_upscaling is registered");
+        assertTrue(module.incompatibleMods().contains("sodium"), "Sodium is declared incompatible");
         assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");
         assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");
-        assertFalse(module.incompatibleMods().contains("sodium"), "Sodium is not a blanket disable");
         assertTrue(module.incompatibleMods().equals(FsrCompatibility.disablingModIds()),
                 "registry incompatibleMods is FsrCompatibility.disablingModIds()");
         assertFalse(module.incompatibleMods().contains("lithium"), "FSR is not a simulation module");
