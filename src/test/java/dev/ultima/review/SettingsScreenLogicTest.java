@@ -49,7 +49,7 @@ public final class SettingsScreenLogicTest {
         assertTrue(UltimaSettingsCatalog.unknownCatalogKeys().isEmpty(),
                 "catalog must not invent modules: " + UltimaSettingsCatalog.unknownCatalogKeys());
         assertEquals((long) UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
-        assertEquals(23L, UltimaModules.all().size(), "merged module count");
+        assertEquals(24L, UltimaModules.all().size(), "merged module count");
 
         assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
                 "fsr_upscaling is Rendering");
@@ -67,6 +67,8 @@ public final class SettingsScreenLogicTest {
         }
         assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,
                 "server_metrics is Advanced instrumentation");
+        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
+                "settings_ui is Advanced client UI");
 
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(!spec.displayName().equals(spec.key()), spec.key() + " must have a player-facing name");
@@ -77,7 +79,7 @@ public final class SettingsScreenLogicTest {
     private static void testCategoriesAndApplyPolicies() {
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(12L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
-        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
+        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,
                     spec.key() + " Mixins apply at launch, so the UI must warn about a restart");

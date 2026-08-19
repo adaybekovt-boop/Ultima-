@@ -20,7 +20,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.permissions.PermissionCheck;
 import net.minecraft.server.permissions.PermissionSet;
 
-/** Dedicated/integrated-server commands for configuration, diagnostics, and profiling. */
+/**
+ * Dedicated/integrated-server commands. The GUI is client-only; {@code /ultima config}
+ * and {@code /ultima debug compatibility} dump the same report the settings screen reads.
+ * {@code /ultima profile} is operator/console only.
+ */
 public final class UltimaCommands {
     public static final PermissionCheck PROFILE_PERMISSION = Commands.LEVEL_GAMEMASTERS;
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
@@ -36,9 +40,13 @@ public final class UltimaCommands {
     public static LiteralArgumentBuilder<CommandSourceStack> root() {
         return Commands.literal("ultima")
                 .executes(context -> help(context.getSource()))
-                .then(Commands.literal("config").executes(context -> config(context.getSource())))
+                .then(Commands.literal("config")
+                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
+                        .executes(context -> config(context.getSource())))
                 .then(Commands.literal("debug")
+                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
                         .then(Commands.literal("compatibility")
+                                .requires(Commands.hasPermission(Commands.LEVEL_ALL))
                                 .executes(context -> compatibility(context.getSource()))))
                 .then(Commands.literal("profile")
                         .requires(Commands.hasPermission(PROFILE_PERMISSION))
@@ -62,7 +70,12 @@ public final class UltimaCommands {
     private static int help(final CommandSourceStack source) {
         source.sendSuccess(
                 () -> Component.literal(
-                        "Ultima commands: /ultima config, /ultima debug compatibility, /ultima profile [seconds], /ultima profile stop"),
+                        "Ultima commands: /ultima config, /ultima debug compatibility, "
+                                + "/ultima profile [seconds] (operators only, default "
+                                + ServerMetrics.DEFAULT_PROFILE_SECONDS
+                                + "s, max "
+                                + ServerMetrics.MAX_PROFILE_SECONDS
+                                + "s), /ultima profile stop"),
                 false);
         return 1;
     }

@@ -56,6 +56,7 @@ Instrumentation / client contract:
 - `server_metrics`
 - `terrain_metrics`
 - `temporal`
+- `settings_ui`
 
 ### Default OFF
 
@@ -90,7 +91,7 @@ compatible because Lithium has no equivalent first-match recipe lookup cache.
 contract this includes `retained_terrain`, `mesher_fast_path`, and `fsr_upscaling`; the FSR
 module no longer has the branch-local Sodium-only exception.
 
-The settings screen exposes all 23 registered modules under Rendering, Simulation, or
+The settings screen exposes all 24 registered modules under Rendering, Simulation, or
 Advanced. Every toggle that changes Mixins uses the restart-required apply policy.
 
 ## Validation status

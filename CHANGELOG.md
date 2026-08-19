@@ -12,14 +12,14 @@ corruption/rebuild checks.
 
 Shared conflict points were manually consolidated instead of accepting one branch's version:
 
-- `UltimaModules.java`: all 23 final modules, defaults, dependencies, client-side flags, and
+- `UltimaModules.java`: all 24 final modules, defaults, dependencies, client-side flags, and
   incompatibility lists are represented once.
 - `ultima.mixins.json` / `ultima.client.mixins.json`: union of telemetry, hopper sleeping,
   recipe cache, tag/state cache, slot-mask/entity-query, mesher, FSR, and existing renderer Mixins.
 - `Ultima.java`: server telemetry and registry-cache lifecycle initialization are both preserved.
 - `UltimaCommands.java`: config, compatibility diagnostics, and server profiling subcommands coexist.
 - settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the
-  restart-required apply policy.
+  restart-required apply policy. The fallback title-screen button is restored as the gated `settings_ui` module.
 - regression entrypoint: branch-local hosting, FSR/settings, telemetry, hopper, recipe, tag/state,
   slot/entity, mesher, and final module-contract suites are all invoked by the merged checkpoint;
   recipe/tag/state/slot suites also have standalone Gradle tasks.

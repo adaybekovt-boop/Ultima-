@@ -40,8 +40,9 @@ final class MergedModuleContractTest {
         expectedDefaults.put("rgss_endpoint", false);
         expectedDefaults.put("temporal", true);
         expectedDefaults.put("fsr_upscaling", false);
+        expectedDefaults.put("settings_ui", true);
 
-        assertEquals(23, UltimaModules.all().size(), "module count");
+        assertEquals(24, UltimaModules.all().size(), "module count");
         assertEquals(expectedDefaults.size(), UltimaSettingsCatalog.all().size(), "settings catalog count");
         for (Map.Entry<String, Boolean> entry : expectedDefaults.entrySet()) {
             UltimaModules.Module module = UltimaModules.byKey(entry.getKey());
@@ -86,8 +87,10 @@ final class MergedModuleContractTest {
                 "fsr_upscaling category Rendering");
         assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,
                 "server_metrics category Advanced");
+        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
+                "settings_ui category Advanced");
 
-        System.out.println("Merged module contract checks passed: 23 modules, defaults/categories/auto-disable verified.");
+        System.out.println("Merged module contract checks passed: 24 modules, defaults/categories/auto-disable verified.");
     }
 
     private static void assertTrue(final boolean value, final String message) {
