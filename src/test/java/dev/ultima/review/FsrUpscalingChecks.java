@@ -20,8 +20,7 @@ import java.util.Properties;
 
 /**
  * GPU-free coverage for FSR1 planning, AMD constant setup, resize lifecycle,
- * C1 SkyRenderer park/rebind, H1 screenshot deferral, default-off gating,
- * and Sodium/Iris compatibility policy.
+ * sky-target safety, screenshot deferral, default-off gating, and merged renderer compatibility.
  */
 final class FsrUpscalingChecks {
     private FsrUpscalingChecks() {
@@ -65,19 +64,15 @@ final class FsrUpscalingChecks {
         FsrSize quality = FsrResolution.internal(FsrQualityPreset.QUALITY, 1920, 1080);
         assertEquals(1280, quality.width(), "1920 Quality width");
         assertEquals(720, quality.height(), "1080 Quality height");
-
         FsrSize ultra = FsrResolution.internal(FsrQualityPreset.ULTRA_QUALITY, 1920, 1080);
         assertEquals(Math.round(1920 * (1.0 / 1.3)), ultra.width(), "1920 Ultra Quality width");
         assertEquals(Math.round(1080 * (1.0 / 1.3)), ultra.height(), "1080 Ultra Quality height");
-
         FsrSize balanced = FsrResolution.internal(FsrQualityPreset.BALANCED, 1920, 1080);
         assertEquals(Math.round(1920 / 1.7), balanced.width(), "1920 Balanced width");
         assertEquals(Math.round(1080 / 1.7), balanced.height(), "1080 Balanced height");
-
         FsrSize performance = FsrResolution.internal(FsrQualityPreset.PERFORMANCE, 1920, 1080);
         assertEquals(960, performance.width(), "1920 Performance width");
         assertEquals(540, performance.height(), "1080 Performance height");
-
         FsrSize ultraPerf = FsrResolution.internal(FsrQualityPreset.ULTRA_PERFORMANCE, 1920, 1080);
         assertEquals(640, ultraPerf.width(), "1920 Ultra Performance width");
         assertEquals(360, ultraPerf.height(), "1080 Ultra Performance height");
@@ -89,13 +84,11 @@ final class FsrUpscalingChecks {
         assertEquals(Math.round(769 / 1.5), odd.height(), "odd Quality height");
         assertTrue(odd.width() >= 1 && odd.width() <= 1367, "odd width clamped");
         assertTrue(odd.height() >= 1 && odd.height() <= 769, "odd height clamped");
-
         assertEquals(1, FsrResolution.scaleAxis(1, 0.5), "1-pixel axis stays at least 1");
         assertEquals(1, FsrResolution.scaleAxis(2, 1.0 / 3.0), "2px ultra-perf rounds to 1");
         assertEquals(5, FsrResolution.scaleAxis(5, 2.0), "scale > 1 must not super-sample");
         assertEquals(7, FsrResolution.scaleAxis(7, 0.0), "non-positive scale stays native");
         assertEquals(7, FsrResolution.scaleAxis(7, Double.NaN), "NaN scale stays native");
-
         FsrSize one = FsrResolution.internal(FsrQualityPreset.PERFORMANCE, 1, 1);
         assertTrue(FsrResolution.isNativeResolution(one, 1, 1), "1x1 Performance is native after clamp");
         FsrResourcePlan tiny = FsrResourcePlan.decide(true, FsrQualityPreset.PERFORMANCE, 1, 1);
@@ -105,7 +98,6 @@ final class FsrUpscalingChecks {
 
     private static void testEasuConstantsAgainstOfficialFormula() {
         FsrEasuConstants.EasuCon con = FsrEasuConstants.easuSameViewportAndInput(1280, 720, 1920, 1080);
-        // Official FsrEasuCon multiplies by ARcpF1(x) == 1.0f/x, not a/b.
         float rcpOutX = FsrEasuConstants.rcp(1920.0F);
         float rcpOutY = FsrEasuConstants.rcp(1080.0F);
         float rcpInX = FsrEasuConstants.rcp(1280.0F);
@@ -131,7 +123,6 @@ final class FsrUpscalingChecks {
     }
 
     private static void testEasuOfficialWorkedExample() {
-        // Comment in ffx_fsr1.h: viewport 1920x1080, input 3840x2160, output 2560x1440.
         FsrEasuConstants.EasuCon con = FsrEasuConstants.easu(1920.0F, 1080.0F, 3840.0F, 2160.0F, 2560.0F, 1440.0F);
         float rcpOutX = FsrEasuConstants.rcp(2560.0F);
         float rcpOutY = FsrEasuConstants.rcp(1440.0F);
@@ -151,7 +142,7 @@ final class FsrUpscalingChecks {
         FsrEasuConstants.RcasCon zero = FsrEasuConstants.rcas(0.0F);
         assertEqualsFloat(1.0F, zero.sharpnessLinear(), "0 stops is exp2(0)=1");
         FsrEasuConstants.RcasCon defaultStops = FsrEasuConstants.rcas(0.2F);
-        float expected = (float)Math.exp(Math.log(2.0) * -0.2);
+        float expected = (float) Math.exp(Math.log(2.0) * -0.2);
         assertEqualsFloat(expected, defaultStops.sharpnessLinear(), "0.2 stops matches exp2(-0.2)");
         assertEquals(Float.floatToIntBits(expected), defaultStops.sharpnessBits(), "RCAS AU1_AF1");
         assertEqualsFloat(0.2F, FsrSettings.clampSharpness(0.2F), "default sharpness in range");
@@ -172,7 +163,6 @@ final class FsrUpscalingChecks {
         model.onNativeResize(q1080);
         assertEquals(allocations, model.allocations(), "same native size must not reallocate");
         assertFalse(model.isStale(q1080), "same plan is not stale");
-
         FsrResourcePlan q720 = FsrResourcePlan.decide(true, FsrQualityPreset.QUALITY, 1280, 720);
         assertTrue(model.isStale(q720), "new native size is stale before apply");
         model.onNativeResize(q720);
@@ -202,14 +192,14 @@ final class FsrUpscalingChecks {
         assertTrue(model.hasLiveTargets(), "precondition: targets exist");
         model.consumeSkyResetRequired();
         model.apply(disabled);
-        assertTrue(model.hasLiveTargets(), "C1: mid-session inactive plan parks the world target");
+        assertTrue(model.hasLiveTargets(), "mid-session inactive plan parks the world target");
         assertTrue(model.isParked(), "world target is parked, not destroyed");
         assertTrue(model.worldSize() != null, "parked world size remains");
         assertTrue(model.easuSize() == null, "EASU ping buffer may be released");
         assertTrue(model.consumeSkyResetRequired(), "park requests SkyRenderer rebind");
         assertTrue(model.outlineSize().equalsSize(1920, 1080), "outline restored to native when parked");
         model.destroyForLifecycle();
-        assertFalse(model.hasLiveTargets(), "lifecycle close is the only world-target destroy");
+        assertFalse(model.hasLiveTargets(), "lifecycle close destroys world target");
     }
 
     private static void testFailOpenParksWorldTargetAndRebindsSky() {
@@ -233,10 +223,10 @@ final class FsrUpscalingChecks {
         safeSky.bind(fixed.world());
         safeSky.drawSkyPass();
         fixed.failOpenPark();
-        assertFalse(fixed.worldDestroyed(), "C1 (a): fail-open does not destroy the world target");
+        assertFalse(fixed.worldDestroyed(), "fail-open does not destroy the world target");
         assertTrue(fixed.isParked(), "fail-open parks the world target");
         fixed.nextSkyPass(safeSky);
-        assertTrue(safeSky.bound() == fixed.vanillaMain(), "C1 (b): next sky pass rebinds to vanilla main");
+        assertTrue(safeSky.bound() == fixed.vanillaMain(), "next sky pass rebinds to vanilla main");
         safeSky.drawSkyPass();
     }
 
@@ -263,48 +253,31 @@ final class FsrUpscalingChecks {
     }
 
     private static void testScreenshotDeferredUntilAfterRcas() {
-        assertTrue(
-                FsrScreenshotPolicy.onVanillaScreenshotCall(true) == FsrScreenshotPolicy.Action.DEFER_UNTIL_AFTER_RCAS,
-                "H1: world-pass screenshot is deferred until after RCAS");
-        assertTrue(
-                FsrScreenshotPolicy.onVanillaScreenshotCall(false) == FsrScreenshotPolicy.Action.TAKE_NOW,
-                "menu / non-FSR frames take the vanilla screenshot immediately");
-        assertTrue(
-                FsrScreenshotPolicy.captureAfterRcas(true, true),
-                "deferred screenshot fires after a successful upscale");
-        assertFalse(
-                FsrScreenshotPolicy.captureAfterRcas(true, false),
-                "fail-open after renderLevel skips the empty vanilla-main capture");
-        assertFalse(
-                FsrScreenshotPolicy.captureAfterRcas(false, true),
-                "no capture when nothing was deferred");
+        assertTrue(FsrScreenshotPolicy.onVanillaScreenshotCall(true) == FsrScreenshotPolicy.Action.DEFER_UNTIL_AFTER_RCAS,
+                "world-pass screenshot is deferred until after RCAS");
+        assertTrue(FsrScreenshotPolicy.onVanillaScreenshotCall(false) == FsrScreenshotPolicy.Action.TAKE_NOW,
+                "menu / non-FSR frames take screenshot immediately");
+        assertTrue(FsrScreenshotPolicy.captureAfterRcas(true, true), "deferred screenshot fires after successful upscale");
+        assertFalse(FsrScreenshotPolicy.captureAfterRcas(true, false), "fail-open skips empty vanilla-main capture");
+        assertFalse(FsrScreenshotPolicy.captureAfterRcas(false, true), "no capture when nothing was deferred");
     }
 
     private static void testCompatibilityPolicy() {
-        assertTrue(
-                FsrCompatibility.evaluate(true, false, false) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
+        assertTrue(FsrCompatibility.evaluate(true, false, false) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
                 "Iris disables FSR");
-        assertTrue(
-                FsrCompatibility.evaluate(false, true, false) == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
+        assertTrue(FsrCompatibility.evaluate(false, true, false) == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
                 "Canvas disables FSR");
-        assertTrue(
-                FsrCompatibility.evaluate(true, true, true) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
-                "Iris wins when both Iris and Canvas are present");
-        assertTrue(
-                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.NONE,
-                "Sodium alone does not disable FSR");
-        assertTrue(
-                FsrCompatibility.allowsWithSodiumOnly(true, false, false),
-                "Sodium-only is allowed");
-        assertFalse(
-                FsrCompatibility.allowsWithSodiumOnly(true, true, false),
-                "Sodium+Iris is not allowed");
+        assertTrue(FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.SODIUM_OWNS_RENDERER,
+                "Sodium disables FSR in the merged contract");
+        assertTrue(FsrCompatibility.evaluate(true, true, true) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
+                "Iris keeps priority when several renderer mods are present");
+        assertFalse(FsrCompatibility.allowsWithSodiumOnly(true, false, false), "Sodium-only is deliberately rejected");
 
         UltimaModules.Module module = UltimaModules.byKey("fsr_upscaling");
         assertTrue(module != null, "fsr_upscaling is registered");
-        assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");
-        assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");
-        assertFalse(module.incompatibleMods().contains("sodium"), "Sodium is not a blanket disable");
+        assertTrue(module.incompatibleMods().contains("sodium"), "Sodium is declared incompatible");
+        assertTrue(module.incompatibleMods().contains("iris"), "Iris is declared incompatible");
+        assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is declared incompatible");
         assertTrue(module.incompatibleMods().equals(FsrCompatibility.disablingModIds()),
                 "registry incompatibleMods is FsrCompatibility.disablingModIds()");
         assertFalse(module.incompatibleMods().contains("lithium"), "FSR is not a simulation module");
@@ -314,18 +287,13 @@ final class FsrUpscalingChecks {
     }
 
     private static void testPipelineGate() {
-        assertTrue(
-                FsrPipelineGate.decide(true, false) == FsrPipelineGate.Action.PROCEED,
-                "compiled pipelines proceed");
-        assertTrue(
-                FsrPipelineGate.decide(false, false) == FsrPipelineGate.Action.WAIT_FOR_PIPELINES,
-                "missing device/shaders wait and retry; do not fail-open");
-        assertTrue(
-                FsrPipelineGate.decide(false, true) == FsrPipelineGate.Action.FAIL_OPEN,
+        assertTrue(FsrPipelineGate.decide(true, false) == FsrPipelineGate.Action.PROCEED, "compiled pipelines proceed");
+        assertTrue(FsrPipelineGate.decide(false, false) == FsrPipelineGate.Action.WAIT_FOR_PIPELINES,
+                "missing device/shaders wait and retry");
+        assertTrue(FsrPipelineGate.decide(false, true) == FsrPipelineGate.Action.FAIL_OPEN,
                 "hard compile failure fail-opens");
-        assertTrue(
-                FsrPipelineGate.decide(true, true) == FsrPipelineGate.Action.PROCEED,
-                "already-compiled wins over a stale failed flag");
+        assertTrue(FsrPipelineGate.decide(true, true) == FsrPipelineGate.Action.PROCEED,
+                "already-compiled wins over stale failed flag");
     }
 
     private static void testModuleRegistryAndDefaults() {
@@ -342,8 +310,7 @@ final class FsrUpscalingChecks {
             assertFalse(config.isEnabled("fsr_upscaling"), "default config does not enable FSR");
             assertFalse(config.isRequested("fsr_upscaling"), "default request is false");
             String reason = config.resolve("fsr_upscaling").reason();
-            assertTrue(
-                    "disabled_by_default".equals(reason) || "not_client_environment".equals(reason),
+            assertTrue("disabled_by_default".equals(reason) || "not_client_environment".equals(reason),
                     "FSR default reason, not " + reason);
             assertTrue(config.fsrSettings().preset() == FsrQualityPreset.QUALITY, "default preset is Quality");
             assertEqualsFloat(0.2F, config.fsrSettings().sharpnessStops(), "default sharpness");
@@ -352,9 +319,8 @@ final class FsrUpscalingChecks {
             requested.put("fsr_upscaling", true);
             UltimaConfig on = constructor.newInstance(requested);
             String onReason = on.resolve("fsr_upscaling").reason();
-            assertTrue(
-                    "enabled".equals(onReason) || "not_client_environment".equals(onReason),
-                    "requested FSR is enabled on the client, not " + onReason);
+            assertTrue("enabled".equals(onReason) || "not_client_environment".equals(onReason),
+                    "requested FSR is enabled on a compatible client, not " + onReason);
             assertTrue(UltimaModules.isOptInExperiment("fsr_upscaling"), "FSR is an opt-in experiment");
             assertTrue(UltimaModules.kind(module("fsr_upscaling")) == UltimaModules.Kind.OPT_IN_EXPERIMENT, "kind");
         } catch (ReflectiveOperationException e) {
