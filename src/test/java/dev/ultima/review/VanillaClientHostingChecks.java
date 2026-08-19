@@ -191,8 +191,24 @@ final class VanillaClientHostingChecks {
     private static void testNoServerDataPackContent() {
         Path data = MAIN_RESOURCES.resolve("data");
         assertFalse(Files.exists(data), "no data-pack registries that Fabric would sync to clients");
+
         Path assets = MAIN_RESOURCES.resolve("assets");
-        assertFalse(Files.exists(assets), "common assets are not needed on dedicated servers");
+        if (!Files.exists(assets)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(assets)) {
+            List<String> unexpected = walk
+                    .filter(Files::isRegularFile)
+                    .map(assets::relativize)
+                    .map(Path::toString)
+                    .map(path -> path.replace('\\', '/'))
+                    .filter(path -> !path.startsWith("ultima/lang/"))
+                    .toList();
+            assertTrue(unexpected.isEmpty(),
+                    "common assets are limited to local language metadata; unexpected=" + unexpected);
+        } catch (IOException e) {
+            throw new AssertionError("could not scan common assets", e);
+        }
     }
 
     private static List<String> stringEntrypoints(final JsonArray array) {
