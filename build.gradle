@@ -11,6 +11,10 @@ base {
 }
 
 repositories {
+    maven {
+        name = "Terraformers"
+        url = "https://maven.terraformersmc.com/"
+    }
 }
 
 loom {
@@ -43,6 +47,8 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    // Soft dependency: compile against the API, do not require Mod Menu at runtime.
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {
@@ -87,10 +93,10 @@ afterEvaluate {
 
 tasks.register("forensicRegressionTest", JavaExec) {
     group = "verification"
-    description = "Runs dependency-free differential checks for optimization arithmetic."
+    description = "Runs the complete merged regression checkpoint for all integrated modules."
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
-    mainClass = "dev.ultima.review.ForensicRegressionTest"
+    mainClass = "dev.ultima.review.MergedRegressionTest"
 }
 
 tasks.register("commandCompactionRecoveryTest", JavaExec) {
@@ -101,6 +107,38 @@ tasks.register("commandCompactionRecoveryTest", JavaExec) {
     mainClass = "dev.ultima.review.CommandCompactionRecoveryTest"
 }
 
+tasks.register("recipeMatchCacheTest", JavaExec) {
+    group = "verification"
+    description = "Runs recipe/furnace/brewing first-match cache differential checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.recipe.RecipeMatchCacheTest"
+}
+
+tasks.register("tagBitsetsTest", JavaExec) {
+    group = "verification"
+    description = "Runs tag membership bitset equivalence checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.TagBitsetsTestMain"
+}
+
+tasks.register("statePropertyCacheTest", JavaExec) {
+    group = "verification"
+    description = "Runs block/fluid state property cache equivalence checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.StatePropertyCacheTestMain"
+}
+
+tasks.register("slotMaskEntityQueryTest", JavaExec) {
+    group = "verification"
+    description = "Runs container slot-mask and entity-query differential checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.SlotMaskEntityQueryTest"
+}
+
 test {
     failOnNoDiscoveredTests = false
     dependsOn forensicRegressionTest
@@ -108,6 +146,10 @@ test {
 
 check.dependsOn forensicRegressionTest
 check.dependsOn commandCompactionRecoveryTest
+check.dependsOn recipeMatchCacheTest
+check.dependsOn tagBitsetsTest
+check.dependsOn statePropertyCacheTest
+check.dependsOn slotMaskEntityQueryTest
 
 java {
     withSourcesJar()
