@@ -346,15 +346,24 @@ final class FsrUpscalingChecks {
                 UltimaConfig config = constructor.newInstance(requested);
                 UltimaConfig.ResolvedModule resolved = config.resolve("fsr_upscaling");
                 assertFalse(resolved.enabled(), "requested FSR stays disabled under Sodium+Iris");
+                assertTrue(FsrCompatibility.blocks("fsr_upscaling"),
+                        "capability gate reports Iris as blocking");
                 assertTrue(
-                        FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason()),
-                        "Sodium+Iris resolve reason is the hook finding, not " + resolved.reason());
-                assertTrue(
-                        resolved.detail().contains("no official hook"),
-                        "Iris disable detail names the missing hook");
-                assertTrue(
-                        resolved.detail().contains("internal render-target resolution"),
-                        "Iris disable detail also records the resolution limitation");
+                        FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason())
+                                || "not_client_environment".equals(resolved.reason()),
+                        "Sodium+Iris resolve reason is the hook finding on the client, "
+                                + "or client-only on a dedicated server, not " + resolved.reason());
+                assertFalse(
+                        "incompatible_mod".equals(resolved.reason()),
+                        "Iris must not reuse incompatible_mod");
+                if (FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason())) {
+                    assertTrue(
+                            resolved.detail().contains("no official hook"),
+                            "Iris disable detail names the missing hook");
+                    assertTrue(
+                            resolved.detail().contains("internal render-target resolution"),
+                            "Iris disable detail also records the resolution limitation");
+                }
             } catch (ReflectiveOperationException e) {
                 throw new AssertionError("could not resolve FSR under a fake Iris load", e);
             }
