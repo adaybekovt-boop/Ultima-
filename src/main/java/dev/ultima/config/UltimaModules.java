@@ -195,7 +195,12 @@ public final class UltimaModules {
                             + "and upscales to native before HUD/GUI. Default off. Isolated from retained_terrain "
                             + "and mesher modules. Automatically disabled when Sodium, Iris, or Canvas is loaded "
                             + "because those renderer integrations own or replace parts of the render pipeline.",
-                    FSR_RENDERER_FAMILY));
+                    FSR_RENDERER_FAMILY),
+            Module.client("settings_ui", true,
+                    "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
+                            + "does not change networking or world simulation. Disable to hide the button; "
+                            + "/ultima config and Mod Menu remain available.",
+                    List.of()));
 
     private UltimaModules() {
     }
