@@ -24,6 +24,6 @@ public final class Ultima implements ModInitializer {
         RegistryCacheLifecycle.register();
         UltimaCommands.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> BlockEntitySleepRuntime.clearAll());
-        ServerLevelEvents.UNLOAD.register((server, level) -> BlockEntitySleepRuntime.clearLevel(level));
+        ServerLevelEvents.UNLOAD.register((server, world) -> BlockEntitySleepRuntime.clearLevel(world));
     }
 }
