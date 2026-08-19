@@ -1,55 +1,150 @@
 name: Ultima CI validation
 
 on:
+  push:
+    branches:
+      - main
+      - fix/provenance-compaction-p0
+      - integration/ultima-real-merge-20260819
+      - integration/ultima-firstwave-fix-staging-20260819
   pull_request:
     branches:
-      - integration/ultima-firstwave-fix-staging-20260819
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair:
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+  validate:
+    name: current-head / ${{ matrix.os }} / run-${{ matrix.repeat }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        repeat: [1, 2]
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout actual triggering revision
+        uses: actions/checkout@v4
         with:
-          ref: integration/ultima-firstwave-fix-staging-20260819
           fetch-depth: 0
-      - name: Align FSR compatibility regression with merged renderer policy
+
+      - name: Merge provenance and branch ancestry
+        if: runner.os == 'Linux' && matrix.repeat == 1
         shell: bash
         run: |
           set -euxo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('src/test/java/dev/ultima/review/FsrUpscalingChecks.java')
-          s = p.read_text(encoding='utf-8')
-          old = '''        assertTrue(\n                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.NONE,\n                "Sodium alone does not disable FSR");\n        assertTrue(\n                FsrCompatibility.allowsWithSodiumOnly(true, false, false),\n                "Sodium-only is allowed");\n        assertFalse(\n                FsrCompatibility.allowsWithSodiumOnly(true, true, false),\n                "Sodium+Iris is not allowed");'''
-          new = '''        assertTrue(\n                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.SODIUM_OWNS_RENDERER,\n                "Sodium disables FSR in the merged contract");\n        assertFalse(\n                FsrCompatibility.allowsWithSodiumOnly(true, false, false),\n                "Sodium-only is deliberately rejected");\n        assertFalse(\n                FsrCompatibility.allowsWithSodiumOnly(true, true, false),\n                "Sodium+Iris is not allowed");'''
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('unexpected FSR compatibility assertion block')
-              s = s.replace(old, new, 1)
-          old2 = '''        assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");\n        assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");\n        assertFalse(module.incompatibleMods().contains("sodium"), "Sodium is not a blanket disable");'''
-          new2 = '''        assertTrue(module.incompatibleMods().contains("sodium"), "Sodium is declared incompatible");\n        assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");\n        assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");'''
-          if new2 not in s:
-              if old2 not in s:
-                  raise SystemExit('unexpected FSR registry assertion block')
-              s = s.replace(old2, new2, 1)
-          p.write_text(s, encoding='utf-8')
-          PY
-          grep -F 'SODIUM_OWNS_RENDERER' src/test/java/dev/ultima/review/FsrUpscalingChecks.java
-          grep -F 'Sodium is declared incompatible' src/test/java/dev/ultima/review/FsrUpscalingChecks.java
-          git diff --check
-          git diff --stat
-          git add src/test/java/dev/ultima/review/FsrUpscalingChecks.java
-          git config user.name 'Ultima Integration Resolver'
-          git config user.email 'actions@users.noreply.github.com'
-          if git diff --cached --quiet; then
-            echo 'no source change needed'
-            exit 0
+          git fetch --all --prune
+          refs=(
+            cursor/mesher-fast-path-coverage-4c53
+            cursor/vanilla-client-hosting-afd5
+            cursor/fsr-settings-ui-ffb3
+            cursor/server-telemetry-6b86
+            cursor/blockentity-sleeping-2ea6
+            cursor/recipe-match-cache-d06f
+            cursor/container-slot-masks-entity-earlyout-8317
+            cursor/tag-bitsets-state-cache-3b93
+            cursor/container-slot-masks-entity-query-early-outs-bea1
+          )
+          for ref in "${refs[@]}"; do
+            echo "===== git log origin/$ref --oneline ====="
+            git log "origin/$ref" --oneline
+            echo "===== git merge-base origin/main origin/$ref ====="
+            git merge-base origin/main "origin/$ref"
+          done
+          echo "===== git log --oneline --graph --decorate --all ====="
+          git log --oneline --graph --decorate --all
+          echo "===== git diff --stat origin/main...HEAD ====="
+          git diff --stat origin/main...HEAD
+          for entry in \
+            'PR11 8d3e5f6236d568625127a331b4d1e42043bddb55' \
+            'PR12 30a22b1cc14a1d82486c35c11da109ec1dde1587' \
+            'PR13 e9af621b64a4bb3174bfde972309d7e09ba0d8d5' \
+            'PR14 c2958b8086f080f9957cd9d118248997c6982619' \
+            'PR15 93191b04b2ceb5372db12f7258f124d92aab9af0' \
+            'PR17 4fc2206452a3b438c110b7ef373a626c9cf127e2' \
+            'PR19 69fad0451b0534d998b42c27f3ef9932c2e528da' \
+            'PR20 b15e003759d321dd7b689caf2325bf5bebdf0581' \
+            'PR16_FIX_TAIL 47e1abb22d2b4f1be95fdae022d9df71c8bafb8f'; do
+            label="${entry%% *}"
+            sha="${entry##* }"
+            git merge-base --is-ancestor "$sha" HEAD
+            echo "ANCESTOR YES $label $sha"
+          done
+          excluded=6f0fa61c375158c82e8c4ad8105363cd562fcf16
+          if git merge-base --is-ancestor "$excluded" HEAD; then
+            echo "ERROR: PR18 head unexpectedly became an ancestor: $excluded" >&2
+            exit 1
           fi
-          git commit -m 'Align FSR regression with renderer auto-disable contract'
-          git push origin HEAD:integration/ultima-firstwave-fix-staging-20260819
+          echo "ANCESTOR NO PR18 $excluded (expected: excluded in favor of PR20)"
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+          cache-disabled: true
+
+      - name: Environment fingerprint
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          java -version
+          gradle --version
+          uname -a || true
+
+      - name: Generate wrapper
+        shell: bash
+        run: bash scripts/ensure-wrapper.sh
+
+      - name: Gradle test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./gradlew --no-daemon test --console=plain
+
+      - name: Gradle build (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./gradlew --no-daemon build --console=plain
+
+      - name: Static check (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/check.sh
+
+      - name: Gradle test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon test --console=plain
+
+      - name: Gradle build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon build --console=plain
+
+      - name: Static check (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/check.sh
+
+      - name: Collect build outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultima-current-head-${{ runner.os }}-run${{ matrix.repeat }}-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/libs/*.jar
+            build/reports/**
+            build/test-results/**
