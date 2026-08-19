@@ -47,6 +47,7 @@ public final class ForensicRegressionTest {
         testTemporalMathAndSettings();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
+        MesherFastPathChecks.run();
         System.out.println("Forensic regression checks passed.");
     }
 
@@ -263,6 +264,7 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("retained_terrain"), "retained terrain must remain opt-in");
             assertFalse(defaults.get("render_snapshot"), "render snapshots must remain opt-in");
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
+            assertFalse(defaults.get("mesher_fast_path"), "mesher fast path must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
             assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
@@ -272,6 +274,12 @@ public final class ForensicRegressionTest {
             assertTrue(
                     UltimaModules.byKey("retained_terrain").incompatibleMods().contains("sodium"),
                     "retained terrain must declare Sodium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("mesher_fast_path").incompatibleMods().contains("sodium"),
+                    "mesher fast path must declare Sodium incompatibility");
+            assertTrue(
+                    UltimaModules.byKey("mesher_fast_path").dependencies().isEmpty(),
+                    "mesher fast path must not depend on retained_terrain or java_mesher");
             assertTrue(
                     UltimaModules.byKey("terrain_metrics").incompatibleMods().contains("iris"),
                     "terrain metrics must declare Iris incompatibility");

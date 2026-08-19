@@ -9,6 +9,7 @@ import dev.ultima.client.renderer.retained.RetainedCompactionDebug;
 import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
+import dev.ultima.meshing.MesherMetrics;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -44,13 +45,18 @@ public final class ClientFrameBenchmark {
     private static final boolean ENABLED = Boolean.getBoolean("ultima.clientBenchmark");
     private static final boolean EXIT_AFTER_WRITE = booleanProperty("ultima.clientBenchmark.exitAfterWrite", true);
     private static final boolean CAPTURE_SCREENSHOTS = Boolean.getBoolean("ultima.clientBenchmark.captureScreenshots");
-    private static final int WARMUP_FRAMES = positiveIntegerProperty("ultima.clientBenchmark.warmupFrames", 1200);
-    private static final int SAMPLE_FRAMES = positiveIntegerProperty("ultima.clientBenchmark.sampleFrames", 12000);
+    private static final String SCENE = System.getProperty("ultima.clientBenchmark.scene", "unspecified");
+    private static final int WARMUP_FRAMES = positiveIntegerProperty(
+            "ultima.clientBenchmark.warmupFrames", defaultWarmupFrames(SCENE));
+    private static final int SAMPLE_FRAMES = positiveIntegerProperty(
+            "ultima.clientBenchmark.sampleFrames", defaultSampleFrames(SCENE));
     private static final Path OUTPUT = Path.of(
             System.getProperty("ultima.clientBenchmark.output", "run/ultima-client-benchmark.json"));
     private static final String SCREENSHOT_PREFIX = System.getProperty(
             "ultima.clientBenchmark.screenshotPrefix", "ultima-client-benchmark");
-    private static final String CAMERA_MODE = System.getProperty("ultima.clientBenchmark.cameraMode", "stationary");
+    private static final String CAMERA_MODE = System.getProperty(
+            "ultima.clientBenchmark.cameraMode",
+            "mesher_chunk_flight".equals(SCENE) ? "chunk_flight" : "stationary");
     private static final Double CAMERA_X = doubleProperty("ultima.clientBenchmark.cameraX");
     private static final Double CAMERA_Y = doubleProperty("ultima.clientBenchmark.cameraY");
     private static final Double CAMERA_Z = doubleProperty("ultima.clientBenchmark.cameraZ");
@@ -157,6 +163,9 @@ public final class ClientFrameBenchmark {
                 TerrainFrameMetrics.resetLifetime();
                 RetainedVisibilityDebug.reset();
                 RetainedCompactionDebug.reset();
+                if ("mesher_rebuild_storm".equals(SCENE) || "mesher_chunk_flight".equals(SCENE)) {
+                    MesherMetrics.reset();
+                }
             }
             return;
         }
@@ -320,6 +329,8 @@ public final class ClientFrameBenchmark {
         appendTerrainMetrics(json);
         BenchmarkJson.comma(json);
         appendTemporalMetrics(json);
+        BenchmarkJson.comma(json);
+        MesherMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
         for (int i = 0; i < FRAME_TIMES.length; i++) {
@@ -710,6 +721,21 @@ public final class ClientFrameBenchmark {
             total += sorted[i];
         }
         return (double)total / count;
+    }
+
+    private static int defaultWarmupFrames(final String scene) {
+        return switch (scene) {
+            case "mesher_cold_load" -> 60;
+            case "mesher_rebuild_storm" -> 600;
+            default -> 1200;
+        };
+    }
+
+    private static int defaultSampleFrames(final String scene) {
+        return switch (scene) {
+            case "mesher_cold_load" -> 2400;
+            default -> 12000;
+        };
     }
 
     private static int positiveIntegerProperty(final String key, final int defaultValue) {

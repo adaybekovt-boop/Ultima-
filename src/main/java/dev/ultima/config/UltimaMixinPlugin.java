@@ -34,6 +34,12 @@ public final class UltimaMixinPlugin implements IMixinConfigPlugin {
         }
 
         boolean enabled = UltimaConfig.get().isEnabled(module);
+        if (enabled && "java_mesher".equals(module) && UltimaConfig.get().isEnabled("mesher_fast_path")) {
+            LOGGER.info(
+                    "Skipping {} because mesher_fast_path is enabled and owns SectionCompiler.compile",
+                    mixinClassName);
+            return false;
+        }
         if (!enabled) {
             LOGGER.info(
                     "Skipping {} because the '{}' module is inactive ({})",

@@ -46,7 +46,8 @@ Ultima's modules are configured in `config/ultima.properties`.
   `supporting_block_shape_skip`, `full_cube_move`
 - Enabled by default on the client only (instrumentation / no visual change): `terrain_metrics`, `temporal`
 - Opt-in renderer experiments (default off, auto-off with Sodium/Iris/Canvas):
-  `retained_terrain`, `render_snapshot`, `java_mesher`, `section_task_queue`, `rgss_endpoint`
+  `retained_terrain`, `render_snapshot`, `java_mesher`, `mesher_fast_path`,
+  `section_task_queue`, `rgss_endpoint`
 - Opt-in instrumentation only: `client_benchmark`
 - Removed after a failed RTX 3090 FPS A/B: `client_chunk_matrix_reuse`,
   `client_chunk_layer_array_reuse`, `client_chunk_dirty_dedup`
@@ -80,8 +81,10 @@ The hardware A/B dataset itself was collected on ancestor commit `6572f2e`; comm
 it are opt-in diagnostics only and do not change the release path — see the release notes'
 provenance section for the exact chain.
 
-`retained_terrain` stays **opt-in** (default off). Experimental lab PR #3 and the
-mesher fast-path PR #4 are not in `main` and stay draft / experimental / default off.
+`retained_terrain` stays **opt-in** (default off). `mesher_fast_path` is a
+separate opt-in (default off). Phase 3.2 admits 26.2 weighted unit cubes
+(stone/dirt/deepslate) with vanilla seed picking; see `MESHER_FAST_PATH.md`.
+Experimental lab PR #3 is not in `main` and stays draft / default off.
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 
