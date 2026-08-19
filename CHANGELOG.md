@@ -1,5 +1,30 @@
 # Changelog
 
+## Vanilla-client-compatible server hosting
+
+Audit and declaration pass so a host can run Ultima on a dedicated or
+integrated server while guests join with vanilla Minecraft 26.2 (no Ultima).
+
+- `fabric.mod.json`: `"environment": "*"` is unchanged (may load on host
+  client or dedicated server; it is not a both-sides-required handshake).
+  Mixin configs are now explicit objects: simulation `ultima.mixins.json` is
+  `"environment": "*"`, render `ultima.client.mixins.json` stays
+  `"environment": "client"`. Description states vanilla-client hosting.
+- Entrypoints were already correct: `main` → `dev.ultima.Ultima` (dedicated +
+  integrated server), `client` → `dev.ultima.client.UltimaClient` (Fabric
+  client-only slot). No dedicated-server-only entrypoint, so LAN Open-to-LAN
+  still loads simulation.
+- Network: no C2S/S2C channels, no Fabric optional/required payloads, no
+  custom registries, no Mod Protocol. Vanilla join is the default Fabric
+  case (protocol version only).
+- `VanillaClientHostingChecks` enforces the metadata/source contract from
+  the merged regression checkpoint.
+- User docs: `SERVER_HOSTING.md` plus a README pointer, including the
+  dedicated-server and Open-to-LAN hardware scenarios (not run in this
+  session).
+
+---
+
 ## mesher_fast_path Phase 3.2 (weighted unit-cube coverage)
 
 Expand the unit-cube fast path to vanilla 26.2 `WeightedVariants` whose
