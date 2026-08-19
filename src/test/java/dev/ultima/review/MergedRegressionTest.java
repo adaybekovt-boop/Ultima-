@@ -24,6 +24,7 @@ public final class MergedRegressionTest {
         TagBitsetEquivalenceTest.run();
         StatePropertyCacheEquivalenceTest.run();
         SlotMaskEntityQueryTest.run();
+        MergedModuleContractTest.run();
         System.out.println("Merged integration regression checks passed.");
     }
 }
