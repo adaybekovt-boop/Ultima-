@@ -4,26 +4,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Capability-based conflict policy for {@code fsr_upscaling}. This is not a
- * blanket "any renderer mod → disable" switch.
-
+ * Renderer-conflict policy for {@code fsr_upscaling}.
+ *
  * <p>{@link #disablingModIds()} is the single list {@code UltimaModules} registers
  * as {@code incompatibleMods}. {@link dev.ultima.config.UltimaConfig#resolve(String)}
- * and the settings UI both read that list; they do not re-evaluate this class.
- *
- * <ul>
- *   <li><b>Iris</b> owns the shader / post-process / framebuffer pipeline. FSR
- *       cannot share the final color target with it.</li>
- *   <li><b>Canvas</b> replaces the renderer and owns its own targets.</li>
- *   <li><b>Sodium without Iris</b> replaces terrain meshing/submission. It does
- *       not, by itself, own GameRenderer's post-world output stage in the 26.2
- *       vanilla pipeline Ultima hooks. FSR stays allowed. Residual risk: a
- *       future Sodium build that presents into a private output RT.</li>
- * </ul>
+ * and the settings UI both read that list; they do not maintain a second copy.
+ * Sodium, Iris, and Canvas all disable this implementation so FSR never competes
+ * with another renderer integration for the final world/post-process path.
  */
 public final class FsrCompatibility {
     public enum DisableReason {
         NONE(null),
+        SODIUM_OWNS_RENDERER("sodium"),
         IRIS_OWNS_POST_PROCESS("iris"),
         CANVAS_OWNS_RENDERER("canvas");
 
@@ -48,8 +40,7 @@ public final class FsrCompatibility {
     /**
      * @param irisLoaded whether the {@code iris} mod id is loaded
      * @param canvasLoaded whether the {@code canvas} mod id is loaded
-     * @param sodiumLoaded whether the {@code sodium} mod id is loaded (informational;
-     *        does not disable FSR by itself)
+     * @param sodiumLoaded whether the {@code sodium} mod id is loaded
      */
     public static DisableReason evaluate(final boolean irisLoaded, final boolean canvasLoaded, final boolean sodiumLoaded) {
         if (irisLoaded) {
@@ -58,19 +49,22 @@ public final class FsrCompatibility {
         if (canvasLoaded) {
             return DisableReason.CANVAS_OWNS_RENDERER;
         }
+        if (sodiumLoaded) {
+            return DisableReason.SODIUM_OWNS_RENDERER;
+        }
         return DisableReason.NONE;
     }
 
+    /**
+     * Kept for source compatibility with the original FSR branch. Sodium-only is
+     * now deliberately rejected by the merged renderer conflict contract.
+     */
     public static boolean allowsWithSodiumOnly(final boolean sodiumLoaded, final boolean irisLoaded, final boolean canvasLoaded) {
         return evaluate(irisLoaded, canvasLoaded, sodiumLoaded) == DisableReason.NONE;
     }
 
     /**
-     * Mod ids that auto-disable {@code fsr_upscaling}. Order matches
-     * {@link #evaluate(boolean, boolean, boolean)} (Iris before Canvas).
-     * {@link dev.ultima.config.UltimaModules} copies this into the module
-     * registry so Mixin gating, {@code resolve()}, and the settings screen
-     * share one source of truth.
+     * Mod ids that auto-disable {@code fsr_upscaling}.
      */
     public static List<String> disablingModIds() {
         List<String> ids = new ArrayList<>();
