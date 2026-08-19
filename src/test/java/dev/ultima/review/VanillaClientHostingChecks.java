@@ -53,6 +53,11 @@ final class VanillaClientHostingChecks {
             "full_cube_move",
             "cursor_step",
             "blockentity_sleeping",
+            "recipe_match_cache",
+            "tag_bitsets",
+            "state_property_cache",
+            "container_slot_mask",
+            "entity_query_early_out",
             "server_metrics");
 
     private static final Set<String> CLIENT_RENDER_MODULES = Set.of(
