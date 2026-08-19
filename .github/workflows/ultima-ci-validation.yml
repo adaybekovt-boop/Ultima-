@@ -26,24 +26,22 @@ jobs:
           from pathlib import Path
           p = Path('src/test/java/dev/ultima/review/VanillaClientHostingChecks.java')
           s = p.read_text(encoding='utf-8')
-          old = '''            "blockentity_sleeping",
-            "server_metrics");'''
-          new = '''            "blockentity_sleeping",
-            "recipe_match_cache",
-            "tag_bitsets",
-            "state_property_cache",
-            "container_slot_mask",
-            "entity_query_early_out",
-            "server_metrics");'''
-          if new in s:
-              print('hosting module union already present')
-          elif old in s:
-              s = s.replace(old, new, 1)
+          marker = '            "recipe_match_cache",\n'
+          if marker not in s:
+              needle = '            "blockentity_sleeping",\n'
+              if s.count(needle) != 1:
+                  raise SystemExit(f'unexpected blockentity_sleeping anchor count: {s.count(needle)}')
+              addition = ('            "recipe_match_cache",\n'
+                          '            "tag_bitsets",\n'
+                          '            "state_property_cache",\n'
+                          '            "container_slot_mask",\n'
+                          '            "entity_query_early_out",\n')
+              s = s.replace(needle, needle + addition, 1)
               p.write_text(s, encoding='utf-8')
-          else:
-              raise SystemExit('unexpected SIMULATION_MODULES shape')
           PY
-          grep -A20 -F 'SIMULATION_MODULES = Set.of(' src/test/java/dev/ultima/review/VanillaClientHostingChecks.java
+          for key in recipe_match_cache tag_bitsets state_property_cache container_slot_mask entity_query_early_out; do
+            grep -F "\"$key\"" src/test/java/dev/ultima/review/VanillaClientHostingChecks.java
+          done
           git diff --check
           git diff --stat
           git add src/test/java/dev/ultima/review/VanillaClientHostingChecks.java
