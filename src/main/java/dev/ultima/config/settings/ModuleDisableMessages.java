@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.fsr.FsrCompatibility;
 
 /**
  * Player-facing explanations for why a module is inactive. Machine-readable
@@ -16,13 +17,21 @@ public final class ModuleDisableMessages {
 
     public static boolean isHardLock(final UltimaConfig.ResolvedModule resolved) {
         return "incompatible_mod".equals(resolved.reason())
-                || "not_client_environment".equals(resolved.reason());
+                || "not_client_environment".equals(resolved.reason())
+                || FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason())
+                || FsrCompatibility.REASON_IRIS_RESOLUTION_NOT_CONTROLLABLE.equals(resolved.reason());
     }
 
     public static String playerFacing(final UltimaConfig.ResolvedModule resolved) {
         return switch (resolved.reason()) {
             case "enabled" -> "Active: Mixins for this module were applied at launch.";
             case "incompatible_mod" -> conflict(resolved.loadedIncompatibleMods());
+            case FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK ->
+                    "Disabled: no safe post-Iris integration point. IrisApi has no official "
+                            + "hook after its shader final pass; FSR stays off so Iris keeps working.";
+            case FsrCompatibility.REASON_IRIS_RESOLUTION_NOT_CONTROLLABLE ->
+                    "Disabled: Iris internal resolution is not controllable from Ultima, so "
+                            + "upscaling would have no effect.";
             case "not_client_environment" ->
                     "Disabled: this module is client-only and is not available on a dedicated server.";
             case "disabled_by_config" -> "Off: turned off in ultima.properties.";

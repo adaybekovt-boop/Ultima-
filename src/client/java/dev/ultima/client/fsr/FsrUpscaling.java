@@ -12,6 +12,8 @@ import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.fsr.FsrEasuConstants;
+import dev.ultima.fsr.FsrIrisCapabilities;
+import dev.ultima.fsr.FsrRuntimeGate;
 import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResourcePlan;
@@ -131,9 +133,16 @@ public final class FsrUpscaling {
     public FsrResourcePlan beginWorldPass(final int nativeWidth, final int nativeHeight) {
         this.evaluatedThisFrame = false;
         this.hudAfterUpscaleThisFrame = false;
-        if (this.failedOpen || !this.moduleEnabled()) {
-            this.releaseIfInactive(nativeWidth, nativeHeight);
-            this.worldPass = false;
+        if (!FsrRuntimeGate.allowWorldTargetHijack(
+                this.moduleEnabled(), this.failedOpen, FsrIrisCapabilities.isIrisModLoaded())) {
+            if (FsrIrisCapabilities.isIrisModLoaded() && this.moduleEnabled() && !this.failedOpen) {
+                this.failOpen(
+                        "Iris is loaded without a safe post-Iris FSR hook; leaving Iris rendering untouched",
+                        null);
+            } else {
+                this.releaseIfInactive(nativeWidth, nativeHeight);
+                this.worldPass = false;
+            }
             this.activePlan = FsrResourcePlan.inactive(nativeWidth, nativeHeight);
             return this.activePlan;
         }

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-08-19 — FSR / Iris capability gate
+
+`fsr_upscaling` is no longer on the same unconditional Sodium/Iris/Canvas
+auto-disable list as `retained_terrain` and `mesher_fast_path`. Those two
+modules are unchanged.
+
+FSR policy after this pass:
+
+- Canvas still auto-disables FSR (`incompatible_mod`).
+- Sodium-only is allowed again (existing `GameRenderer` world-pass hook).
+- Iris, including Sodium+Iris, still disables FSR, but the reason is
+  `no_safe_post_iris_integration_point`: IrisApi v0 on the Iris 26.2 branch
+  has no official hook after the shader `final` program, and Ultima cannot
+  set Iris internal render-target resolution. A native-res sharpen-only blit
+  is not shipped as upscaling.
+- Runtime fail-open: if Iris is present, FSR will not hijack
+  `mainRenderTarget`. Iris keeps working.
+
+No Iris FSR pass is inserted, so this revision adds no GPU time and no frame
+hold-back when Iris is loaded. Hardware timing of EASU+RCAS remains a manual
+vanilla/Sodium-only check; this pass does not invent milliseconds.
+
+---
+
 ## 2026-08-19 — real multi-branch integration (#11–#20)
 
 Real integration pass over the previously unmerged performance branches. The merge history

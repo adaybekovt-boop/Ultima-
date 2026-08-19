@@ -127,8 +127,10 @@ Integer size: `round(native * scale)`, then clamp to `[1, native]`.
 
 The Rendering category of Ultima Settings now exposes:
 
-- Toggle **FSR upscaling** (`fsr_upscaling`), with the same restart warning and
-  Iris/Canvas `incompatible_mod` lock as other rendering modules.
+- Toggle **FSR upscaling** (`fsr_upscaling`), with the same restart warning.
+  Canvas still uses the `incompatible_mod` lock. Iris uses a distinct capability
+  lock (`no_safe_post_iris_integration_point`), not the old blanket
+  `incompatible_mod` / `iris` reason.
 - **FSR quality** `CycleButton` (Ultra Quality / Quality / Balanced /
   Performance / Ultra Performance). Hidden while the module is off.
 
@@ -154,16 +156,80 @@ Optional JVM overrides: `-Dultima.fsr.preset=balanced` and
 
 ## Compatibility
 
-Capability-based, not “any renderer mod → off”:
+Capability-based, not “any renderer mod → off”. This list is **not** shared
+with `retained_terrain` / `mesher_fast_path` (those still auto-disable on
+Sodium, Iris, and Canvas).
 
 | Loaded mods | `fsr_upscaling` |
 |---|---|
 | None | Allowed if requested |
 | Sodium only | **Allowed.** Sodium replaces terrain meshing/submit. In 26.2 vanilla, the post-world output stage Ultima hooks is still `GameRenderer` / `mainRenderTarget`. Residual risk: a future Sodium that presents into a private output RT. |
-| Iris (with or without Sodium) | **Auto-off.** Iris owns the shader / post-process / framebuffer pipeline. Reason: `incompatible_mod` / `iris`. |
+| Iris (with or without Sodium) | **Auto-off with a specific reason.** Iris 26.2 `IrisApi` has no official hook after the shader `final` program and before GUI, and Ultima cannot set Iris internal render-target resolution from outside. Reason: `no_safe_post_iris_integration_point` (not `incompatible_mod`). A native-res sharpen-only blit is **not** shipped as if it were FSR upscaling. |
 | Canvas | **Auto-off.** Canvas owns the renderer. Reason: `incompatible_mod` / `canvas`. |
 
 Independent of `retained_terrain` and mesher modules. Either can be on or off.
+
+### Iris research (26.2 branch)
+
+**Safe official embed point: no.**
+
+Re-checked specifically for post-process of a finished frame (not geometry
+submit). `IrisApi` v0 on the Iris `26.2` branch exposes:
+
+`getInstance`, `getMinorApiRevision`, `isShaderPackInUse`,
+`isRenderingShadowPass`, `openMainIrisScreenObj`, `getMainScreenLanguageKey`,
+`getConfig`, `createTextVertexSink`, `getSunPathRotation`, `assignPipeline`.
+
+`IrisApiConfig` exposes `areShadersEnabled` and `setShadersEnabledAndApply`.
+
+None of those receive the composited color after `final`, or register a
+callback between that program and HUD. Iris issue
+[#2947](https://github.com/IrisShaders/Iris/issues/2947) is still open asking
+for exactly that hook. `WorldRenderEvents.LAST` is reported there as seeing a
+cleared or reused main framebuffer.
+
+Iris internals (`FinalPassRenderer`) do write the last pass into
+`GameRenderer.mainRenderTarget()` as an implementation detail. That is not a
+public API. Mixin-hacking it would also fight Iris's own framebuffer reuse
+and is rejected here.
+
+**Internal resolution control: no. Outcome: disabled, not sharpening-only.**
+
+Iris gbuffer / composite sizes are pack-authored (`scale.<program>`,
+`size.buffer.*`) or left at window size. Iris has no public render-scale
+setter ([#757](https://github.com/IrisShaders/Iris/issues/757),
+[#2052](https://github.com/IrisShaders/Iris/issues/2052)). External
+window/viewport tricks conflict with Iris
+([#3150](https://github.com/IrisShaders/Iris/issues/3150)). Without that
+control, FSR would only blit an already-native Iris frame — visual sharpen,
+no render-load reduction. That reduced mode is **not** implemented.
+
+Fail-open: if Iris is present, FSR Mixins do not apply and the runtime gate
+refuses to hijack `mainRenderTarget`. Iris keeps working. FSR never takes
+Iris down with it.
+
+### Latency (FSR1 vs Frame Generation)
+
+FSR1 is spatial EASU + RCAS on the **current** finished world frame. It does
+not store history, does not interpolate a held-back frame, and does not wait
+for the next frame before presenting this one. Frame Generation is
+intentionally not implemented because that feature adds delay by design.
+
+| Situation | Added input-style delay | Added GPU work |
+|---|---|---|
+| Iris loaded (this revision) | **None.** FSR does not run. | **0 ms.** No EASU+RCAS pass is submitted. |
+| Vanilla / Sodium-only, FSR on | No extra displayed frame. Extra input latency is at most the GPU time of EASU+RCAS, not a queued frame and not slower server ticks. | One EASU fullscreen pass + one RCAS fullscreen pass. |
+
+**GPU milliseconds are not invented here.** Measuring “Iris finished” →
+“frame shown” with and without FSR requires a real GPU (timestamp queries or
+a frame profiler). On the Iris path the delta is defined as **0** because
+the pass is not inserted. On the vanilla path, record EASU+RCAS GPU time
+versus total frame time in-game; that number is pass time, not “the server
+got slower.”
+
+`FailOpenGuard` is the simulation-module circuit breaker and is the wrong
+layer for this GPU path. FSR already has session `FsrUpscaling.failOpen`:
+park the world target, leave native / Iris rendering alone.
 
 ---
 
@@ -216,7 +282,9 @@ There is no GPU in this environment. Still required on real hardware:
 - Real FPS / 1% low vs native at each preset (do not invent numbers)
 - OpenGL shader compile of the Ultima FSR pipelines on the target driver
 - Sodium-only smoke (allowed by policy; still untested)
-- Iris/Canvas auto-disable log lines in a real loader
+- Iris present: confirm FSR stays off with `no_safe_post_iris_integration_point`, Iris shaders/HUD look normal, and Ultima does not hijack `mainRenderTarget`
+- Canvas auto-disable log line (`incompatible_mod`) in a real loader
+- Vanilla FSR EASU+RCAS GPU pass time vs total frame time (do not invent numbers)
 - Window resize / fullscreen toggle without stale targets
 - Resource-pack reload (pipelines invalidate and recompile)
 - World-icon auto-screenshot now runs **after RCAS** on vanilla main (native

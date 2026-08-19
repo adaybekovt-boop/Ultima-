@@ -70,10 +70,16 @@ final class MergedModuleContractTest {
         assertTrue(UltimaModules.byKey("recipe_match_cache").incompatibleMods().isEmpty(),
                 "recipe_match_cache deliberately stays compatible with Lithium/Canary/Radium");
 
-        for (String key : List.of("retained_terrain", "mesher_fast_path", "fsr_upscaling")) {
+        for (String key : List.of("retained_terrain", "mesher_fast_path")) {
             assertEquals(RENDERER_FAMILY, UltimaModules.byKey(key).incompatibleMods(),
-                    key + " Sodium/Iris/Canvas auto-disable");
+                    key + " Sodium/Iris/Canvas auto-disable is unchanged");
         }
+        assertEquals(List.of("canvas"), UltimaModules.byKey("fsr_upscaling").incompatibleMods(),
+                "fsr_upscaling unconditional incompatibleMods is Canvas only");
+        assertFalse(UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("sodium"),
+                "fsr_upscaling is no longer unconditionally disabled by Sodium");
+        assertFalse(UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("iris"),
+                "fsr_upscaling is no longer unconditionally disabled by Iris");
 
         for (String key : List.of(
                 "blockentity_sleeping", "recipe_match_cache", "tag_bitsets", "state_property_cache",
