@@ -76,9 +76,9 @@ final class MergedModuleContractTest {
         }
         assertEquals(List.of("canvas"), UltimaModules.byKey("fsr_upscaling").incompatibleMods(),
                 "fsr_upscaling unconditional incompatibleMods is Canvas only");
-        assertFalse(UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("sodium"),
+        assertTrue(!UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("sodium"),
                 "fsr_upscaling is no longer unconditionally disabled by Sodium");
-        assertFalse(UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("iris"),
+        assertTrue(!UltimaModules.byKey("fsr_upscaling").incompatibleMods().contains("iris"),
                 "fsr_upscaling is no longer unconditionally disabled by Iris");
 
         for (String key : List.of(
