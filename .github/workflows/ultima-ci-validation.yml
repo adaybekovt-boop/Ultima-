@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/provenance-compaction-p0
+      - integration/ultima-real-merge-20260819
   pull_request:
     branches:
       - main
@@ -56,20 +57,35 @@ jobs:
         shell: bash
         run: bash scripts/ensure-wrapper.sh
 
-      - name: Clean build + tests + forensic checks (Linux)
+      - name: Gradle test (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          set -euxo pipefail
-          ./gradlew --no-daemon clean build test
-          python3 scripts/summarize-client-bench.py --self-test
+        run: ./gradlew --no-daemon test --console=plain
 
-      - name: Clean build + tests + forensic checks (Windows)
+      - name: Gradle build (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./gradlew --no-daemon build --console=plain
+
+      - name: Static check (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/check.sh
+
+      - name: Gradle test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          .\gradlew.bat --no-daemon clean build test
-          python scripts/summarize-client-bench.py --self-test
+        run: .\gradlew.bat --no-daemon test --console=plain
+
+      - name: Gradle build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon build --console=plain
+
+      - name: Static check (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/check.sh
 
       - name: Collect build outputs
         if: always()
