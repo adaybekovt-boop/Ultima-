@@ -14,6 +14,7 @@ public final class MergedRegressionTest {
     }
 
     public static void main(final String[] args) {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         ForensicRegressionTest.main(args);
         VanillaClientHostingChecks.run();
         FsrUpscalingChecks.run();

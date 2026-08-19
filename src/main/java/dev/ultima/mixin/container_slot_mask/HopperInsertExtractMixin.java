@@ -2,6 +2,7 @@ package dev.ultima.mixin.container_slot_mask;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.ultima.failopen.FailOpenGuard;
 import dev.ultima.inventory.SlotMaskQueries;
 import dev.ultima.inventory.SlotMaskTracker;
 import dev.ultima.inventory.VanillaSlotMaskAllowlist;
@@ -27,7 +28,13 @@ public abstract class HopperInsertExtractMixin {
                     target = "Lnet/minecraft/world/level/block/entity/HopperBlockEntity;getSlots(Lnet/minecraft/world/Container;Lnet/minecraft/core/Direction;)[I"))
     private static int[] ultimaFilterEmptySourceSlots(
             final Container container, final Direction direction, final Operation<int[]> original) {
-        return SlotMaskQueries.filterOccupiedPreservingOrder(container, original.call(container, direction));
+        int[] slots = original.call(container, direction);
+        try {
+            return SlotMaskQueries.filterOccupiedPreservingOrder(container, slots);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
+            return slots;
+        }
     }
 
     @Inject(method = "ejectItems", at = @At("HEAD"))
@@ -36,7 +43,11 @@ public abstract class HopperInsertExtractMixin {
             final net.minecraft.core.BlockPos blockPos,
             final HopperBlockEntity self,
             final CallbackInfoReturnable<Boolean> cir) {
-        SlotMaskQueries.shouldIterateOccupied(self);
+        try {
+            SlotMaskQueries.shouldIterateOccupied(self);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, self, error);
+        }
     }
 
     @WrapOperation(
@@ -46,11 +57,15 @@ public abstract class HopperInsertExtractMixin {
                     target = "Lnet/minecraft/world/level/block/entity/HopperBlockEntity;getItem(I)Lnet/minecraft/world/item/ItemStack;"))
     private static ItemStack ultimaSkipEmptyHopperSlots(
             final HopperBlockEntity self, final int slot, final Operation<ItemStack> original) {
-        if (!VanillaSlotMaskAllowlist.mayConsume(self) || !SlotMaskTracker.of(self).trusted()) {
-            return original.call(self, slot);
-        }
-        if (!SlotMaskTracker.of(self).hintedOccupied(slot)) {
-            return ItemStack.EMPTY;
+        try {
+            if (!VanillaSlotMaskAllowlist.mayConsume(self) || !SlotMaskTracker.of(self).trusted()) {
+                return original.call(self, slot);
+            }
+            if (!SlotMaskTracker.of(self).hintedOccupied(slot)) {
+                return ItemStack.EMPTY;
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, self, error);
         }
         return original.call(self, slot);
     }

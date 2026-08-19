@@ -1,5 +1,6 @@
 package dev.ultima.mixin.container_slot_mask;
 
+import dev.ultima.failopen.FailOpenGuard;
 import dev.ultima.inventory.SlotMaskHooks;
 import dev.ultima.inventory.SlotMaskQueries;
 import net.minecraft.core.NonNullList;
@@ -61,9 +62,13 @@ public abstract class BaseContainerBlockEntityMixin implements Container {
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
     private void ultimaIsEmpty(final CallbackInfoReturnable<Boolean> cir) {
-        Boolean empty = SlotMaskQueries.tryExactEmpty(this);
-        if (empty != null) {
-            cir.setReturnValue(empty);
+        try {
+            Boolean empty = SlotMaskQueries.tryExactEmpty(this);
+            if (empty != null) {
+                cir.setReturnValue(empty);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
         }
     }
 }

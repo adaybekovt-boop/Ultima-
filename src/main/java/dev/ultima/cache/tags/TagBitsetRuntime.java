@@ -3,6 +3,7 @@ package dev.ultima.cache.tags;
 import dev.ultima.Ultima;
 import dev.ultima.cache.CacheMetrics;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.failopen.FailOpenGuard;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -81,10 +82,17 @@ public final class TagBitsetRuntime {
     }
 
     public static void drop(final String reason) {
-        if (snapshot != null) {
+        try {
+            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.TAG_BITSETS, reason);
+            if (snapshot != null) {
+                snapshot = null;
+                METRICS.invalidations.incrementAndGet();
+                Ultima.LOGGER.debug("Ultima tag bitsets dropped ({})", reason);
+            }
+        } catch (Throwable error) {
             snapshot = null;
             METRICS.invalidations.incrementAndGet();
-            Ultima.LOGGER.debug("Ultima tag bitsets dropped ({})", reason);
+            FailOpenGuard.failOpen(FailOpenGuard.Module.TAG_BITSETS, reason, error);
         }
     }
 
@@ -98,6 +106,7 @@ public final class TagBitsetRuntime {
             return;
         }
         try {
+            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.TAG_BITSETS, "rebuild");
             int generation = GENERATION.incrementAndGet();
             TagBitsetIndex.Builder builder = TagBitsetIndex.builder(generation);
             int registries = 0;
@@ -118,7 +127,7 @@ public final class TagBitsetRuntime {
         } catch (Throwable t) {
             snapshot = null;
             METRICS.invalidations.incrementAndGet();
-            Ultima.LOGGER.warn("Ultima tag bitset rebuild failed; using vanilla Holder.is(TagKey).", t);
+            FailOpenGuard.failOpen(FailOpenGuard.Module.TAG_BITSETS, "rebuild", t);
         }
     }
 
@@ -126,6 +135,24 @@ public final class TagBitsetRuntime {
      * @return boxed membership when the snapshot covers this probe; {@code null} to run vanilla
      */
     public static @Nullable Boolean lookup(
+            final ResourceKey<? extends Registry<?>> holderRegistry,
+            final TagKey<?> tag,
+            final int rawId) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.TAG_BITSETS, tag, () -> lookupUnchecked(holderRegistry, tag, rawId));
+    }
+
+    /**
+     * Bit-mask probe used by tests and by {@link #lookup}. A fault returns {@code null} so the
+     * caller runs vanilla {@code Holder.is(TagKey)} for this tag only.
+     */
+    public static @Nullable Boolean probe(
+            final TagBitsetIndex index, final TagKey<?> tag, final int rawId) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.TAG_BITSETS, tag, () -> index == null ? null : index.contains(tag, rawId));
+    }
+
+    private static @Nullable Boolean lookupUnchecked(
             final ResourceKey<? extends Registry<?>> holderRegistry,
             final TagKey<?> tag,
             final int rawId) {

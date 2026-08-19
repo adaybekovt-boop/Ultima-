@@ -1,5 +1,6 @@
 package dev.ultima.mixin.container_slot_mask;
 
+import dev.ultima.failopen.FailOpenGuard;
 import dev.ultima.inventory.SlotMaskHooks;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
@@ -44,9 +45,13 @@ public interface ListBackedContainerMixin {
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
     private void ultimaIsEmpty(final CallbackInfoReturnable<Boolean> cir) {
-        Boolean empty = dev.ultima.inventory.SlotMaskQueries.tryExactEmpty((Container)(Object)this);
-        if (empty != null) {
-            cir.setReturnValue(empty);
+        try {
+            Boolean empty = dev.ultima.inventory.SlotMaskQueries.tryExactEmpty((Container)(Object)this);
+            if (empty != null) {
+                cir.setReturnValue(empty);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
         }
     }
 }

@@ -3,6 +3,7 @@ package dev.ultima.mixin.entity_query_early_out;
 import dev.ultima.entityquery.EntitySectionCounterHolder;
 import dev.ultima.entityquery.EntitySectionCounters;
 import dev.ultima.entityquery.EntitySectionOccupant;
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.world.level.entity.EntityAccess;
 import net.minecraft.world.level.entity.EntitySection;
 import org.spongepowered.asm.mixin.Mixin;
@@ -29,13 +30,23 @@ public abstract class EntitySectionMixin<T extends EntityAccess> implements Enti
 
     @Inject(method = "add", at = @At("RETURN"))
     private void ultimaAfterAdd(final T entity, final CallbackInfo ci) {
-        EntitySectionOccupant.of(entity).addTo(this.ultima$counters);
+        try {
+            EntitySectionOccupant.of(entity).addTo(this.ultima$counters);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.ENTITY_QUERY_EARLY_OUT, "section-add", error);
+            this.ultima$counters.add(false, false, false, true);
+        }
     }
 
     @Inject(method = "remove", at = @At("RETURN"))
     private void ultimaAfterRemove(final T entity, final CallbackInfoReturnable<Boolean> cir) {
-        if (Boolean.TRUE.equals(cir.getReturnValue())) {
-            EntitySectionOccupant.of(entity).removeFrom(this.ultima$counters);
+        try {
+            if (Boolean.TRUE.equals(cir.getReturnValue())) {
+                EntitySectionOccupant.of(entity).removeFrom(this.ultima$counters);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.ENTITY_QUERY_EARLY_OUT, "section-remove", error);
+            this.ultima$counters.add(false, false, false, true);
         }
     }
 }

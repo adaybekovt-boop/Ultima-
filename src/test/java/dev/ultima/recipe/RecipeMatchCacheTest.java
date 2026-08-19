@@ -26,6 +26,7 @@ public final class RecipeMatchCacheTest {
     }
 
     public static void main(final String[] args) {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         testVanillaClassPolicy();
         testShapelessOrderIndependence();
         testShapedGeometrySensitivity();

@@ -1,5 +1,6 @@
 package dev.ultima.inventory;
 
+import dev.ultima.failopen.FailOpenGuard;
 import java.util.Arrays;
 import java.util.function.IntConsumer;
 import net.minecraft.world.CompoundContainer;
@@ -14,12 +15,60 @@ public final class SlotMaskQueries {
     }
 
     public static @org.jspecify.annotations.Nullable Boolean tryExactEmpty(final Container container) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, () -> tryExactEmptyUnchecked(container));
+    }
+
+    /**
+     * @return {@code true} when occupied slots were visited via the mask in vanilla index order
+     */
+    public static boolean forEachOccupied(final Container container, final IntConsumer visitor) {
+        try {
+            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
+            return forEachOccupiedUnchecked(container, visitor);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
+            if (container != null) {
+                SlotMaskTracker.invalidate(container);
+                vanillaVisit(container, visitor);
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Filters {@code slots} to currently occupied entries, preserving relative order. Used by hopper
+     * extract: empty slots are no-ops in vanilla, so skipping them is equivalent when the hint is
+     * trusted. Untrusted or disallowed containers receive the original array.
+     */
+    public static int[] filterOccupiedPreservingOrder(final Container container, final int[] slots) {
+        try {
+            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
+            return filterOccupiedPreservingOrderUnchecked(container, slots);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
+            if (container != null) {
+                SlotMaskTracker.invalidate(container);
+            }
+            return slots;
+        }
+    }
+
+    public static boolean shouldIterateOccupied(final Container container) {
+        return FailOpenGuard.test(
+                FailOpenGuard.Module.CONTAINER_SLOT_MASK,
+                container,
+                () -> shouldIterateOccupiedUnchecked(container),
+                false);
+    }
+
+    private static @org.jspecify.annotations.Nullable Boolean tryExactEmptyUnchecked(final Container container) {
         if (!VanillaSlotMaskAllowlist.mayConsume(container)) {
             return null;
         }
         if (container instanceof CompoundContainer compound) {
-            Boolean left = tryExactEmpty(CompoundContainerViews.left(compound));
-            Boolean right = tryExactEmpty(CompoundContainerViews.right(compound));
+            Boolean left = tryExactEmptyUnchecked(CompoundContainerViews.left(compound));
+            Boolean right = tryExactEmptyUnchecked(CompoundContainerViews.right(compound));
             if (left == null || right == null) {
                 return null;
             }
@@ -28,10 +77,7 @@ public final class SlotMaskQueries {
         return SlotMaskTracker.of(container).tryExactEmpty(SlotMaskTracker.occupancy(container));
     }
 
-    /**
-     * @return {@code true} when occupied slots were visited via the mask in vanilla index order
-     */
-    public static boolean forEachOccupied(final Container container, final IntConsumer visitor) {
+    private static boolean forEachOccupiedUnchecked(final Container container, final IntConsumer visitor) {
         if (!VanillaSlotMaskAllowlist.mayConsume(container)) {
             vanillaVisit(container, visitor);
             return false;
@@ -42,12 +88,7 @@ public final class SlotMaskQueries {
         return SlotMaskTracker.of(container).forEachOccupied(SlotMaskTracker.occupancy(container), visitor);
     }
 
-    /**
-     * Filters {@code slots} to currently occupied entries, preserving relative order. Used by hopper
-     * extract: empty slots are no-ops in vanilla, so skipping them is equivalent when the hint is
-     * trusted. Untrusted or disallowed containers receive the original array.
-     */
-    public static int[] filterOccupiedPreservingOrder(final Container container, final int[] slots) {
+    private static int[] filterOccupiedPreservingOrderUnchecked(final Container container, final int[] slots) {
         if (slots.length == 0 || !VanillaSlotMaskAllowlist.mayConsume(container)) {
             return slots;
         }
@@ -61,7 +102,7 @@ public final class SlotMaskQueries {
         return filterByHint(mask, slots);
     }
 
-    public static boolean shouldIterateOccupied(final Container container) {
+    private static boolean shouldIterateOccupiedUnchecked(final Container container) {
         if (!VanillaSlotMaskAllowlist.mayConsume(container) || container instanceof CompoundContainer) {
             return false;
         }
