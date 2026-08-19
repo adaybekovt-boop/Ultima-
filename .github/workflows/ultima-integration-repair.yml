@@ -1,0 +1,295 @@
+name: Ultima integration repair
+
+on:
+  push:
+    branches:
+      - integration/ultima-firstwave-fix-staging-20260819
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/ultima-firstwave-fix-staging-20260819
+          fetch-depth: 0
+
+      - name: Restore first-wave HIGH fixes and preserve second-wave union
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git fetch --all --prune
+          FIX=47e1abb22d2b4f1be95fdae022d9df71c8bafb8f
+
+          copy_from_fix() {
+            local p="$1"
+            mkdir -p "$(dirname "$p")"
+            git show "$FIX:$p" > "$p"
+          }
+
+          # Files owned only by the first-wave FSR/temporal, telemetry, and hopper modules.
+          for p in \
+            src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java \
+            src/client/java/dev/ultima/mixin/temporal/GameRendererMixin.java \
+            src/main/java/dev/ultima/mixin/blockentity_sleeping/BaseContainerBlockEntityMixin.java \
+            src/main/java/dev/ultima/mixin/blockentity_sleeping/BlockEntityMixin.java \
+            src/main/java/dev/ultima/mixin/blockentity_sleeping/HopperBlockEntityMixin.java \
+            src/main/java/dev/ultima/mixin/server_metrics/ChunkMapTrackedEntityMixin.java \
+            src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java \
+            src/main/java/dev/ultima/server/metrics/MetricId.java \
+            src/main/java/dev/ultima/server/metrics/ServerTelemetry.java \
+            src/main/java/dev/ultima/sleeping/BlockEntitySleepMetrics.java \
+            src/main/java/dev/ultima/sleeping/BlockEntitySleepRuntime.java \
+            src/main/java/dev/ultima/sleeping/HopperSleepFailOpen.java \
+            src/main/java/dev/ultima/sleeping/SleepController.java \
+            src/main/java/dev/ultima/sleeping/WakeRegistry.java \
+            src/test/java/dev/ultima/review/ServerTelemetryChecks.java \
+            src/test/java/dev/ultima/sleeping/HopperSleepEquivalenceTest.java; do
+            copy_from_fix "$p"
+          done
+
+          # Restore the module-gated title-screen mixin. No second-wave branch touches client mixins.
+          copy_from_fix src/client/java/dev/ultima/mixin/settings_ui/TitleScreenMixin.java
+          copy_from_fix src/client/resources/ultima.client.mixins.json
+          rm -f src/client/java/dev/ultima/mixin/TitleScreenMixin.java
+
+          # Keep client-only language resources out of the dedicated-server source set.
+          copy_from_fix src/client/resources/assets/ultima/lang/en_us.json
+          rm -rf src/main/resources/assets/ultima/lang
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing replacement anchor: {label}')
+              return text.replace(old, new, 1)
+
+          # Ultima.java: preserve #19 RegistryCacheLifecycle and restore hopper wake-registry cleanup.
+          p = 'src/main/java/dev/ultima/Ultima.java'
+          s = read(p)
+          if 'BlockEntitySleepRuntime' not in s:
+              s = replace_once(s,
+                  'import dev.ultima.server.metrics.ServerMetrics;\n',
+                  'import dev.ultima.server.metrics.ServerMetrics;\nimport dev.ultima.sleeping.BlockEntitySleepRuntime;\n',
+                  'Ultima sleep import')
+              s = replace_once(s,
+                  'import net.fabricmc.api.ModInitializer;\n',
+                  'import net.fabricmc.api.ModInitializer;\nimport net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;\nimport net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;\n',
+                  'Ultima lifecycle imports')
+              s = replace_once(s,
+                  '        RegistryCacheLifecycle.register();\n        UltimaCommands.register();\n',
+                  '        RegistryCacheLifecycle.register();\n        UltimaCommands.register();\n        ServerLifecycleEvents.SERVER_STOPPED.register(server -> BlockEntitySleepRuntime.clearAll());\n        ServerLevelEvents.UNLOAD.register((server, level) -> BlockEntitySleepRuntime.clearLevel(level));\n',
+                  'Ultima cleanup registrations')
+          write(p, s)
+
+          # Commands: retain all merged subcommands and make the intended LEVEL_ALL policy explicit.
+          p = 'src/main/java/dev/ultima/command/UltimaCommands.java'
+          s = read(p)
+          if 'Commands.literal("config")\n                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))' not in s:
+              s = replace_once(s,
+                  '                .then(Commands.literal("config").executes(context -> config(context.getSource())))\n',
+                  '                .then(Commands.literal("config")\n                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))\n                        .executes(context -> config(context.getSource())))\n',
+                  'config LEVEL_ALL')
+              s = replace_once(s,
+                  '                .then(Commands.literal("debug")\n                        .then(Commands.literal("compatibility")\n                                .executes(context -> compatibility(context.getSource()))))\n',
+                  '                .then(Commands.literal("debug")\n                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))\n                        .then(Commands.literal("compatibility")\n                                .requires(Commands.hasPermission(Commands.LEVEL_ALL))\n                                .executes(context -> compatibility(context.getSource()))))\n',
+                  'debug LEVEL_ALL')
+          write(p, s)
+
+          # Registry: preserve second-wave modules/current FSR renderer-family policy, restore settings_ui.
+          p = 'src/main/java/dev/ultima/config/UltimaModules.java'
+          s = read(p)
+          if '"settings_ui"' not in s:
+              s = replace_once(s,
+                  '                    FSR_RENDERER_FAMILY));\n',
+                  '                    FSR_RENDERER_FAMILY),\n            Module.client("settings_ui", true,\n                    "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "\n                            + "does not change networking or world simulation. Disable to hide the button; "\n                            + "/ultima config and Mod Menu remain available.",\n                    List.of()));\n',
+                  'settings_ui module')
+          write(p, s)
+
+          # Settings catalog: all merged modules plus the title-screen UI gate.
+          p = 'src/main/java/dev/ultima/config/settings/UltimaSettingsCatalog.java'
+          s = read(p)
+          if '"settings_ui"' not in s:
+              anchor = '    }\n\n    private UltimaSettingsCatalog() {'
+              row = '''        register(new ModuleSettingSpec(\n                "settings_ui",\n                "Title-screen settings button",\n                "Adds an Ultima button on the title screen when Mod Menu is not installed. "\n                        + "/ultima config and Mod Menu still work if this is off. Mixins apply at "\n                        + "the next launch.",\n                SettingsCategory.ADVANCED,\n                ApplyPolicy.RESTART_GAME));\n'''
+              s = replace_once(s, anchor, row + '    }\n\n    private UltimaSettingsCatalog() {', 'settings_ui catalog row')
+          write(p, s)
+
+          # Vanilla hosting contract: every client mixin must be packaged under a registered module.
+          p = 'src/test/java/dev/ultima/review/VanillaClientHostingChecks.java'
+          s = read(p)
+          if '"settings_ui"' not in s:
+              s = replace_once(s,
+                  '            "temporal",\n            "fsr_upscaling");',
+                  '            "temporal",\n            "fsr_upscaling",\n            "settings_ui");',
+                  'hosting client settings module')
+          s = s.replace('''            if (firstDot <= 0) {\n                if (client && "TitleScreenMixin".equals(className)) {\n                    continue;\n                }\n                throw new AssertionError("mixin class is not packaged by module: " + className);\n            }''', '''            if (firstDot <= 0) {\n                throw new AssertionError("mixin class is not packaged by module: " + className);\n            }''')
+          old_assets = '''        Path assets = MAIN_RESOURCES.resolve("assets");\n        if (!Files.exists(assets)) {\n            return;\n        }\n        try (Stream<Path> walk = Files.walk(assets)) {\n            List<String> unexpected = walk\n                    .filter(Files::isRegularFile)\n                    .map(assets::relativize)\n                    .map(Path::toString)\n                    .map(path -> path.replace('\\\\', '/'))\n                    .filter(path -> !path.startsWith("ultima/lang/"))\n                    .toList();\n            assertTrue(unexpected.isEmpty(),\n                    "common assets are limited to local language metadata; unexpected=" + unexpected);\n        } catch (IOException e) {\n            throw new AssertionError("could not scan common assets", e);\n        }'''
+          if old_assets in s:
+              s = s.replace(old_assets, '        Path assets = MAIN_RESOURCES.resolve("assets");\n        assertFalse(Files.exists(assets), "client-only assets must not ship from the common server resource set");', 1)
+          write(p, s)
+
+          # Existing merged settings tests: account for restored settings_ui without discarding second-wave assertions.
+          p = 'src/test/java/dev/ultima/review/SettingsScreenLogicTest.java'
+          s = read(p)
+          s = s.replace('assertEquals(23L, UltimaModules.all().size(), "merged module count");',
+                        'assertEquals(24L, UltimaModules.all().size(), "merged module count");')
+          s = s.replace('assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");',
+                        'assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");')
+          if 'settings_ui is Advanced client UI' not in s:
+              anchor = '''        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics is Advanced instrumentation");'''
+              addition = anchor + '''\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui is Advanced client UI");'''
+              s = replace_once(s, anchor, addition, 'settings test category')
+          write(p, s)
+
+          # Final merged module contract now covers 24 modules including settings_ui.
+          p = 'src/test/java/dev/ultima/review/MergedModuleContractTest.java'
+          s = read(p)
+          if 'expectedDefaults.put("settings_ui", true);' not in s:
+              s = replace_once(s,
+                  '        expectedDefaults.put("fsr_upscaling", false);\n',
+                  '        expectedDefaults.put("fsr_upscaling", false);\n        expectedDefaults.put("settings_ui", true);\n',
+                  'merged default settings_ui')
+          s = s.replace('assertEquals(23, UltimaModules.all().size(), "module count");',
+                        'assertEquals(24, UltimaModules.all().size(), "module count");')
+          if 'settings_ui category Advanced' not in s:
+              anchor = '''        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics category Advanced");'''
+              addition = anchor + '''\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui category Advanced");'''
+              s = replace_once(s, anchor, addition, 'merged settings category')
+          write(p, s)
+
+          # Documentation must match the actual registry, not the pre-fix 23-module tree.
+          p = 'README.md'
+          s = read(p)
+          if '- `settings_ui`' not in s:
+              s = replace_once(s,
+                  '- `temporal`\n',
+                  '- `temporal`\n- `settings_ui`\n',
+                  'README settings_ui default on')
+          s = s.replace('all 23 registered modules', 'all 24 registered modules')
+          write(p, s)
+
+          p = 'CHANGELOG.md'
+          s = read(p)
+          s = s.replace('all 23 final modules', 'all 24 final modules')
+          if 'restored `settings_ui` module gate' not in s:
+              anchor = '- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the\n  restart-required apply policy.\n'
+              s = replace_once(s, anchor, anchor + '- restored `settings_ui` module gate for the fallback title-screen button; the Mixin is no longer an ungated root class.\n', 'changelog settings gate')
+          write(p, s)
+
+          # CI provenance: exact commands requested by the merge audit, on the actual integration HEAD.
+          p = '.github/workflows/ultima-ci-validation.yml'
+          s = read(p)
+          s = s.replace('          fetch-depth: 1\n', '          fetch-depth: 0\n', 1)
+          if 'Merge provenance and branch ancestry' not in s:
+              anchor = '''      - name: Set up Java 25\n'''
+              step = '''      - name: Merge provenance and branch ancestry\n        if: runner.os == 'Linux' && matrix.repeat == 1\n        shell: bash\n        run: |\n          set -euxo pipefail\n          git fetch --all --prune\n          for ref in \\\n            cursor/mesher-fast-path-coverage-4c53 \\\n            cursor/vanilla-client-hosting-afd5 \\\n            cursor/fsr-settings-ui-ffb3 \\\n            cursor/server-telemetry-6b86 \\\n            cursor/blockentity-sleeping-2ea6 \\\n            cursor/recipe-match-cache-d06f \\\n            cursor/container-slot-masks-entity-earlyout-8317 \\\n            cursor/tag-bitsets-state-cache-3b93 \\\n            cursor/container-slot-masks-entity-query-early-outs-bea1; do\n            echo "===== git log origin/$ref --oneline ====="\n            git log "origin/$ref" --oneline\n            echo "===== git merge-base origin/main origin/$ref ====="\n            git merge-base origin/main "origin/$ref"\n          done\n          echo "===== git log --oneline --graph --decorate --all ====="\n          git log --oneline --graph --decorate --all\n          echo "===== git diff --stat origin/main...HEAD ====="\n          git diff --stat origin/main...HEAD\n          for sha in \\\n            8d3e5f6236d568625127a331b4d1e42043bddb55 \\\n            30a22b1cc14a1d82486c35c11da109ec1dde1587 \\\n            e9af621b64a4bb3174bfde972309d7e09ba0d8d5 \\\n            c2958b8086f080f9957cd9d118248997c6982619 \\\n            93191b04b2ceb5372db12f7258f124d92aab9af0 \\\n            4fc2206452a3b438c110b7ef373a626c9cf127e2 \\\n            69fad0451b0534d998b42c27f3ef9932c2e528da \\\n            b15e003759d321dd7b689caf2325bf5bebdf0581; do\n            git merge-base --is-ancestor "$sha" HEAD\n            echo "ANCESTOR YES $sha"\n          done\n          if git merge-base --is-ancestor 6f0fa61c375158c82e8c4ad8105363cd562fcf16 HEAD; then\n            echo "ERROR: excluded PR #18 head is an ancestor" >&2\n            exit 1\n          else\n            echo "ANCESTOR NO (expected, PR #18 excluded) 6f0fa61c375158c82e8c4ad8105363cd562fcf16"\n          fi\n\n'''
+              s = replace_once(s, anchor, step + anchor, 'CI provenance step')
+          write(p, s)
+          PY
+
+          # Add a small guard suite for the post-merge HIGH fixes that were previously lost.
+          cat > src/test/java/dev/ultima/review/FirstWaveHighFixRegressionTest.java <<'JAVA'
+          package dev.ultima.review;
+
+          import dev.ultima.config.UltimaModules;
+          import dev.ultima.config.settings.SettingsCategory;
+          import dev.ultima.config.settings.UltimaSettingsCatalog;
+          import java.nio.charset.StandardCharsets;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+
+          final class FirstWaveHighFixRegressionTest {
+              private FirstWaveHighFixRegressionTest() {
+              }
+
+              static void run() {
+                  var settings = UltimaModules.byKey("settings_ui");
+                  assertTrue(settings != null && settings.enabledByDefault() && settings.clientOnly(),
+                          "settings_ui must be a default-on client module");
+                  assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
+                          "settings_ui must be exposed in Advanced settings");
+
+                  String clientMixins = read("src/client/resources/ultima.client.mixins.json");
+                  assertTrue(clientMixins.contains("settings_ui.TitleScreenMixin"),
+                          "title-screen mixin must be module-gated");
+                  assertTrue(!clientMixins.contains("\\\"TitleScreenMixin\\\""),
+                          "ungated root TitleScreenMixin must not return");
+
+                  String fsr = read("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
+                  String temporal = read("src/client/java/dev/ultima/mixin/temporal/GameRendererMixin.java");
+                  assertTrue(fsr.contains("priority = 1100"), "FSR GameRenderer mixin priority");
+                  assertTrue(temporal.contains("priority = 900"), "temporal GameRenderer mixin priority");
+
+                  String init = read("src/main/java/dev/ultima/Ultima.java");
+                  assertTrue(init.contains("ServerLifecycleEvents.SERVER_STOPPED"), "hopper registry cleanup on server stop");
+                  assertTrue(init.contains("ServerLevelEvents.UNLOAD"), "hopper registry cleanup on level unload");
+                  assertTrue(init.contains("RegistryCacheLifecycle.register()"), "second-wave registry lifecycle must survive the fix merge");
+
+                  assertTrue(Files.exists(Path.of("src/main/java/dev/ultima/sleeping/HopperSleepFailOpen.java")),
+                          "hopper fail-open helper must exist");
+                  assertTrue(read("src/main/java/dev/ultima/mixin/blockentity_sleeping/HopperBlockEntityMixin.java")
+                                  .contains("HopperSleepFailOpen.failOpen"),
+                          "hopper tick path must fail open to vanilla");
+                  assertTrue(read("src/main/java/dev/ultima/mixin/server_metrics/ChunkMapTrackedEntityMixin.java")
+                                  .contains("require = 0"),
+                          "Lithium-fragile tracked-entity telemetry inject must be optional");
+                  assertTrue(read("src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java")
+                                  .contains("require = 0"),
+                          "Lithium-fragile server-level telemetry inject must be optional");
+                  assertTrue(read("src/main/java/dev/ultima/server/metrics/MetricId.java").contains("BE_THRASHES"),
+                          "be.thrashes metric must survive integration");
+
+                  System.out.println("First-wave HIGH-fix regression checks passed.");
+              }
+
+              private static String read(final String path) {
+                  try {
+                      return Files.readString(Path.of(path), StandardCharsets.UTF_8);
+                  } catch (Exception e) {
+                      throw new AssertionError("could not read " + path, e);
+                  }
+              }
+
+              private static void assertTrue(final boolean value, final String message) {
+                  if (!value) {
+                      throw new AssertionError(message);
+                  }
+              }
+          }
+          JAVA
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/test/java/dev/ultima/review/MergedRegressionTest.java')
+          s = p.read_text(encoding='utf-8')
+          if 'FirstWaveHighFixRegressionTest.run();' not in s:
+              anchor = '        MergedModuleContractTest.run();\n'
+              if anchor not in s:
+                  raise SystemExit('missing MergedRegression anchor')
+              s = s.replace(anchor, anchor + '        FirstWaveHighFixRegressionTest.run();\n', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          # Remove the one-shot repair workflow from the resulting source tree.
+          git rm .github/workflows/ultima-integration-repair.yml
+
+          git status --short
+          git diff --check
+          git add -A
+          git diff --cached --stat
+          git config user.name "Ultima Integration Repair"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Restore first-wave HIGH fixes in real integration"
+          git push origin HEAD:integration/ultima-firstwave-fix-staging-20260819
