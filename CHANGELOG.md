@@ -1,5 +1,99 @@
 # Changelog
 
+## 2026-08-19 — real multi-branch integration (#11–#20)
+
+Real integration pass over the previously unmerged performance branches. The merge history
+contains the original heads of PRs #11, #12, #13, #14, #15, #17, #19, and #20 as explicit
+ancestors. PR #18 is intentionally excluded: it is an independent earlier implementation of
+`container_slot_mask` + `entity_query_early_out`; #20 was selected as the sole implementation
+because it has broader audited mutation coverage, explicit hopper/furnace/compound/randomizable
+container hooks, multi-seed differential traces, wide-inventory coverage, and artificial bit
+corruption/rebuild checks.
+
+Shared conflict points were manually consolidated instead of accepting one branch's version:
+
+- `UltimaModules.java`: all 24 final modules, defaults, dependencies, client-side flags, and
+  incompatibility lists are represented once.
+- `ultima.mixins.json` / `ultima.client.mixins.json`: union of telemetry, hopper sleeping,
+  recipe cache, tag/state cache, slot-mask/entity-query, mesher, FSR, and existing renderer Mixins.
+- `Ultima.java`: server telemetry and registry-cache lifecycle initialization are both preserved.
+- `UltimaCommands.java`: config, compatibility diagnostics, and server profiling subcommands coexist.
+- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the
+  restart-required apply policy. The fallback title-screen button is restored as the gated `settings_ui` module.
+- regression entrypoint: branch-local hosting, FSR/settings, telemetry, hopper, recipe, tag/state,
+  slot/entity, mesher, and final module-contract suites are all invoked by the merged checkpoint;
+  recipe/tag/state/slot suites also have standalone Gradle tasks.
+
+Compatibility policy after integration:
+
+- Lithium / Canary / Radium disable overlapping collision/entity modules plus
+  `blockentity_sleeping`, `tag_bitsets`, `state_property_cache`, `container_slot_mask`, and
+  `entity_query_early_out`.
+- `recipe_match_cache` deliberately remains compatible with Lithium-family mods because those mods
+  do not provide the same first-match recipe lookup cache.
+- Sodium / Iris / Canvas disable Ultima's renderer integrations, including `retained_terrain`,
+  `mesher_fast_path`, and `fsr_upscaling`. The branch-local Sodium-only FSR exception was removed so
+  the merged module registry, UI, and runtime compatibility gate agree.
+
+All newly merged optimization experiments remain default **OFF**. Existing proven/default modules
+remain unchanged except `server_metrics`, which is default-on instrumentation. This integration
+runs code-only Gradle/static validation; no `runClient`, `runServer`, LAN join, or hardware A/B is
+part of this pass, so it makes no new FPS or runtime-performance claim.
+
+---
+
+## Vanilla-client-compatible server hosting
+
+Audit and declaration pass so a host can run Ultima on a dedicated or
+integrated server while guests join with vanilla Minecraft 26.2 (no Ultima).
+
+- `fabric.mod.json`: `"environment": "*"` is unchanged (may load on host
+  client or dedicated server; it is not a both-sides-required handshake).
+  Mixin configs are now explicit objects: simulation `ultima.mixins.json` is
+  `"environment": "*"`, render `ultima.client.mixins.json` stays
+  `"environment": "client"`. Description states vanilla-client hosting.
+- Entrypoints were already correct: `main` → `dev.ultima.Ultima` (dedicated +
+  integrated server), `client` → `dev.ultima.client.UltimaClient` (Fabric
+  client-only slot). No dedicated-server-only entrypoint, so LAN Open-to-LAN
+  still loads simulation.
+- Network: no C2S/S2C channels, no Fabric optional/required payloads, no
+  custom registries, no Mod Protocol. Vanilla join is the default Fabric
+  case (protocol version only).
+- `VanillaClientHostingChecks` enforces the metadata/source contract from
+  the merged regression checkpoint.
+- User docs: `SERVER_HOSTING.md` plus a README pointer, including the
+  dedicated-server and Open-to-LAN hardware scenarios (not run in this
+  session).
+
+---
+
+## mesher_fast_path Phase 3.2 (weighted unit-cube coverage)
+
+Expand the unit-cube fast path to vanilla 26.2 `WeightedVariants` whose
+every alternative is a proven 6-quad opaque cube (stone, dirt, deepslate,
+sand, …). Pick the alternative with `BlockState.getSeed(pos)` + vanilla
+`WeightedList.getRandomOrThrow` so UVs stay bit-identical. Multipart,
+grass overlay, fluids, and true non-cubes stay fallback. Cache was
+already keyed by `BlockState` identity (furnace/log variants were already
+distinct SingleVariant entries). Default remains **OFF**. **No FPS/GPU
+claim.** See `MESHER_FAST_PATH.md`. Retained-terrain GPU-time hypothesis
+is in `RETAINED_GPU_TIME_HYPOTHESIS.md` (no retained code change).
+
+## mesher_fast_path Phase 3.1 (hardware-ready prep)
+
+Section-level fail-open + BlockState circuit breaker, unified
+`FastPathCriteria` (glass/translucent always vanilla), lean production
+snapshot flags, expanded equivalence + realistic CPU datasets, coverage
+JSON, and a three-scene hardware runbook. Default remains **OFF**.
+**No FPS/GPU claim.** See `MESHER_FAST_PATH.md` and `MESHER_HARDWARE_AB.md`.
+
+## mesher_fast_path (draft, isolated from main / PR #3)
+
+Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,
+cached vanilla cube quads, vanilla occlusion/lighting, vanilla fallback.
+Equivalence tests PASS. CPU meshing-time microbench only. **No FPS/GPU claim.**
+See `MESHER_FAST_PATH.md`. `gradlew test` / `gradlew build` PASS on this branch.
+
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 
 PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance

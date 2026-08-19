@@ -3,14 +3,18 @@
   "id": "ultima",
   "version": "${version}",
   "name": "Ultima",
-  "description": "Compatibility-first Minecraft performance mod.",
+  "description": "Compatibility-first Minecraft performance mod. Install on a dedicated or integrated server so guests can join with a vanilla client; render modules stay client-only.",
   "environment": "*",
   "entrypoints": {
     "main": ["dev.ultima.Ultima"],
-    "client": ["dev.ultima.client.UltimaClient"]
+    "client": ["dev.ultima.client.UltimaClient"],
+    "modmenu": ["dev.ultima.client.settings.UltimaModMenu"]
   },
   "mixins": [
-    "ultima.mixins.json",
+    {
+      "config": "ultima.mixins.json",
+      "environment": "*"
+    },
     {
       "config": "ultima.client.mixins.json",
       "environment": "client"
@@ -21,5 +25,8 @@
     "minecraft": "~26.2",
     "java": ">=25",
     "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
   }
 }

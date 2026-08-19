@@ -1,5 +1,6 @@
 package dev.ultima.config;
 
+import dev.ultima.fsr.FsrCompatibility;
 import java.util.List;
 
 /**
@@ -52,6 +53,7 @@ public final class UltimaModules {
 
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
     private static final List<String> RENDERER_FAMILY = List.of("sodium", "iris", "canvas");
+    private static final List<String> FSR_RENDERER_FAMILY = FsrCompatibility.disablingModIds();
 
     private static final List<Module> ALL = List.of(
             new Module("entity_section_lookup", true,
@@ -91,6 +93,60 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
+            new Module("server_metrics", true,
+                    "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
+                            + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "
+                            + "Expected cost: two nanoTime calls and one atomic add per instrumented phase, no "
+                            + "allocations on the always-on path."),
+            new Module("blockentity_sleeping", false,
+                    "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla mutation "
+                            + "has a synchronous wake channel. Proof-of-correctness prototype, default off. "
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded because they "
+                            + "replace the same hopper tick.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("recipe_match_cache", false,
+                    "Opt-in first-match cache for crafting, furnace/blast/smoker, and brewing lookups. "
+                            + "Stores the RecipeHolder (or brewing mix) vanilla's ordered scan would return first "
+                            + "for an identical input. Full invalidation on recipe reload. Special/impure recipes "
+                            + "fall back to vanilla. Lithium is not auto-disabled: it has no recipe-lookup cache "
+                            + "(only furnace/brewing block-entity sleeping). Default off."),
+            new Module("tag_bitsets", false,
+                    "After tag bind/reload, answer Holder.is(TagKey) with a compact raw-id bitset. Unknown "
+                            + "tags and out-of-range ids fall back to vanilla contains(). Default off. "
+                            + "Automatically disabled when Lithium or a Lithium fork is loaded because Lithium "
+                            + "caches overlapping tag-derived BlockState flags and dual HEAD-cancel Mixins on "
+                            + "the same membership/pathing methods are unsafe.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("state_property_cache", false,
+                    "Lazy memo of proven-pure BlockState/FluidState properties (PathType, isSignalSource, "
+                            + "hasAnalogOutputSignal boolean, static-shape isRedstoneConductor, isPathfindable, "
+                            + "fluid source/amount/height). Modded classes and Fabric LandPathTypeRegistry "
+                            + "providers are never cached. Default off. Automatically disabled when Lithium or "
+                            + "a Lithium fork is loaded because Lithium PathNodeCache / BlockStateFlags occupy "
+                            + "the same methods.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("container_slot_mask", false,
+                    "Conservative non-empty slot mask for vanilla containers (chests, hoppers, furnaces, "
+                            + "brewing stands, comparators). Hint is verified against contents; unlisted or "
+                            + "modded inventories fall back to vanilla. Automatically disabled when Lithium "
+                            + "or a Lithium fork is loaded because Lithium tracks the same occupancy.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("entity_query_early_out", false,
+                    "Empty-only early-out for entity section queries (projectiles, fishing hooks, area "
+                            + "effect clouds, item/XP attraction, AI broad-phase). Reuses EntitySectionStorage "
+                            + "and SectionRangeMath from entity_section_lookup; never filters a non-empty "
+                            + "result. Automatically disabled when Lithium or a Lithium fork is loaded.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),
@@ -113,6 +169,13 @@ public final class UltimaModules {
                             + "scratch and tessellator reuse. Exact visit order. "
                             + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
+            Module.client("mesher_fast_path", false,
+                    "Experimental hybrid mesher: unit-cube fast path from cached vanilla quads plus neighbor "
+                            + "occlusion masks, vanilla ModelBlockRenderer/FluidRenderer fallback otherwise. "
+                            + "Default off. Independent of retained_terrain and java_mesher; when both java_mesher "
+                            + "and mesher_fast_path are requested, mesher_fast_path wins. Automatically disabled "
+                            + "when Sodium, Iris, or Canvas is loaded.",
+                    RENDERER_FAMILY),
             Module.client("section_task_queue", false,
                     "Compact cancelled section compile tasks in one pass and park workers on upload backpressure "
                             + "instead of spinning. Preserves vanilla nearest-task and recompile-quota policy. "
@@ -126,7 +189,18 @@ public final class UltimaModules {
                     "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
                             + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
                             + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
-                    RENDERER_FAMILY));
+                    RENDERER_FAMILY),
+            Module.client("fsr_upscaling", false,
+                    "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
+                            + "and upscales to native before HUD/GUI. Default off. Isolated from retained_terrain "
+                            + "and mesher modules. Automatically disabled when Sodium, Iris, or Canvas is loaded "
+                            + "because those renderer integrations own or replace parts of the render pipeline.",
+                    FSR_RENDERER_FAMILY),
+            Module.client("settings_ui", true,
+                    "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
+                            + "does not change networking or world simulation. Disable to hide the button; "
+                            + "/ultima config and Mod Menu remain available.",
+                    List.of()));
 
     private UltimaModules() {
     }
@@ -145,7 +219,9 @@ public final class UltimaModules {
     }
 
     public static boolean isInstrumentation(final String key) {
-        return "client_benchmark".equals(key) || "terrain_metrics".equals(key);
+        return "client_benchmark".equals(key)
+                || "terrain_metrics".equals(key)
+                || "server_metrics".equals(key);
     }
 
     public static boolean isOptInExperiment(final String key) {

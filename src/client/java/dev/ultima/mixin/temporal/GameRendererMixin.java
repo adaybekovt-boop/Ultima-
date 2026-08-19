@@ -18,15 +18,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(GameRenderer.class)
+/**
+ * Lower than {@code fsr_upscaling}'s GameRenderer mixin (1100) so this resize
+ * inject records {@code FRAMEBUFFER_RESIZE} first, then FSR applies the native size.
+ */
+@Mixin(value = GameRenderer.class, priority = 900)
 public abstract class GameRendererMixin {
     @Shadow
     @Final
     private GameRenderState gameRenderState;
 
     @Shadow
-    @Final
-    private RenderTarget mainRenderTarget;
+    public abstract RenderTarget mainRenderTarget();
 
     @Shadow
     @Final
@@ -46,7 +49,7 @@ public abstract class GameRendererMixin {
         CameraRenderState cameraState = this.gameRenderState.levelRenderState.cameraRenderState;
         Matrix4fc view = cameraState.viewRotationMatrix;
         TemporalPipeline.captureFromTarget(
-                this.mainRenderTarget,
+                this.mainRenderTarget(),
                 view,
                 projectionMatrix,
                 cameraState.pos.x,

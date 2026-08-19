@@ -20,6 +20,8 @@
     "render_snapshot.RenderRegionCacheMixin",
     "render_snapshot.SectionCopyMixin",
     "java_mesher.SectionCompilerMixin",
+    "mesher_fast_path.SectionCompilerMixin",
+    "mesher_fast_path.WeightedVariantsAccessor",
     "section_task_queue.SectionTaskAccessor",
     "section_task_queue.SectionTaskDynamicQueueMixin",
     "section_task_queue.CompileTaskMixin",
@@ -28,6 +30,11 @@
     "temporal.GameRendererMixin",
     "temporal.MinecraftMixin",
     "temporal.ShaderManagerMixin",
-    "temporal.LevelRendererMixin"
+    "temporal.LevelRendererMixin",
+    "fsr_upscaling.GameRendererMixin",
+    "fsr_upscaling.LevelRendererAccessor",
+    "fsr_upscaling.LevelExtractorAccessor",
+    "fsr_upscaling.ShaderManagerMixin",
+    "settings_ui.TitleScreenMixin"
   ]
 }
