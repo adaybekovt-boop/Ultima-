@@ -104,7 +104,7 @@ public final class SleepController {
         }
         this.registry = null;
         this.state = SleepState.ACTIVE;
-        BlockEntitySleepMetrics.onWake();
+        BlockEntitySleepMetrics.onWake(channel);
         this.breaker.onWake(gameTime, this.workSinceSleep);
         if (this.breaker.isTripped()) {
             this.pin(this.breaker.tripDetail());
@@ -112,6 +112,10 @@ public final class SleepController {
     }
 
     public void pin(final String detail) {
+        if (this.state == SleepState.PINNED_POLLING) {
+            this.lastRefuseReason = refuseReason(detail);
+            return;
+        }
         if (this.state == SleepState.SLEEPING) {
             WakeRegistry registered = this.registry;
             if (registered != null) {
@@ -122,7 +126,14 @@ public final class SleepController {
         }
         this.state = SleepState.PINNED_POLLING;
         BlockEntitySleepMetrics.onThrashTrip();
-        this.lastRefuseReason = "circuit_breaker: " + detail;
+        this.lastRefuseReason = refuseReason(detail);
+    }
+
+    private static String refuseReason(final String detail) {
+        if (detail != null && detail.startsWith("fail_open:")) {
+            return detail;
+        }
+        return "circuit_breaker: " + detail;
     }
 
     public void detach() {

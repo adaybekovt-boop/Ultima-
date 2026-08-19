@@ -1,6 +1,7 @@
 package dev.ultima.mixin.blockentity_sleeping;
 
 import dev.ultima.sleeping.BlockEntitySleepRuntime;
+import dev.ultima.sleeping.HopperSleepFailOpen;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
@@ -17,14 +18,27 @@ public abstract class BlockEntityMixin {
             return;
         }
         if ((Object)this instanceof Container) {
-            BlockEntitySleepRuntime.onContainerMutated((BlockEntity)(Object)this);
+            try {
+                BlockEntitySleepRuntime.onContainerMutated((BlockEntity)(Object)this);
+            } catch (Throwable error) {
+                HopperSleepFailOpen.failOpen(
+                        ((BlockEntity)(Object)this).getBlockPos(),
+                        (Object)this instanceof HopperBlockEntity hopper
+                                ? BlockEntitySleepRuntime.controller(hopper)
+                                : null,
+                        error);
+            }
         }
     }
 
     @Inject(method = "setRemoved", at = @At("HEAD"))
     private void ultimaUnregisterHopper(final CallbackInfo ci) {
         if ((Object)this instanceof HopperBlockEntity hopper) {
-            BlockEntitySleepRuntime.remove(hopper);
+            try {
+                BlockEntitySleepRuntime.remove(hopper);
+            } catch (Throwable error) {
+                HopperSleepFailOpen.failOpen(hopper.getBlockPos(), BlockEntitySleepRuntime.controller(hopper), error);
+            }
         }
     }
 }

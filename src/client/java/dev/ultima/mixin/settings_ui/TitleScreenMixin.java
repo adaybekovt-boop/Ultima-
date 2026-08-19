@@ -1,4 +1,4 @@
-package dev.ultima.mixin;
+package dev.ultima.mixin.settings_ui;
 
 import dev.ultima.client.settings.UltimaConfigScreen;
 import net.fabricmc.loader.api.FabricLoader;
@@ -13,8 +13,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Fallback title-screen entry when Mod Menu is not installed. Always applied
- * (this class sits outside a module package segment).
+ * Fallback title-screen entry when Mod Menu is not installed. Lives in the
+ * {@code settings_ui} module package so {@link dev.ultima.config.UltimaMixinPlugin}
+ * can skip it when that module is off. Client UI only; no packets or registries.
  */
 @Mixin(TitleScreen.class)
 public abstract class TitleScreenMixin extends Screen {

@@ -22,7 +22,11 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(GameRenderer.class)
+/**
+ * Higher than {@code temporal}'s GameRenderer mixin (900) so {@code resize} observes
+ * native size after temporal has recorded {@code FRAMEBUFFER_RESIZE}.
+ */
+@Mixin(value = GameRenderer.class, priority = 1100)
 public abstract class GameRendererMixin {
     @Shadow
     @Final

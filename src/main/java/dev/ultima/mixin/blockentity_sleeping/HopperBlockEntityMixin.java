@@ -3,6 +3,7 @@ package dev.ultima.mixin.blockentity_sleeping;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.ultima.sleeping.BlockEntitySleepRuntime;
+import dev.ultima.sleeping.HopperSleepFailOpen;
 import dev.ultima.sleeping.VanillaContainerClassifier;
 import dev.ultima.sleeping.WakeChannel;
 import dev.ultima.sleeping.hopper.HopperWorldInspector;
@@ -58,11 +59,22 @@ public abstract class HopperBlockEntityMixin {
             final BooleanSupplier suck,
             final Operation<Boolean> original
     ) {
-        if (BlockEntitySleepRuntime.shouldSkipTryMoveItems(hopper)) {
+        boolean skip;
+        try {
+            skip = BlockEntitySleepRuntime.shouldSkipTryMoveItems(hopper);
+        } catch (Throwable error) {
+            HopperSleepFailOpen.failOpen(pos, BlockEntitySleepRuntime.controller(hopper), error);
+            skip = false;
+        }
+        if (skip) {
             return false;
         }
         boolean changed = original.call(level, pos, state, hopper, suck);
-        BlockEntitySleepRuntime.afterTryMoveItems(level, pos, state, hopper, changed);
+        try {
+            BlockEntitySleepRuntime.afterTryMoveItems(level, pos, state, hopper, changed);
+        } catch (Throwable error) {
+            HopperSleepFailOpen.failOpen(pos, BlockEntitySleepRuntime.controller(hopper), error);
+        }
         return changed;
     }
 
@@ -75,16 +87,34 @@ public abstract class HopperBlockEntityMixin {
             final HopperBlockEntity hopper,
             final CallbackInfo ci
     ) {
-        BlockEntitySleepRuntime.wakeHopper(hopper, WakeChannel.ITEM_ENTITY);
+        try {
+            BlockEntitySleepRuntime.wakeHopper(hopper, WakeChannel.ITEM_ENTITY);
+        } catch (Throwable error) {
+            HopperSleepFailOpen.failOpen(pos, BlockEntitySleepRuntime.controller(hopper), error);
+        }
     }
 
     @Inject(method = "setItem", at = @At("RETURN"))
     private void ultimaWakeOnSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        BlockEntitySleepRuntime.onContainerMutated((HopperBlockEntity)(Object)this);
+        try {
+            BlockEntitySleepRuntime.onContainerMutated((HopperBlockEntity)(Object)this);
+        } catch (Throwable error) {
+            HopperSleepFailOpen.failOpen(
+                    ((HopperBlockEntity)(Object)this).getBlockPos(),
+                    BlockEntitySleepRuntime.controller((HopperBlockEntity)(Object)this),
+                    error);
+        }
     }
 
     @Inject(method = "removeItem", at = @At("RETURN"))
     private void ultimaWakeOnRemoveItem(final int slot, final int count, final CallbackInfo ci) {
-        BlockEntitySleepRuntime.onContainerMutated((HopperBlockEntity)(Object)this);
+        try {
+            BlockEntitySleepRuntime.onContainerMutated((HopperBlockEntity)(Object)this);
+        } catch (Throwable error) {
+            HopperSleepFailOpen.failOpen(
+                    ((HopperBlockEntity)(Object)this).getBlockPos(),
+                    BlockEntitySleepRuntime.controller((HopperBlockEntity)(Object)this),
+                    error);
+        }
     }
 }

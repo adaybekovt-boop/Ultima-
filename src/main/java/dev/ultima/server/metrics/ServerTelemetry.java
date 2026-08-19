@@ -1,12 +1,12 @@
 package dev.ultima.server.metrics;
 
 /**
- * Public write API for future server optimizations (block-entity sleeping, AI dirty tracking,
+ * Public write API for server optimizations (block-entity sleeping, AI dirty tracking,
  * chunk serialize caches). Always-on counters increment when the module is enabled; semantic
  * events are recorded only during {@code /ultima profile}.
  *
- * <p>Calling these methods does not change gameplay. Implementations that do not exist yet should
- * still call them so the counters are populated the moment those optimizations land.
+ * <p>Calling these methods does not change gameplay. Hopper sleeping already populates
+ * {@code be.sleeping}, {@code be.wakeups}, and {@code be.thrashes} when that module is on.
  */
 public final class ServerTelemetry {
     private ServerTelemetry() {
@@ -26,6 +26,10 @@ public final class ServerTelemetry {
 
     public static void recordBeWakeup() {
         ServerMetrics.addCount(MetricId.BE_WAKEUPS, 1);
+    }
+
+    public static void recordBeThrash() {
+        ServerMetrics.addCount(MetricId.BE_THRASHES, 1);
     }
 
     public static void recordHopperWakeAdjacentInventory() {

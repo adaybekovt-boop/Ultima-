@@ -42,10 +42,12 @@ public final class HopperSleepEquivalenceTest {
         testBlockUpdateWake();
         testItemEntityWake();
         testCircuitBreakerPinsThrash();
+        testFailOpenPinsOnlyFaultingHopper();
         testHopperChainCooldownMatchesVanilla();
         testDifferentialRandomTrace();
         testMetricsKeys();
         testModuleDefaultOffAndLithium();
+        testWorldUnloadClearsWakeRegistry();
         System.out.println("Hopper sleep equivalence checks passed.");
     }
 
@@ -280,6 +282,58 @@ public final class HopperSleepEquivalenceTest {
         assertTrue(controller.isPinned(), "pinned hopper cannot sleep again");
     }
 
+    private static void testFailOpenPinsOnlyFaultingHopper() {
+        BlockEntitySleepMetrics.resetForTests();
+        HopperSleepFailOpen.clearTestFault();
+        HopperWorld faulty = HopperWorld.idleSetup();
+        HopperWorld other = HopperWorld.idleSetup();
+        faulty.useSleep = true;
+        other.useSleep = true;
+        faulty.id = "hopper-fault";
+        other.id = "hopper-ok";
+        faulty.tick();
+        other.tick();
+        assertTrue(faulty.controller.isSleeping(), "faulting hopper entered sleep");
+        assertTrue(other.controller.isSleeping(), "other hopper entered sleep");
+
+        HopperSleepFailOpen.armTestFault("hopper-fault");
+        try {
+            faulty.tick();
+        } catch (Throwable error) {
+            throw new AssertionError("sleep-check fault must not escape the server tick", error);
+        }
+        assertTrue(faulty.controller.isPinned(), "faulting hopper fail-opens to vanilla polling");
+        assertTrue(
+                faulty.controller.lastRefuseReason().startsWith("fail_open:"),
+                "pin reason is fail-open, not a silent skip: " + faulty.controller.lastRefuseReason());
+        assertFalse(HopperSleepFailOpen.testFaultArmed(), "test fault is consumed once");
+
+        try {
+            other.tick();
+        } catch (Throwable error) {
+            throw new AssertionError("other hopper tick must not see the faulting hopper's exception", error);
+        }
+        assertTrue(other.controller.isSleeping(), "other hopper is still sleeping");
+        assertFalse(other.controller.isPinned(), "other hopper was not pinned");
+        assertEquals(faulty.hopper.tickedGameTime, other.hopper.tickedGameTime, "both hoppers still ticked");
+        HopperSleepFailOpen.clearTestFault();
+    }
+
+    private static void testWorldUnloadClearsWakeRegistry() {
+        BlockEntitySleepRuntime.clearAll();
+        assertFalse(BlockEntitySleepRuntime.registry().hasWatchers(), "clearAll drops wake subscriptions");
+        String init;
+        try {
+            init = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/dev/ultima/Ultima.java"));
+        } catch (java.io.IOException e) {
+            throw new AssertionError("could not read Ultima initializer", e);
+        }
+        assertTrue(init.contains("ServerLifecycleEvents.SERVER_STOPPED"), "clears on dedicated/integrated stop");
+        assertTrue(init.contains("ServerLevelEvents.UNLOAD"), "clears on level unload including singleplayer leave");
+        assertTrue(init.contains("BlockEntitySleepRuntime.clearAll()"), "SERVER_STOPPED calls clearAll");
+        assertTrue(init.contains("BlockEntitySleepRuntime.clearLevel(world)"), "UNLOAD calls clearLevel");
+    }
+
     private static void testHopperChainCooldownMatchesVanilla() {
         HopperWorld vanilla = HopperWorld.chain();
         HopperWorld sleeping = HopperWorld.chain();
@@ -457,6 +511,7 @@ public final class HopperSleepEquivalenceTest {
         private boolean useSleep;
         private final SleepController controller = new SleepController();
         private long time;
+        private String id = "hopper";
 
         static HopperWorld idleSetup() {
             HopperWorld world = new HopperWorld();
@@ -509,18 +564,26 @@ public final class HopperSleepEquivalenceTest {
                 this.hopper.cooldown = 0;
             }
             this.dest.tickedGameTime = this.time;
-            boolean skip = this.useSleep && this.controller.isSleeping();
             if (this.hopper.cooldown == 0) {
+                boolean skip = false;
+                if (this.useSleep) {
+                    skip = HopperSleepFailOpen.guardBoolean(this.id, this.controller, () -> {
+                        if (!this.controller.isSleeping()) {
+                            return false;
+                        }
+                        BlockEntitySleepMetrics.onTickSkipped();
+                        return true;
+                    });
+                }
                 if (!skip) {
                     boolean changed = this.tryMoveItems();
                     if (changed) {
                         this.hopper.cooldown = 8;
                         this.controller.recordWork();
                     } else if (this.useSleep) {
-                        this.controller.enterSleepForTest(HopperSleepPolicy.evaluate(this.snapshot()), this.time);
+                        HopperSleepFailOpen.runVoid(this.id, this.controller, () -> this.controller.enterSleepForTest(
+                                HopperSleepPolicy.evaluate(this.snapshot()), this.time));
                     }
-                } else {
-                    BlockEntitySleepMetrics.onTickSkipped();
                 }
             }
         }
