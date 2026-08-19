@@ -1,7 +1,7 @@
 name: Ultima CI validation
 
 on:
-  push:
+  pull_request:
     branches:
       - integration/ultima-firstwave-fix-staging-20260819
   workflow_dispatch:
@@ -17,6 +17,7 @@ jobs:
       - name: Checkout staging with full history
         uses: actions/checkout@v4
         with:
+          ref: integration/ultima-firstwave-fix-staging-20260819
           fetch-depth: 0
 
       - name: Resolve remaining shared-file conflicts
@@ -25,58 +26,33 @@ jobs:
           set -euxo pipefail
           FIX=47e1abb22d2b4f1be95fdae022d9df71c8bafb8f
           git fetch origin "$FIX"
-
-          # No second-wave PR touches these files; restore the already-audited first-wave versions.
           git show "$FIX:src/main/java/dev/ultima/command/UltimaCommands.java" > src/main/java/dev/ultima/command/UltimaCommands.java
           git show "$FIX:src/test/java/dev/ultima/review/VanillaClientHostingChecks.java" > src/test/java/dev/ultima/review/VanillaClientHostingChecks.java
 
           python3 - <<'PY'
           from pathlib import Path
-
           def edit(path, replacements):
-              p = Path(path)
-              s = p.read_text(encoding='utf-8')
+              p = Path(path); s = p.read_text(encoding='utf-8')
               for old, new, label in replacements:
-                  if old not in s:
-                      raise SystemExit(f'{path}: missing anchor {label}')
+                  if old not in s: raise SystemExit(f'{path}: missing anchor {label}')
                   s = s.replace(old, new, 1)
               p.write_text(s, encoding='utf-8')
 
           edit('src/test/java/dev/ultima/review/SettingsScreenLogicTest.java', [
-              ('assertEquals(23L, UltimaModules.all().size(), "merged module count");',
-               'assertEquals(24L, UltimaModules.all().size(), "merged module count");', 'module count'),
-              ('assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");',
-               'assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");', 'advanced count'),
-              ('        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics is Advanced instrumentation");',
-               '        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics is Advanced instrumentation");\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui is Advanced client UI");', 'settings_ui category')
+              ('assertEquals(23L, UltimaModules.all().size(), "merged module count");','assertEquals(24L, UltimaModules.all().size(), "merged module count");','module count'),
+              ('assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");','assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");','advanced count'),
+              ('        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics is Advanced instrumentation");','        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics is Advanced instrumentation");\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui is Advanced client UI");','settings_ui category')
           ])
-
           edit('src/test/java/dev/ultima/review/MergedModuleContractTest.java', [
-              ('        expectedDefaults.put("fsr_upscaling", false);',
-               '        expectedDefaults.put("fsr_upscaling", false);\n        expectedDefaults.put("settings_ui", true);', 'settings_ui default'),
-              ('assertEquals(23, UltimaModules.all().size(), "module count");',
-               'assertEquals(24, UltimaModules.all().size(), "module count");', 'module count'),
-              ('        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics category Advanced");',
-               '        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics category Advanced");\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui category Advanced");', 'settings category'),
-              ('Merged module contract checks passed: 23 modules, defaults/categories/auto-disable verified.',
-               'Merged module contract checks passed: 24 modules, defaults/categories/auto-disable verified.', 'printed count')
+              ('        expectedDefaults.put("fsr_upscaling", false);','        expectedDefaults.put("fsr_upscaling", false);\n        expectedDefaults.put("settings_ui", true);','settings_ui default'),
+              ('assertEquals(23, UltimaModules.all().size(), "module count");','assertEquals(24, UltimaModules.all().size(), "module count");','module count'),
+              ('        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics category Advanced");','        assertTrue(UltimaSettingsCatalog.require("server_metrics").category() == SettingsCategory.ADVANCED,\n                "server_metrics category Advanced");\n        assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,\n                "settings_ui category Advanced");','settings category'),
+              ('Merged module contract checks passed: 23 modules, defaults/categories/auto-disable verified.','Merged module contract checks passed: 24 modules, defaults/categories/auto-disable verified.','printed count')
           ])
-
-          edit('README.md', [
-              ('- `temporal`\n', '- `temporal`\n- `settings_ui`\n', 'settings_ui default-on docs'),
-              ('The settings screen exposes all 23 registered modules',
-               'The settings screen exposes all 24 registered modules', 'README module count')
-          ])
-
-          edit('CHANGELOG.md', [
-              ('- `UltimaModules.java`: all 23 final modules, defaults, dependencies, client-side flags, and',
-               '- `UltimaModules.java`: all 24 final modules, defaults, dependencies, client-side flags, and', 'changelog module count'),
-              ('- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the\n  restart-required apply policy.',
-               '- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the\n  restart-required apply policy. The fallback title-screen button is restored as the gated `settings_ui` module.', 'changelog settings gate')
-          ])
+          edit('README.md', [('- `temporal`\n','- `temporal`\n- `settings_ui`\n','settings_ui docs'),('The settings screen exposes all 23 registered modules','The settings screen exposes all 24 registered modules','README count')])
+          edit('CHANGELOG.md', [('- `UltimaModules.java`: all 23 final modules, defaults, dependencies, client-side flags, and','- `UltimaModules.java`: all 24 final modules, defaults, dependencies, client-side flags, and','CHANGELOG count'),('- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the\n  restart-required apply policy.','- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the\n  restart-required apply policy. The fallback title-screen button is restored as the gated `settings_ui` module.','CHANGELOG gate')])
           PY
 
-          # Sanity checks before committing the conflict resolution.
           python3 -m json.tool src/main/resources/ultima.mixins.json >/dev/null
           python3 -m json.tool src/client/resources/ultima.client.mixins.json >/dev/null
           grep -F 'settings_ui.TitleScreenMixin' src/client/resources/ultima.client.mixins.json
@@ -89,7 +65,6 @@ jobs:
           grep -F 'BE_THRASHES' src/main/java/dev/ultima/server/metrics/MetricId.java
           grep -F 'require = 0' src/main/java/dev/ultima/mixin/server_metrics/ChunkMapTrackedEntityMixin.java
           grep -F 'require = 0' src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java
-
           git diff --check
           git status --short
           git diff --stat
