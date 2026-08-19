@@ -1,5 +1,6 @@
 package dev.ultima.client;
 
+import dev.ultima.client.command.UltimaClientCommands;
 import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import net.fabricmc.api.ClientModInitializer;
@@ -18,5 +19,20 @@ public final class UltimaClient implements ClientModInitializer {
         if (UltimaConfig.get().isEnabled("temporal")) {
             TemporalPipeline.get().initialize();
         }
+        if (UltimaConfig.get().isRequested("fsr_upscaling")) {
+            var fsr = UltimaConfig.get().resolve("fsr_upscaling");
+            var settings = UltimaConfig.get().fsrSettings().resolved();
+            LOGGER.info(
+                    "Ultima FSR1 spatial upscaling requested={} enabled={} reason={} preset={} sharpnessStops={}",
+                    fsr.requested(),
+                    fsr.enabled(),
+                    fsr.reason(),
+                    settings.presetKey(),
+                    settings.sharpnessStops());
+            if (!fsr.enabled()) {
+                LOGGER.info("FSR1 is inactive: {}", fsr.detail());
+            }
+        }
+        UltimaClientCommands.register();
     }
 }
