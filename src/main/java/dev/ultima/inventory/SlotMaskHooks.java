@@ -17,11 +17,14 @@ public final class SlotMaskHooks {
 
     public static void afterIndexedWrite(final Container container, final int slot) {
         try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
-            SlotMaskTracker.noteSlot(container, slot);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
-            SlotMaskTracker.invalidate(container);
+            FailOpenGuard.run(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, () -> {
+                try {
+                    SlotMaskTracker.noteSlot(container, slot);
+                } catch (Throwable error) {
+                    SlotMaskTracker.invalidate(container);
+                    throw error;
+                }
+            });
         } finally {
             SlotMaskTracker.exitSlotWrite(container);
         }
@@ -35,11 +38,14 @@ public final class SlotMaskHooks {
 
     public static void afterClearWrapped(final Container container) {
         try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
-            SlotMaskTracker.noteCleared(container);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
-            SlotMaskTracker.invalidate(container);
+            FailOpenGuard.run(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, () -> {
+                try {
+                    SlotMaskTracker.noteCleared(container);
+                } catch (Throwable error) {
+                    SlotMaskTracker.invalidate(container);
+                    throw error;
+                }
+            });
         } finally {
             SlotMaskTracker.exitSlotWrite(container);
         }

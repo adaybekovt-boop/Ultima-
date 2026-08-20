@@ -18,6 +18,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /**
  * Hopper insert/extract consumes the slot mask only by skipping empty slots in vanilla order.
  * This is not hopper sleeping: tick and cooldown behaviour is unchanged.
+ *
+ * <p>Fail-open for extract lives in {@link SlotMaskQueries#filterOccupiedPreservingOrder}.
+ * Do not wrap that call in another {@link FailOpenGuard} door: the inner wrapper swallows
+ * the throw, and an outer {@code supply} would {@code recordSuccess} and reset the breaker.
  */
 @Mixin(HopperBlockEntity.class)
 public abstract class HopperInsertExtractMixin {
@@ -29,12 +33,7 @@ public abstract class HopperInsertExtractMixin {
     private static int[] ultimaFilterEmptySourceSlots(
             final Container container, final Direction direction, final Operation<int[]> original) {
         int[] slots = original.call(container, direction);
-        try {
-            return SlotMaskQueries.filterOccupiedPreservingOrder(container, slots);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
-            return slots;
-        }
+        return SlotMaskQueries.filterOccupiedPreservingOrder(container, slots);
     }
 
     @Inject(method = "ejectItems", at = @At("HEAD"))
@@ -43,11 +42,7 @@ public abstract class HopperInsertExtractMixin {
             final net.minecraft.core.BlockPos blockPos,
             final HopperBlockEntity self,
             final CallbackInfoReturnable<Boolean> cir) {
-        try {
-            SlotMaskQueries.shouldIterateOccupied(self);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, self, error);
-        }
+        SlotMaskQueries.shouldIterateOccupied(self);
     }
 
     @WrapOperation(
@@ -57,15 +52,15 @@ public abstract class HopperInsertExtractMixin {
                     target = "Lnet/minecraft/world/level/block/entity/HopperBlockEntity;getItem(I)Lnet/minecraft/world/item/ItemStack;"))
     private static ItemStack ultimaSkipEmptyHopperSlots(
             final HopperBlockEntity self, final int slot, final Operation<ItemStack> original) {
-        try {
-            if (!VanillaSlotMaskAllowlist.mayConsume(self) || !SlotMaskTracker.of(self).trusted()) {
-                return original.call(self, slot);
-            }
-            if (!SlotMaskTracker.of(self).hintedOccupied(slot)) {
-                return ItemStack.EMPTY;
-            }
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, self, error);
+        boolean skipEmpty = FailOpenGuard.test(
+                FailOpenGuard.Module.CONTAINER_SLOT_MASK,
+                self,
+                () -> VanillaSlotMaskAllowlist.mayConsume(self)
+                        && SlotMaskTracker.of(self).trusted()
+                        && !SlotMaskTracker.of(self).hintedOccupied(slot),
+                false);
+        if (skipEmpty) {
+            return ItemStack.EMPTY;
         }
         return original.call(self, slot);
     }

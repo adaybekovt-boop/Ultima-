@@ -7,8 +7,15 @@ import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 
 /**
- * Consumption helpers for the slot-mask hint. Every method fails open to a vanilla scan when the
- * container is not allowlisted, has unresolved loot, or the hint is untrusted.
+ * Consumption helpers for the slot-mask hint.
+ *
+ * <p>Every occupancy walk goes through {@link FailOpenGuard} wrappers
+ * ({@code supply}/{@code test}/{@code callNullable}) with the {@link Container}
+ * as the case id. Custom try/catch that only calls {@link FailOpenGuard#failOpen}
+ * never trips {@link FailOpenGuard#isTripped} and never resets consecutive
+ * failures. Mixins that call these methods must not wrap them again: an inner
+ * fail-open that swallows the throw looks like success to an outer
+ * {@code supply} and would {@code recordSuccess}.
  */
 public final class SlotMaskQueries {
     private SlotMaskQueries() {
@@ -20,38 +27,35 @@ public final class SlotMaskQueries {
     }
 
     /**
-     * @return {@code true} when occupied slots were visited via the mask in vanilla index order
+     * Walk occupied slots. {@code true} means the visitor already ran via the mask.
+     *
+     * <p>On fault, returns {@code false} <em>without</em> a vanilla rescan: a
+     * mutating visitor may already have been applied to earlier slots.
      */
     public static boolean forEachOccupied(final Container container, final IntConsumer visitor) {
-        try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
-            return forEachOccupiedUnchecked(container, visitor);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
-            if (container != null) {
-                SlotMaskTracker.invalidate(container);
-                vanillaVisit(container, visitor);
-            }
-            return false;
-        }
+        return FailOpenGuard.test(
+                FailOpenGuard.Module.CONTAINER_SLOT_MASK,
+                container,
+                () -> forEachOccupiedUnchecked(container, visitor),
+                false);
     }
 
     /**
-     * Filters {@code slots} to currently occupied entries, preserving relative order. Used by hopper
-     * extract: empty slots are no-ops in vanilla, so skipping them is equivalent when the hint is
-     * trusted. Untrusted or disallowed containers receive the original array.
+     * Production hopper extract filter ({@code HopperInsertExtractMixin}).
+     *
+     * <p>Filters {@code slots} to currently occupied entries, preserving relative order.
+     * Empty slots are no-ops in vanilla, so skipping them is equivalent when the hint is
+     * trusted. Untrusted, tripped, or disallowed containers receive the original array.
      */
     public static int[] filterOccupiedPreservingOrder(final Container container, final int[] slots) {
-        try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container);
-            return filterOccupiedPreservingOrderUnchecked(container, slots);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, container, error);
-            if (container != null) {
-                SlotMaskTracker.invalidate(container);
-            }
+        if (slots == null) {
             return slots;
         }
+        return FailOpenGuard.supply(
+                FailOpenGuard.Module.CONTAINER_SLOT_MASK,
+                container,
+                () -> filterOccupiedPreservingOrderUnchecked(container, slots),
+                () -> slots);
     }
 
     public static boolean shouldIterateOccupied(final Container container) {
@@ -116,7 +120,7 @@ public final class SlotMaskQueries {
         if (left == null || right == null) {
             return slots;
         }
-        if (!shouldIterateOccupied(left) || !shouldIterateOccupied(right)) {
+        if (!shouldIterateOccupiedUnchecked(left) || !shouldIterateOccupiedUnchecked(right)) {
             return slots;
         }
         int leftSize = left.getContainerSize();
@@ -154,12 +158,12 @@ public final class SlotMaskQueries {
             return false;
         }
         int leftSize = left.getContainerSize();
-        boolean leftHint = forEachOccupied(left, visitor);
-        boolean rightHint = forEachOccupied(right, slot -> visitor.accept(slot + leftSize));
+        boolean leftHint = forEachOccupiedUnchecked(left, visitor);
+        boolean rightHint = forEachOccupiedUnchecked(right, slot -> visitor.accept(slot + leftSize));
         return leftHint && rightHint;
     }
 
-    private static void vanillaVisit(final Container container, final IntConsumer visitor) {
+    static void vanillaVisit(final Container container, final IntConsumer visitor) {
         int size = container.getContainerSize();
         for (int slot = 0; slot < size; slot++) {
             if (!container.getItem(slot).isEmpty()) {

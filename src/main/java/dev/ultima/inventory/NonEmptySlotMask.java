@@ -1,6 +1,5 @@
 package dev.ultima.inventory;
 
-import dev.ultima.failopen.FailOpenGuard;
 import java.util.Arrays;
 import java.util.function.IntConsumer;
 
@@ -99,13 +98,7 @@ public final class NonEmptySlotMask {
     }
 
     public void rebuild(final SlotOccupancy occupancy) {
-        try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this);
-            this.rebuildUnchecked(occupancy);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
-            this.invalidate();
-        }
+        this.rebuildUnchecked(occupancy);
     }
 
     /**
@@ -126,14 +119,7 @@ public final class NonEmptySlotMask {
      * @return {@code true} if the mask may be used to skip empty slots
      */
     public boolean prepareTrustedHint(final SlotOccupancy occupancy) {
-        try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this);
-            return this.prepareTrustedHintUnchecked(occupancy);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
-            this.invalidate();
-            return false;
-        }
+        return this.prepareTrustedHintUnchecked(occupancy);
     }
 
     /**
@@ -141,18 +127,11 @@ public final class NonEmptySlotMask {
      * {@code null} means the caller must scan.
      */
     public Boolean tryExactEmpty(final SlotOccupancy occupancy) {
-        try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this);
-            this.prepareTrustedHintUnchecked(occupancy);
-            if (!this.trusted) {
-                return null;
-            }
-            return !anyBitSet();
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
-            this.invalidate();
+        this.prepareTrustedHintUnchecked(occupancy);
+        if (!this.trusted) {
             return null;
         }
+        return !anyBitSet();
     }
 
     /**
@@ -160,39 +139,33 @@ public final class NonEmptySlotMask {
      * untrusted or a periodic verify fails. Returns {@code true} when the hint path was used.
      */
     public boolean forEachOccupied(final SlotOccupancy occupancy, final IntConsumer visitor) {
-        boolean hintReady;
+        if (!this.prepareTrustedHintUnchecked(occupancy)) {
+            scanVisit(occupancy, visitor);
+            return false;
+        }
         try {
-            FailOpenGuard.maybeThrowForTest(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this);
-            hintReady = this.prepareTrustedHintUnchecked(occupancy);
-        } catch (Throwable error) {
-            FailOpenGuard.failOpen(FailOpenGuard.Module.CONTAINER_SLOT_MASK, this, error);
-            this.invalidate();
-            scanVisit(occupancy, visitor);
-            return false;
-        }
-        if (!hintReady) {
-            scanVisit(occupancy, visitor);
-            return false;
-        }
-        int visited = 0;
-        for (int wordIndex = 0; wordIndex < this.words.length; wordIndex++) {
-            long bits = this.words[wordIndex];
-            while (bits != 0L) {
-                int bit = Long.numberOfTrailingZeros(bits);
-                int slot = (wordIndex << 6) + bit;
-                bits &= bits - 1L;
-                if (slot >= this.size) {
-                    break;
-                }
-                if (occupancy.isOccupied(slot)) {
-                    visitor.accept(slot);
-                    visited++;
-                } else {
-                    setBit(this.words, slot, false);
+            for (int wordIndex = 0; wordIndex < this.words.length; wordIndex++) {
+                long bits = this.words[wordIndex];
+                while (bits != 0L) {
+                    int bit = Long.numberOfTrailingZeros(bits);
+                    int slot = (wordIndex << 6) + bit;
+                    bits &= bits - 1L;
+                    if (slot >= this.size) {
+                        break;
+                    }
+                    if (occupancy.isOccupied(slot)) {
+                        visitor.accept(slot);
+                    } else {
+                        setBit(this.words, slot, false);
+                    }
                 }
             }
+            return true;
+        } catch (Throwable error) {
+            // Do not scanVisit: the visitor may already have mutated earlier slots.
+            this.invalidate();
+            throw error;
         }
-        return true;
     }
 
     /**

@@ -59,11 +59,32 @@ public final class VanillaSlotMaskAllowlist {
             ChestBoat.class,
             ChestRaft.class);
 
+    private static final ThreadLocal<Class<?>> EXTRA_ALLOWED = new ThreadLocal<>();
+
     private VanillaSlotMaskAllowlist() {
     }
 
     public static boolean isAllowedClass(final Class<?> type) {
-        return ALLOWED.contains(type);
+        return ALLOWED.contains(type) || type == EXTRA_ALLOWED.get();
+    }
+
+    /**
+     * Test-only: allow a {@link SimpleContainer} subclass so
+     * {@link SlotMaskQueries} can consume a throwing mock through the
+     * production allowlist gate. Exact-class matching otherwise rejects mocks.
+     */
+    public static void runAllowing(final Class<?> type, final Runnable action) {
+        Class<?> previous = EXTRA_ALLOWED.get();
+        EXTRA_ALLOWED.set(type);
+        try {
+            action.run();
+        } finally {
+            if (previous == null) {
+                EXTRA_ALLOWED.remove();
+            } else {
+                EXTRA_ALLOWED.set(previous);
+            }
+        }
     }
 
     public static boolean mayConsume(final Container container) {
