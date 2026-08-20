@@ -1,6 +1,7 @@
 package dev.ultima.mixin.state_property_cache;
 
 import dev.ultima.cache.state.StatePropertyRuntime;
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.world.level.material.FluidState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -12,54 +13,86 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class FluidStateMixin {
     @Inject(method = "isSource()Z", at = @At("HEAD"), cancellable = true)
     private void ultimaSourceHead(final CallbackInfoReturnable<Boolean> cir) {
-        Boolean cached = StatePropertyRuntime.fluidSourceIfCached(this.self());
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Boolean cached = StatePropertyRuntime.fluidSourceIfCached(this.self());
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
         }
     }
 
     @Inject(method = "isSource()Z", at = @At("RETURN"))
     private void ultimaSourceReturn(final CallbackInfoReturnable<Boolean> cir) {
-        StatePropertyRuntime.rememberFluidSource(this.self(), cir.getReturnValue());
+        try {
+            StatePropertyRuntime.rememberFluidSource(this.self(), cir.getReturnValue());
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
+        }
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
     private void ultimaEmptyHead(final CallbackInfoReturnable<Boolean> cir) {
-        Boolean cached = StatePropertyRuntime.fluidEmptyIfCached(this.self());
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Boolean cached = StatePropertyRuntime.fluidEmptyIfCached(this.self());
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
         }
     }
 
     @Inject(method = "isEmpty", at = @At("RETURN"))
     private void ultimaEmptyReturn(final CallbackInfoReturnable<Boolean> cir) {
-        StatePropertyRuntime.rememberFluidEmpty(this.self(), cir.getReturnValue());
+        try {
+            StatePropertyRuntime.rememberFluidEmpty(this.self(), cir.getReturnValue());
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
+        }
     }
 
     @Inject(method = "getAmount", at = @At("HEAD"), cancellable = true)
     private void ultimaAmountHead(final CallbackInfoReturnable<Integer> cir) {
-        Integer cached = StatePropertyRuntime.fluidAmountIfCached(this.self());
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Integer cached = StatePropertyRuntime.fluidAmountIfCached(this.self());
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
         }
     }
 
     @Inject(method = "getAmount", at = @At("RETURN"))
     private void ultimaAmountReturn(final CallbackInfoReturnable<Integer> cir) {
-        StatePropertyRuntime.rememberFluidAmount(this.self(), cir.getReturnValue());
+        try {
+            StatePropertyRuntime.rememberFluidAmount(this.self(), cir.getReturnValue());
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
+        }
     }
 
     @Inject(method = "getOwnHeight", at = @At("HEAD"), cancellable = true)
     private void ultimaHeightHead(final CallbackInfoReturnable<Float> cir) {
-        Float cached = StatePropertyRuntime.fluidHeightIfCached(this.self());
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Float cached = StatePropertyRuntime.fluidHeightIfCached(this.self());
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
         }
     }
 
     @Inject(method = "getOwnHeight", at = @At("RETURN"))
     private void ultimaHeightReturn(final CallbackInfoReturnable<Float> cir) {
-        StatePropertyRuntime.rememberFluidHeight(this.self(), cir.getReturnValue());
+        try {
+            StatePropertyRuntime.rememberFluidHeight(this.self(), cir.getReturnValue());
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, this.self(), error);
+        }
     }
 
     @Unique

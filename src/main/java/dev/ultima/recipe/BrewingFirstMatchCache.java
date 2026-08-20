@@ -1,5 +1,6 @@
 package dev.ultima.recipe;
 
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -15,8 +16,10 @@ public final class BrewingFirstMatchCache {
     private final FirstMatchTable<RecipeMatchKeys.BrewingKey, Object> table = new FirstMatchTable<>();
 
     public void invalidate() {
-        this.table.invalidate();
-        RecipeMatchTelemetry.invalidation();
+        FailOpenGuard.run(FailOpenGuard.Module.RECIPE_MATCH_CACHE, "brewing-reload", () -> {
+            this.table.invalidate();
+            RecipeMatchTelemetry.invalidation();
+        });
     }
 
     public boolean isEmpty() {
@@ -24,46 +27,67 @@ public final class BrewingFirstMatchCache {
     }
 
     public @Nullable Boolean lookupIngredient(final ItemStack ingredient) {
-        RecipeMatchKeys.BrewingKey key = RecipeMatchKeys.BrewingKey.ingredient(ingredient);
-        if (!this.table.contains(key)) {
-            RecipeMatchTelemetry.brewingMiss();
-            return null;
-        }
-        RecipeMatchTelemetry.brewingHit();
-        return (Boolean) this.table.get(key);
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.INGREDIENT,
+                () -> this.lookupBoolean(RecipeMatchKeys.BrewingKey.ingredient(ingredient)));
     }
 
     public void storeIngredient(final ItemStack ingredient, final boolean result) {
-        this.table.put(RecipeMatchKeys.BrewingKey.ingredient(ingredient), result);
+        FailOpenGuard.run(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.INGREDIENT,
+                () -> this.table.put(RecipeMatchKeys.BrewingKey.ingredient(ingredient), result));
     }
 
     public @Nullable Boolean lookupHasMix(final ItemStack source, final ItemStack ingredient) {
-        RecipeMatchKeys.BrewingKey key = RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient);
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.HAS_MIX,
+                () -> this.lookupBoolean(
+                        RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient)));
+    }
+
+    public void storeHasMix(final ItemStack source, final ItemStack ingredient, final boolean result) {
+        FailOpenGuard.run(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.HAS_MIX,
+                () -> this.table.put(
+                        RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient),
+                        result));
+    }
+
+    public @Nullable MixDecision lookupMix(final ItemStack source, final ItemStack ingredient) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.MIX,
+                () -> {
+                    RecipeMatchKeys.BrewingKey key =
+                            RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient);
+                    if (!this.table.contains(key)) {
+                        RecipeMatchTelemetry.brewingMiss();
+                        return null;
+                    }
+                    RecipeMatchTelemetry.brewingHit();
+                    return (MixDecision) this.table.get(key);
+                });
+    }
+
+    public void storeMix(final ItemStack source, final ItemStack ingredient, final ItemStack result) {
+        FailOpenGuard.run(FailOpenGuard.Module.RECIPE_MATCH_CACHE, RecipeMatchKeys.BrewingKey.Kind.MIX, () -> {
+            MixDecision decision = result == source ? MixDecision.UNCHANGED : MixDecision.changed(result.copy());
+            this.table.put(
+                    RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient), decision);
+        });
+    }
+
+    private @Nullable Boolean lookupBoolean(final RecipeMatchKeys.BrewingKey key) {
         if (!this.table.contains(key)) {
             RecipeMatchTelemetry.brewingMiss();
             return null;
         }
         RecipeMatchTelemetry.brewingHit();
         return (Boolean) this.table.get(key);
-    }
-
-    public void storeHasMix(final ItemStack source, final ItemStack ingredient, final boolean result) {
-        this.table.put(RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient), result);
-    }
-
-    public @Nullable MixDecision lookupMix(final ItemStack source, final ItemStack ingredient) {
-        RecipeMatchKeys.BrewingKey key = RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient);
-        if (!this.table.contains(key)) {
-            RecipeMatchTelemetry.brewingMiss();
-            return null;
-        }
-        RecipeMatchTelemetry.brewingHit();
-        return (MixDecision) this.table.get(key);
-    }
-
-    public void storeMix(final ItemStack source, final ItemStack ingredient, final ItemStack result) {
-        MixDecision decision = result == source ? MixDecision.UNCHANGED : MixDecision.changed(result.copy());
-        this.table.put(RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient), decision);
     }
 
     public record MixDecision(boolean unchanged, @Nullable ItemStack output) {

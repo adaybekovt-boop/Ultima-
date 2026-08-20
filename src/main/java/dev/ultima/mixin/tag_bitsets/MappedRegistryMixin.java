@@ -1,6 +1,7 @@
 package dev.ultima.mixin.tag_bitsets;
 
 import dev.ultima.cache.tags.TagBitsetRuntime;
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.core.MappedRegistry;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,6 +16,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MappedRegistryMixin {
     @Inject(method = "refreshTagsInHolders", at = @At("HEAD"))
     private void ultimaDropTagBitsets(final CallbackInfo ci) {
-        TagBitsetRuntime.drop("refresh_tags_in_holders");
+        try {
+            TagBitsetRuntime.drop("refresh_tags_in_holders");
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.TAG_BITSETS, "refresh_tags_in_holders", error);
+        }
     }
 }

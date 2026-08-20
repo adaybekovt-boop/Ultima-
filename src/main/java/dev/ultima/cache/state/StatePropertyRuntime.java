@@ -4,6 +4,7 @@ import dev.ultima.Ultima;
 import dev.ultima.cache.CacheMetrics;
 import dev.ultima.cache.VanillaClassGuard;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.failopen.FailOpenGuard;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.fabricmc.fabric.api.registry.LandPathTypeRegistry;
 import net.minecraft.world.level.block.Block;
@@ -82,59 +83,50 @@ public final class StatePropertyRuntime {
     }
 
     public static void invalidateAll(final String reason) {
-        GENERATION.incrementAndGet();
-        int blockSize = 0;
-        int fluidSize = 0;
-        try {
-            blockSize = Block.BLOCK_STATE_REGISTRY.size();
-            fluidSize = Fluid.FLUID_STATE_REGISTRY.size();
-        } catch (Throwable ignored) {
-            blockSize = 0;
-            fluidSize = 0;
-        }
-        blockTable = new int[Math.max(0, blockSize)];
-        fluidTable = new int[Math.max(0, fluidSize)];
-        fluidHeights = new float[Math.max(0, fluidSize)];
-        METRICS.invalidations.incrementAndGet();
-        Ultima.LOGGER.debug(
-                "Ultima state property cache invalidated ({}); blockStates={}, fluidStates={}",
-                reason,
-                blockSize,
-                fluidSize);
+        FailOpenGuard.run(FailOpenGuard.Module.STATE_PROPERTY_CACHE, reason, () -> {
+            GENERATION.incrementAndGet();
+            int blockSize = 0;
+            int fluidSize = 0;
+            try {
+                blockSize = Block.BLOCK_STATE_REGISTRY.size();
+                fluidSize = Fluid.FLUID_STATE_REGISTRY.size();
+            } catch (Throwable ignored) {
+                blockSize = 0;
+                fluidSize = 0;
+            }
+            blockTable = new int[Math.max(0, blockSize)];
+            fluidTable = new int[Math.max(0, fluidSize)];
+            fluidHeights = new float[Math.max(0, fluidSize)];
+            METRICS.invalidations.incrementAndGet();
+            Ultima.LOGGER.debug(
+                    "Ultima state property cache invalidated ({}); blockStates={}, fluidStates={}",
+                    reason,
+                    blockSize,
+                    fluidSize);
+        });
     }
 
     public static @Nullable PathType pathTypeIfCached(final BlockState state) {
-        int packed = blockPacked(state);
-        if (packed < 0) {
-            return null;
-        }
-        if (BlockStatePropertyPack.isSkip(packed)) {
-            METRICS.fallbacks.incrementAndGet();
-            return null;
-        }
-        PathType cached = BlockStatePropertyPack.pathType(packed);
-        if (cached != null) {
-            METRICS.hits.incrementAndGet();
-        } else {
-            METRICS.misses.incrementAndGet();
-        }
-        return cached;
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> pathTypeIfCachedUnchecked(state));
     }
 
     public static void rememberPathType(final BlockState state, final @Nullable PathType pathType) {
-        if (pathType == null || !mayCachePathType(state)) {
-            return;
-        }
-        int id = blockId(state);
-        int[] table = blockTable;
-        if (id < 0 || id >= table.length) {
-            return;
-        }
-        int packed = classifyBlock(table, id, state);
-        if (BlockStatePropertyPack.isSkip(packed)) {
-            return;
-        }
-        table[id] = BlockStatePropertyPack.withPathType(packed, pathType);
+        FailOpenGuard.run(FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> {
+            if (pathType == null || !mayCachePathType(state)) {
+                return;
+            }
+            int id = blockId(state);
+            int[] table = blockTable;
+            if (id < 0 || id >= table.length) {
+                return;
+            }
+            int packed = classifyBlock(table, id, state);
+            if (BlockStatePropertyPack.isSkip(packed)) {
+                return;
+            }
+            table[id] = BlockStatePropertyPack.withPathType(packed, pathType);
+        });
     }
 
     public static boolean mayCachePathType(final BlockState state) {
@@ -152,22 +144,157 @@ public final class StatePropertyRuntime {
     }
 
     public static @Nullable Boolean signalSourceIfCached(final BlockState state) {
-        return booleanProperty(state, BlockStatePropertyPack::signalSource);
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> booleanProperty(state, BlockStatePropertyPack::signalSource));
     }
 
     public static void rememberSignalSource(final BlockState state, final boolean value) {
-        mutateBlock(state, packed -> BlockStatePropertyPack.withSignalSource(packed, value));
+        FailOpenGuard.run(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> mutateBlock(state, packed -> BlockStatePropertyPack.withSignalSource(packed, value)));
     }
 
     public static @Nullable Boolean analogIfCached(final BlockState state) {
-        return booleanProperty(state, BlockStatePropertyPack::analogOutput);
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> booleanProperty(state, BlockStatePropertyPack::analogOutput));
     }
 
     public static void rememberAnalog(final BlockState state, final boolean value) {
-        mutateBlock(state, packed -> BlockStatePropertyPack.withAnalogOutput(packed, value));
+        FailOpenGuard.run(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> mutateBlock(state, packed -> BlockStatePropertyPack.withAnalogOutput(packed, value)));
     }
 
     public static @Nullable Boolean redstoneConductorIfCached(final BlockState state) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> redstoneConductorIfCachedUnchecked(state));
+    }
+
+    public static boolean mayCacheRedstoneConductor(final BlockState state) {
+        return moduleEnabled()
+                && state != null
+                && VanillaClassGuard.isVanillaType(state.getBlock())
+                && !state.getBlock().hasDynamicShape();
+    }
+
+    public static void noteUncacheableRedstoneConductor(final BlockState state) {
+        if (mayCacheBlock(state) && !mayCacheRedstoneConductor(state)) {
+            markRedstoneSkip(state);
+        }
+    }
+
+    public static void rememberRedstoneConductor(final BlockState state, final boolean value) {
+        FailOpenGuard.run(FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> {
+            if (!mayCacheRedstoneConductor(state)) {
+                markRedstoneSkip(state);
+                return;
+            }
+            mutateBlock(state, packed -> BlockStatePropertyPack.withRedstoneConductor(packed, value));
+        });
+    }
+
+    public static @Nullable Boolean pathfindableIfCached(final BlockState state, final PathComputationType type) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> pathfindableIfCachedUnchecked(state, type));
+    }
+
+    public static void rememberPathfindable(
+            final BlockState state, final PathComputationType type, final boolean value) {
+        FailOpenGuard.run(FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> {
+            if (type == null) {
+                return;
+            }
+            mutateBlock(state, packed -> BlockStatePropertyPack.withPathfindable(packed, type, value));
+        });
+    }
+
+    public static @Nullable Boolean fluidSourceIfCached(final FluidState state) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> fluidBoolean(state, FluidStatePropertyPack::isSource));
+    }
+
+    public static void rememberFluidSource(final FluidState state, final boolean value) {
+        FailOpenGuard.run(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> mutateFluid(state, packed -> FluidStatePropertyPack.withSource(packed, value)));
+    }
+
+    public static @Nullable Boolean fluidEmptyIfCached(final FluidState state) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> fluidBoolean(state, FluidStatePropertyPack::isEmpty));
+    }
+
+    public static void rememberFluidEmpty(final FluidState state, final boolean value) {
+        FailOpenGuard.run(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> mutateFluid(state, packed -> FluidStatePropertyPack.withEmpty(packed, value)));
+    }
+
+    public static @Nullable Integer fluidAmountIfCached(final FluidState state) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> fluidAmountIfCachedUnchecked(state));
+    }
+
+    public static void rememberFluidAmount(final FluidState state, final int amount) {
+        FailOpenGuard.run(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE,
+                state,
+                () -> mutateFluid(state, packed -> FluidStatePropertyPack.withAmount(packed, amount)));
+    }
+
+    public static @Nullable Float fluidHeightIfCached(final FluidState state) {
+        return FailOpenGuard.callNullable(
+                FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> fluidHeightIfCachedUnchecked(state));
+    }
+
+    public static void rememberFluidHeight(final FluidState state, final float height) {
+        FailOpenGuard.run(FailOpenGuard.Module.STATE_PROPERTY_CACHE, state, () -> {
+            int id = fluidId(state);
+            int[] table = fluidTable;
+            float[] heights = fluidHeights;
+            if (id < 0 || id >= table.length || id >= heights.length) {
+                return;
+            }
+            int packed = classifyFluid(table, id, state);
+            if (FluidStatePropertyPack.isSkip(packed)) {
+                return;
+            }
+            heights[id] = height;
+            table[id] = FluidStatePropertyPack.withHeightPresent(packed);
+        });
+    }
+
+    private static @Nullable PathType pathTypeIfCachedUnchecked(final BlockState state) {
+        int packed = blockPacked(state);
+        if (packed < 0) {
+            return null;
+        }
+        if (BlockStatePropertyPack.isSkip(packed)) {
+            METRICS.fallbacks.incrementAndGet();
+            return null;
+        }
+        PathType cached = BlockStatePropertyPack.pathType(packed);
+        if (cached != null) {
+            METRICS.hits.incrementAndGet();
+        } else {
+            METRICS.misses.incrementAndGet();
+        }
+        return cached;
+    }
+
+    private static @Nullable Boolean redstoneConductorIfCachedUnchecked(final BlockState state) {
         int packed = blockPacked(state);
         if (packed < 0) {
             return null;
@@ -185,28 +312,8 @@ public final class StatePropertyRuntime {
         return cached;
     }
 
-    public static boolean mayCacheRedstoneConductor(final BlockState state) {
-        return moduleEnabled()
-                && state != null
-                && VanillaClassGuard.isVanillaType(state.getBlock())
-                && !state.getBlock().hasDynamicShape();
-    }
-
-    public static void noteUncacheableRedstoneConductor(final BlockState state) {
-        if (mayCacheBlock(state) && !mayCacheRedstoneConductor(state)) {
-            markRedstoneSkip(state);
-        }
-    }
-
-    public static void rememberRedstoneConductor(final BlockState state, final boolean value) {
-        if (!mayCacheRedstoneConductor(state)) {
-            markRedstoneSkip(state);
-            return;
-        }
-        mutateBlock(state, packed -> BlockStatePropertyPack.withRedstoneConductor(packed, value));
-    }
-
-    public static @Nullable Boolean pathfindableIfCached(final BlockState state, final PathComputationType type) {
+    private static @Nullable Boolean pathfindableIfCachedUnchecked(
+            final BlockState state, final PathComputationType type) {
         if (type == null) {
             return null;
         }
@@ -227,31 +334,7 @@ public final class StatePropertyRuntime {
         return cached;
     }
 
-    public static void rememberPathfindable(
-            final BlockState state, final PathComputationType type, final boolean value) {
-        if (type == null) {
-            return;
-        }
-        mutateBlock(state, packed -> BlockStatePropertyPack.withPathfindable(packed, type, value));
-    }
-
-    public static @Nullable Boolean fluidSourceIfCached(final FluidState state) {
-        return fluidBoolean(state, FluidStatePropertyPack::isSource);
-    }
-
-    public static void rememberFluidSource(final FluidState state, final boolean value) {
-        mutateFluid(state, packed -> FluidStatePropertyPack.withSource(packed, value));
-    }
-
-    public static @Nullable Boolean fluidEmptyIfCached(final FluidState state) {
-        return fluidBoolean(state, FluidStatePropertyPack::isEmpty);
-    }
-
-    public static void rememberFluidEmpty(final FluidState state, final boolean value) {
-        mutateFluid(state, packed -> FluidStatePropertyPack.withEmpty(packed, value));
-    }
-
-    public static @Nullable Integer fluidAmountIfCached(final FluidState state) {
+    private static @Nullable Integer fluidAmountIfCachedUnchecked(final FluidState state) {
         int packed = fluidPacked(state);
         if (packed < 0) {
             return null;
@@ -269,11 +352,7 @@ public final class StatePropertyRuntime {
         return cached;
     }
 
-    public static void rememberFluidAmount(final FluidState state, final int amount) {
-        mutateFluid(state, packed -> FluidStatePropertyPack.withAmount(packed, amount));
-    }
-
-    public static @Nullable Float fluidHeightIfCached(final FluidState state) {
+    private static @Nullable Float fluidHeightIfCachedUnchecked(final FluidState state) {
         int id = fluidId(state);
         int[] table = fluidTable;
         float[] heights = fluidHeights;
@@ -292,21 +371,6 @@ public final class StatePropertyRuntime {
         }
         METRICS.hits.incrementAndGet();
         return heights[id];
-    }
-
-    public static void rememberFluidHeight(final FluidState state, final float height) {
-        int id = fluidId(state);
-        int[] table = fluidTable;
-        float[] heights = fluidHeights;
-        if (id < 0 || id >= table.length || id >= heights.length) {
-            return;
-        }
-        int packed = classifyFluid(table, id, state);
-        if (FluidStatePropertyPack.isSkip(packed)) {
-            return;
-        }
-        heights[id] = height;
-        table[id] = FluidStatePropertyPack.withHeightPresent(packed);
     }
 
     public static boolean mayCacheBlock(final BlockState state) {

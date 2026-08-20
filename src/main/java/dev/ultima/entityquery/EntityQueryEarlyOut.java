@@ -1,5 +1,6 @@
 package dev.ultima.entityquery;
 
+import dev.ultima.failopen.FailOpenGuard;
 import dev.ultima.util.SectionRangeMath;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.entity.EntitySectionStorage;
@@ -64,6 +65,22 @@ public final class EntityQueryEarlyOut {
      *         {@code kind}. {@code false} means "run vanilla".
      */
     public static boolean allIntersectingEmpty(
+            final int xMin,
+            final int yMin,
+            final int zMin,
+            final int xMax,
+            final int yMax,
+            final int zMax,
+            final EntityQueryKind kind,
+            final SectionCounterLookup lookup) {
+        return FailOpenGuard.test(
+                FailOpenGuard.Module.ENTITY_QUERY_EARLY_OUT,
+                kind,
+                () -> allIntersectingEmptyUnchecked(xMin, yMin, zMin, xMax, yMax, zMax, kind, lookup),
+                false);
+    }
+
+    private static boolean allIntersectingEmptyUnchecked(
             final int xMin,
             final int yMin,
             final int zMin,

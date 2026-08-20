@@ -9,7 +9,6 @@ import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(SimpleContainer.class)
@@ -34,9 +33,9 @@ public abstract class SimpleContainerMixin implements Container {
         SlotMaskHooks.runClear(this, original::call);
     }
 
-    @Inject(method = "setChanged", at = @At("RETURN"))
-    private void ultimaAfterSetChanged(final CallbackInfo ci) {
-        SlotMaskHooks.afterSetChanged(this);
+    @WrapMethod(method = "setChanged")
+    private void ultimaSetChanged(final Operation<Void> original) {
+        SlotMaskHooks.runUnindexedMutation(this, original::call);
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
@@ -49,20 +48,12 @@ public abstract class SimpleContainerMixin implements Container {
 
     @WrapMethod(method = "addItem")
     private ItemStack ultimaAfterAddItem(final ItemStack itemStack, final Operation<ItemStack> original) {
-        try {
-            return original.call(itemStack);
-        } finally {
-            SlotMaskHooks.invalidate(this);
-        }
+        return SlotMaskHooks.callInvalidate(this, () -> original.call(itemStack));
     }
 
     @WrapMethod(method = "removeItemType")
     private ItemStack ultimaAfterRemoveItemType(
             final net.minecraft.world.item.Item itemType, final int count, final Operation<ItemStack> original) {
-        try {
-            return original.call(itemType, count);
-        } finally {
-            SlotMaskHooks.invalidate(this);
-        }
+        return SlotMaskHooks.callInvalidate(this, () -> original.call(itemType, count));
     }
 }

@@ -30,6 +30,7 @@ public final class SlotMaskEntityQueryTest {
     }
 
     static void run() {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         testMutationCatalogPresent();
         testReplaceWithInvalidatesStaleEmptyMask();
         testIndexedWriteDepthRecoversAfterThrow();

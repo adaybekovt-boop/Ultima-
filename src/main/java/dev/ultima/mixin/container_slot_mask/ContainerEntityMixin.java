@@ -33,10 +33,6 @@ public interface ContainerEntityMixin {
 
     @WrapMethod(method = "readChestVehicleSaveData")
     default void ultimaAfterLoad(final ValueInput input, final Operation<Void> original) {
-        try {
-            original.call(input);
-        } finally {
-            SlotMaskHooks.invalidate((Container)(Object)this);
-        }
+        SlotMaskHooks.runInvalidate((Container)(Object)this, () -> original.call(input));
     }
 }

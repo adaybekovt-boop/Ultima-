@@ -37,11 +37,7 @@ public abstract class BaseContainerBlockEntityMixin implements Container {
 
     @WrapMethod(method = "setItems")
     private void ultimaSetItems(final NonNullList<ItemStack> items, final Operation<Void> original) {
-        try {
-            original.call(items);
-        } finally {
-            SlotMaskHooks.invalidate(this);
-        }
+        SlotMaskHooks.runInvalidate(this, () -> original.call(items));
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)

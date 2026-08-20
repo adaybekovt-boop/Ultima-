@@ -1,6 +1,7 @@
 package dev.ultima.mixin.tag_bitsets;
 
 import dev.ultima.cache.tags.TagBitsetRuntime;
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderOwner;
 import net.minecraft.core.Registry;
@@ -33,11 +34,15 @@ public abstract class HolderReferenceMixin<T> {
         if (!this.isBound() || !(this.owner instanceof Registry<?> registry)) {
             return;
         }
-        @SuppressWarnings("unchecked")
-        Registry<T> typed = (Registry<T>)registry;
-        Boolean hit = TagBitsetRuntime.lookup(typed.key(), tag, typed.getId(this.value()));
-        if (hit != null) {
-            cir.setReturnValue(hit);
+        try {
+            @SuppressWarnings("unchecked")
+            Registry<T> typed = (Registry<T>)registry;
+            Boolean hit = TagBitsetRuntime.lookup(typed.key(), tag, typed.getId(this.value()));
+            if (hit != null) {
+                cir.setReturnValue(hit);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.TAG_BITSETS, tag, error);
         }
     }
 }

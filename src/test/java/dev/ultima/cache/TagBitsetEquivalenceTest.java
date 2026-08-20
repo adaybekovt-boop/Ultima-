@@ -29,6 +29,7 @@ public final class TagBitsetEquivalenceTest {
     }
 
     public static void run() {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         testEmptyTagIsFalseNotMiss();
         testUnknownTagFallsBack();
         testOutOfRangeIdFallsBack();

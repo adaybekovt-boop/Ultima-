@@ -1,5 +1,6 @@
 package dev.ultima.mixin.recipe_match_cache;
 
+import dev.ultima.failopen.FailOpenGuard;
 import dev.ultima.recipe.RecipeCachePolicy;
 import dev.ultima.recipe.RecipeFirstMatchCache;
 import java.util.Optional;
@@ -35,7 +36,11 @@ public abstract class RecipeManagerMixin {
     @Inject(method = "apply", at = @At("RETURN"))
     private void ultimaInvalidateRecipeCache(
             final RecipeMap recipes, final ResourceManager manager, final ProfilerFiller profiler, final CallbackInfo ci) {
-        this.ultimaRecipeCache.onRecipesReplaced(RecipeCachePolicy.inspect(this.recipes));
+        try {
+            this.ultimaRecipeCache.onRecipesReplaced(RecipeCachePolicy.inspect(this.recipes));
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.RECIPE_MATCH_CACHE, "reload", error);
+        }
     }
 
     @Inject(
@@ -47,9 +52,13 @@ public abstract class RecipeManagerMixin {
             final RecipeInput input,
             final Level level,
             final CallbackInfoReturnable<Optional<RecipeHolder<?>>> cir) {
-        Optional<RecipeHolder<?>> cached = this.ultimaRecipeCache.lookup(type, input, true);
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Optional<RecipeHolder<?>> cached = this.ultimaRecipeCache.lookup(type, input, true);
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.RECIPE_MATCH_CACHE, type, error);
         }
     }
 
@@ -61,11 +70,15 @@ public abstract class RecipeManagerMixin {
             final RecipeInput input,
             final Level level,
             final CallbackInfoReturnable<Optional<RecipeHolder<?>>> cir) {
-        Optional<RecipeHolder<?>> result = cir.getReturnValue();
-        if (result == null) {
-            return;
+        try {
+            Optional<RecipeHolder<?>> result = cir.getReturnValue();
+            if (result == null) {
+                return;
+            }
+            this.ultimaRecipeCache.store(type, input, result);
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.RECIPE_MATCH_CACHE, type, error);
         }
-        this.ultimaRecipeCache.store(type, input, result);
     }
 
     @Inject(
@@ -81,9 +94,13 @@ public abstract class RecipeManagerMixin {
         if (recipeHint == null) {
             return;
         }
-        Optional<RecipeHolder<?>> cached = this.ultimaRecipeCache.hintedHit(type, input, recipeHint);
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            Optional<RecipeHolder<?>> cached = this.ultimaRecipeCache.hintedHit(type, input, recipeHint);
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.RECIPE_MATCH_CACHE, type, error);
         }
     }
 }

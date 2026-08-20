@@ -1,6 +1,7 @@
 package dev.ultima.mixin.state_property_cache;
 
 import dev.ultima.cache.state.StatePropertyRuntime;
+import dev.ultima.failopen.FailOpenGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
@@ -21,16 +22,24 @@ public abstract class WalkNodeEvaluatorMixin {
     @Inject(method = "getPathTypeFromState", at = @At("HEAD"), cancellable = true)
     private static void ultimaPathTypeHead(
             final BlockGetter level, final BlockPos pos, final CallbackInfoReturnable<PathType> cir) {
-        BlockState state = level.getBlockState(pos);
-        PathType cached = StatePropertyRuntime.pathTypeIfCached(state);
-        if (cached != null) {
-            cir.setReturnValue(cached);
+        try {
+            BlockState state = level.getBlockState(pos);
+            PathType cached = StatePropertyRuntime.pathTypeIfCached(state);
+            if (cached != null) {
+                cir.setReturnValue(cached);
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, pos, error);
         }
     }
 
     @Inject(method = "getPathTypeFromState", at = @At("RETURN"))
     private static void ultimaPathTypeReturn(
             final BlockGetter level, final BlockPos pos, final CallbackInfoReturnable<PathType> cir) {
-        StatePropertyRuntime.rememberPathType(level.getBlockState(pos), cir.getReturnValue());
+        try {
+            StatePropertyRuntime.rememberPathType(level.getBlockState(pos), cir.getReturnValue());
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.STATE_PROPERTY_CACHE, pos, error);
+        }
     }
 }
