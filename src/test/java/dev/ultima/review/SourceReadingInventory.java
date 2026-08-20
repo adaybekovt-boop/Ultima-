@@ -89,7 +89,7 @@ public final class SourceReadingInventory {
     private SourceReadingInventory() {
     }
 
-    static void assertCatalogCoversThisSuite() {
+    public static void assertCatalogCoversThisSuite() {
         List<Path> uncatalogued = new ArrayList<>();
         Path testRoot = Path.of("src/test/java");
         try (Stream<Path> walk = Files.walk(testRoot)) {
