@@ -39,9 +39,8 @@ public interface ContainerEntityMixin {
     @WrapMethod(method = "unpackChestVehicleLootTable")
     default void ultimaUnpackLootTable(
             final net.minecraft.world.entity.player.Player player, final Operation<Void> original) {
+        ContainerEntity self = (ContainerEntity)(Object)this;
         SlotMaskHooks.runInvalidateIf(
-                (Container)(Object)this,
-                this.getContainerLootTable() != null,
-                () -> original.call(player));
+                self, self.getContainerLootTable() != null, () -> original.call(player));
     }
 }
