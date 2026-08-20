@@ -46,12 +46,12 @@ public final class SourceReadingInventory {
                             + "LootTable.fill / Mixin apply are not invoked in JavaExec."),
             new Entry(
                     "dev.ultima.review.FsrUpscalingChecks",
-                    "no Files.readString remaining; @Mixin priority + @Inject(resize) via reflection; "
-                            + "Iris gate via UltimaMixinPlugin.shouldApplyMixin / FsrCompatibility.blocks",
+                    "temporal/FSR GameRendererMixin sources for @Mixin priority and resize inject",
                     Kind.WIRING,
-                    "Earlier revisions grepped javadoc/CHANGELOG (unacceptable as behavior). Current "
-                            + "priority/resize checks are annotation contracts. Iris skip is plugin+"
-                            + "compatibility runtime. Not a live GameRenderer.resize."),
+                    "Dropped CHANGELOG/javadoc greps. Remaining source read is a Mixin apply-order "
+                            + "contract (@Mixin is CLASS retention, so reflection cannot see priority). "
+                            + "Iris skip is UltimaMixinPlugin.shouldApplyMixin + FsrCompatibility.blocks. "
+                            + "Not a live GameRenderer.resize."),
             new Entry(
                     "dev.ultima.review.MesherFastPathChecks",
                     "no Files.readString remaining; benchmark scene warmup/sample/camera via "
