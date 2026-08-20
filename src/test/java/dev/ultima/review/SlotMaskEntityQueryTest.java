@@ -15,12 +15,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import net.minecraft.SharedConstants;
 import net.minecraft.core.NonNullList;
-import net.minecraft.server.Bootstrap;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
 /**
  * Differential checks for container slot masks and entity-query empty early-outs.
@@ -178,10 +175,10 @@ public final class SlotMaskEntityQueryTest {
      * runs the same helper the Mixin calls, with the same {@code items.set} mutation vanilla uses.
      */
     private static void testReplaceWithInvalidatesStaleEmptyMask() {
-        requireMinecraftBootstrap("replaceWith backing-list copy");
+        MinecraftTestItems.ensureBootstrapped("replaceWith backing-list copy");
         SimpleContainer dest = new SimpleContainer(5);
         SimpleContainer src = new SimpleContainer(5);
-        itemsOf(src).set(0, new ItemStack(Items.DIRT));
+        itemsOf(src).set(0, MinecraftTestItems.dirt());
         NonEmptySlotMask mask = SlotMaskTracker.of(dest);
         mask.setVerifyPeriod(256);
         mask.rebuild(SlotOccupancy.of(5, slot -> false));
@@ -204,12 +201,12 @@ public final class SlotMaskEntityQueryTest {
      * finally abort path untrusts the mask.
      */
     private static void testIndexedWriteDepthRecoversAfterThrow() {
-        requireMinecraftBootstrap("indexed-write exception-after-mutation");
+        MinecraftTestItems.ensureBootstrapped("indexed-write exception-after-mutation");
         SetChangedThrowsContainer container = new SetChangedThrowsContainer(3);
         NonEmptySlotMask mask = SlotMaskTracker.of(container);
         mask.setVerifyPeriod(256);
         mask.rebuild(SlotOccupancy.of(3, slot -> false));
-        ItemStack dirt = new ItemStack(Items.DIRT);
+        ItemStack dirt = MinecraftTestItems.dirt();
         try {
             SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, dirt));
             throw new AssertionError("vanilla throw must propagate");
@@ -241,7 +238,7 @@ public final class SlotMaskEntityQueryTest {
      * the backing list and throws from setChanged.
      */
     private static void testUnpackLootTableInvalidatesAfterThrow() {
-        requireMinecraftBootstrap("unpackLootTable fill-then-throw");
+        MinecraftTestItems.ensureBootstrapped("unpackLootTable fill-then-throw");
         SetChangedThrowsContainer container = new SetChangedThrowsContainer(27);
         NonEmptySlotMask mask = SlotMaskTracker.of(container);
         mask.setVerifyPeriod(256);
@@ -249,12 +246,12 @@ public final class SlotMaskEntityQueryTest {
         container.throwOnSetChanged = false;
         try {
             SlotMaskHooks.runInvalidateIf(container, true, () -> {
-                SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, new ItemStack(Items.DIRT)));
-                SlotMaskHooks.runIndexedWrite(container, 3, () -> container.setItem(3, new ItemStack(Items.DIRT)));
+                SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, MinecraftTestItems.dirt()));
+                SlotMaskHooks.runIndexedWrite(container, 3, () -> container.setItem(3, MinecraftTestItems.dirt()));
                 assertTrue(!container.getItem(0).isEmpty(), "first loot stack is in the chest before the failure");
                 assertTrue(!container.getItem(3).isEmpty(), "second loot stack is in the chest before the failure");
                 container.throwOnSetChanged = true;
-                SlotMaskHooks.runIndexedWrite(container, 8, () -> container.setItem(8, new ItemStack(Items.DIRT)));
+                SlotMaskHooks.runIndexedWrite(container, 8, () -> container.setItem(8, MinecraftTestItems.dirt()));
             });
             throw new AssertionError("vanilla throw must propagate");
         } catch (IllegalStateException expected) {
@@ -666,25 +663,6 @@ public final class SlotMaskEntityQueryTest {
         Boolean empty = mask.tryExactEmpty(SlotMaskTracker.occupancy(container));
         if (Boolean.TRUE.equals(empty)) {
             throw new AssertionError(message + ": trusted empty while container has items, trusted=" + mask.trusted());
-        }
-    }
-
-    private static void requireMinecraftBootstrap(final String purpose) {
-        if (!tryBootstrap()) {
-            throw new AssertionError(
-                    "Minecraft bootstrap is required for " + purpose
-                            + "; this check must not pass without placing a real ItemStack in the backing list");
-        }
-    }
-
-    private static boolean tryBootstrap() {
-        try {
-            SharedConstants.tryDetectVersion();
-            Bootstrap.bootStrap();
-            return Items.DIRT != null && !new ItemStack(Items.DIRT).isEmpty();
-        } catch (Throwable error) {
-            System.out.println("Slot-mask production ItemStack bootstrap failed: " + error);
-            return false;
         }
     }
 
