@@ -35,4 +35,13 @@ public interface ContainerEntityMixin {
     default void ultimaAfterLoad(final ValueInput input, final Operation<Void> original) {
         SlotMaskHooks.runInvalidate((Container)(Object)this, () -> original.call(input));
     }
+
+    @WrapMethod(method = "unpackChestVehicleLootTable")
+    default void ultimaUnpackLootTable(
+            final net.minecraft.world.entity.player.Player player, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidateIf(
+                (Container)(Object)this,
+                this.getContainerLootTable() != null,
+                () -> original.call(player));
+    }
 }

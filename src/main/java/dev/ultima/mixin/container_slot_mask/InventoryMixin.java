@@ -66,6 +66,22 @@ public abstract class InventoryMixin implements Container {
         SlotMaskHooks.runInvalidate(this, () -> original.call(input));
     }
 
+    @WrapMethod(method = "setSelectedItem")
+    private ItemStack ultimaSetSelectedItem(final ItemStack itemStack, final Operation<ItemStack> original) {
+        Inventory self = (Inventory)(Object)this;
+        return SlotMaskHooks.callIndexedWrite(self, self.getSelectedSlot(), () -> original.call(itemStack));
+    }
+
+    @WrapMethod(method = "addAndPickItem")
+    private void ultimaAddAndPickItem(final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(itemStack));
+    }
+
+    @WrapMethod(method = "pickSlot")
+    private void ultimaPickSlot(final int slot, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(slot));
+    }
+
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
     private void ultimaIsEmpty(final CallbackInfoReturnable<Boolean> cir) {
         Boolean empty = SlotMaskQueries.tryExactEmpty(this);

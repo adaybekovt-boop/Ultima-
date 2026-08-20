@@ -1,7 +1,9 @@
 package dev.ultima.review;
 
+import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
+import dev.ultima.client.fsr.FsrUpscaling;
 import dev.ultima.fsr.FsrCompatibility;
 import dev.ultima.fsr.FsrEasuConstants;
 import dev.ultima.fsr.FsrIrisCapabilities;
@@ -429,32 +431,63 @@ final class FsrUpscalingChecks {
     }
 
     private static void testIrisModPresenceIsCachedAndShared() {
-        String compatibility = readSource("src/main/java/dev/ultima/fsr/FsrCompatibility.java");
-        String irisCaps = readSource("src/main/java/dev/ultima/fsr/FsrIrisCapabilities.java");
-        String upscaling = readSource("src/client/java/dev/ultima/client/fsr/FsrUpscaling.java");
-        assertTrue(compatibility.contains("NATIVE_IRIS"),
-                "native Iris presence is probed once into a static");
-        assertTrue(compatibility.contains("NATIVE_CANVAS") && compatibility.contains("NATIVE_SODIUM"),
-                "Canvas and Sodium presence are probed once into statics");
-        assertFalse(irisCaps.contains("FabricLoader.getInstance().isModLoaded"),
-                "Iris capabilities must not duplicate FabricLoader.isModLoaded");
-        assertTrue(irisCaps.contains("FsrCompatibility.isModLoaded"),
-                "Iris capabilities reuse FsrCompatibility.isModLoaded");
-        int irisCalls = 0;
-        int from = 0;
-        while (true) {
-            int at = upscaling.indexOf("FsrIrisCapabilities.isIrisModLoaded()", from);
-            if (at < 0) {
-                break;
-            }
-            irisCalls++;
-            from = at + 1;
-        }
-        assertEquals(1, irisCalls, "beginWorldPass must call isIrisModLoaded once (local), not twice");
-        assertTrue(upscaling.contains("boolean irisLoaded"),
-                "beginWorldPass caches the Iris flag for the frame");
-        assertFalse(compatibility.contains("modId()"),
-                "DisableReason.modId was unused and must stay removed");
+        java.util.concurrent.atomic.AtomicInteger probes = new java.util.concurrent.atomic.AtomicInteger();
+        LoadedModCache.runWithProbeForTest(
+                id -> {
+                    probes.incrementAndGet();
+                    return "canvas".equals(id) || "iris".equals(id) || "sodium".equals(id);
+                },
+                () -> {
+                    Map<String, Boolean> requested = new LinkedHashMap<>();
+                    for (UltimaModules.Module module : UltimaModules.all()) {
+                        requested.put(module.key(), module.enabledByDefault());
+                    }
+                    requested.put("fsr_upscaling", true);
+                    UltimaConfig config = UltimaConfig.createForTests(requested);
+
+                    UltimaConfig.ResolvedModule resolved = config.resolve("fsr_upscaling");
+                    assertTrue(
+                            resolved.loadedIncompatibleMods().contains("canvas"),
+                            "UltimaConfig.loadedIncompatibleMods must use LoadedModCache, not raw FabricLoader");
+                    assertTrue(
+                            FsrCompatibility.current() == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
+                            "FsrCompatibility.canvasLoaded must use LoadedModCache, not raw FabricLoader");
+                    assertTrue(
+                            FsrIrisCapabilities.isIrisModLoaded(),
+                            "FsrIrisCapabilities must use LoadedModCache, not raw FabricLoader");
+
+                    simulateFsrFrameModProbes(config);
+                    int afterWarmup = probes.get();
+                    assertTrue(afterWarmup > 0, "warmup must probe the backend at least once");
+                    assertEquals(
+                            afterWarmup,
+                            LoadedModCache.probeCallCount(),
+                            "LoadedModCache probe counter must match the test probe");
+                    for (int frame = 0; frame < 5; frame++) {
+                        simulateFsrFrameModProbes(config);
+                    }
+                    assertEquals(
+                            afterWarmup,
+                            probes.get(),
+                            "FSR per-frame paths must not call isModLoaded after cache warmup");
+                });
+    }
+
+    /**
+     * Production methods {@code GameRendererMixin} hits every world frame for mod presence:
+     * {@code moduleEnabled} (UltimaConfig), {@code FsrCompatibility.current}/{@code blocks},
+     * {@code FsrIrisCapabilities.isIrisModLoaded}, companion-target sizing.
+     */
+    private static void simulateFsrFrameModProbes(final UltimaConfig config) {
+        config.isEnabled("fsr_upscaling");
+        config.resolve("fsr_upscaling");
+        FsrCompatibility.current();
+        FsrCompatibility.blocks("fsr_upscaling");
+        boolean irisLoaded = FsrIrisCapabilities.isIrisModLoaded();
+        FsrRuntimeGate.allowWorldTargetHijack(config.isEnabled("fsr_upscaling"), false, irisLoaded);
+        FsrUpscaling.get().moduleEnabled();
+        FsrUpscaling.get().companionTargetSize(1920, 1080);
+        FsrUpscaling.get().syncCompanionTarget(null, 1920, 1080);
     }
 
     private static void testIrisProtectionIsMixinPlugin() {

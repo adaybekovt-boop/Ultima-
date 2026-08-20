@@ -18,6 +18,11 @@ public interface ListBackedContainerMixin {
         SlotMaskHooks.runIndexedWrite((Container)(Object)this, slot, () -> original.call(slot, itemStack));
     }
 
+    @WrapMethod(method = "setItemNoUpdate")
+    default void ultimaSetItemNoUpdate(final int slot, final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runIndexedWrite((Container)(Object)this, slot, () -> original.call(slot, itemStack));
+    }
+
     @WrapMethod(method = "removeItem")
     default ItemStack ultimaRemoveItem(final int slot, final int count, final Operation<ItemStack> original) {
         return SlotMaskHooks.callIndexedWrite((Container)(Object)this, slot, () -> original.call(slot, count));

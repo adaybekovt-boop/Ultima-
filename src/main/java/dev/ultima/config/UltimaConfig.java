@@ -503,14 +503,10 @@ public final class UltimaConfig {
         if (module.incompatibleMods().isEmpty()) {
             return loaded;
         }
-        try {
-            for (String modId : module.incompatibleMods()) {
-                if (FabricLoader.getInstance().isModLoaded(modId)) {
-                    loaded.add(modId);
-                }
+        for (String modId : module.incompatibleMods()) {
+            if (LoadedModCache.isLoaded(modId)) {
+                loaded.add(modId);
             }
-        } catch (Throwable ignored) {
-            return loaded;
         }
         return loaded;
     }

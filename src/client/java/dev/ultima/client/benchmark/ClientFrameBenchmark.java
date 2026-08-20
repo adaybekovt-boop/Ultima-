@@ -384,8 +384,8 @@ public final class ClientFrameBenchmark {
         String dimension = minecraft.level != null ? minecraft.level.dimension().identifier().toString() : "";
         List<String> mods = loadedMods();
         List<String> resourcePacks = minecraft.getResourcePackRepository().getSelectedIds().stream().sorted().toList();
-        boolean sodiumLoaded = FabricLoader.getInstance().isModLoaded("sodium");
-        boolean irisLoaded = FabricLoader.getInstance().isModLoaded("iris");
+        boolean sodiumLoaded = dev.ultima.config.LoadedModCache.isLoaded("sodium");
+        boolean irisLoaded = dev.ultima.config.LoadedModCache.isLoaded("iris");
         Pose requested = requestedPose();
         Pose actual = capturePose();
 

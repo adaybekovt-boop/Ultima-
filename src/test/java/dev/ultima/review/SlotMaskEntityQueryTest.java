@@ -34,6 +34,10 @@ public final class SlotMaskEntityQueryTest {
         testMutationCatalogPresent();
         testReplaceWithInvalidatesStaleEmptyMask();
         testIndexedWriteDepthRecoversAfterThrow();
+        testUnpackLootTableInvalidatesAfterThrow();
+        testUnpackNoopDoesNotInvalidate();
+        testSetChangedUnindexedMutationAfterThrow();
+        testApplyComponentsAndLoadInvalidateAfterThrow();
         testPartialOccupiedVisitDoesNotRescan();
         testSharedSectionWalkBudget();
         testRandomOccupancyMatchesScan();
@@ -53,6 +57,8 @@ public final class SlotMaskEntityQueryTest {
         boolean sawSetChanged = false;
         boolean sawLoot = false;
         boolean sawReplaceWith = false;
+        boolean sawApplyComponents = false;
+        boolean sawSetItemNoUpdate = false;
         for (String source : VanillaInventoryMutationSources.SOURCES) {
             if (source.contains("setItem")) {
                 sawSetItem = true;
@@ -66,17 +72,89 @@ public final class SlotMaskEntityQueryTest {
             if (source.contains("replaceWith")) {
                 sawReplaceWith = true;
             }
+            if (source.contains("applyComponents")) {
+                sawApplyComponents = true;
+            }
+            if (source.contains("setItemNoUpdate")) {
+                sawSetItemNoUpdate = true;
+            }
         }
         assertTrue(sawSetItem && sawSetChanged && sawLoot, "catalog covers setItem, setChanged, loot unpack");
         assertTrue(sawReplaceWith, "catalog must list Inventory.replaceWith (Variant A: mixin hook, not verify-only)");
+        assertTrue(sawApplyComponents, "catalog must prove applyComponents covers copyInto, not setItems");
+        assertTrue(sawSetItemNoUpdate, "catalog must list ListBackedContainer.setItemNoUpdate");
         boolean mixinWrapsReplaceWith = false;
+        boolean mixinWrapsPickSlot = false;
+        boolean mixinWrapsUnpack = false;
+        boolean mixinWrapsRemoveNoUpdate = false;
+        boolean mixinWrapsSetItemNoUpdate = false;
+        boolean mixinWrapsInstanceSetChanged = false;
+        boolean mixinWrapsStaticSetChanged = false;
+        boolean mixinWrapsApplyComponents = false;
+        boolean mixinWrapsLoadWithComponents = false;
+        boolean mixinWrapsLoadCustomOnly = false;
+        boolean mixinWrapsVehicleUnpack = false;
         for (java.lang.reflect.Method method :
                 dev.ultima.mixin.container_slot_mask.InventoryMixin.class.getDeclaredMethods()) {
             if ("ultimaReplaceWith".equals(method.getName())) {
                 mixinWrapsReplaceWith = true;
             }
+            if ("ultimaPickSlot".equals(method.getName())) {
+                mixinWrapsPickSlot = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.RandomizableContainerMixin.class.getDeclaredMethods()) {
+            if ("ultimaUnpackLootTable".equals(method.getName())) {
+                mixinWrapsUnpack = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.ListBackedContainerMixin.class.getDeclaredMethods()) {
+            if ("ultimaRemoveNoUpdate".equals(method.getName())) {
+                mixinWrapsRemoveNoUpdate = true;
+            }
+            if ("ultimaSetItemNoUpdate".equals(method.getName())) {
+                mixinWrapsSetItemNoUpdate = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.BlockEntityMixin.class.getDeclaredMethods()) {
+            if ("ultimaInstanceSetChanged".equals(method.getName())) {
+                mixinWrapsInstanceSetChanged = true;
+            }
+            if ("ultimaStaticSetChanged".equals(method.getName())) {
+                mixinWrapsStaticSetChanged = true;
+            }
+            if ("ultimaApplyComponents".equals(method.getName())) {
+                mixinWrapsApplyComponents = true;
+            }
+            if ("ultimaLoadWithComponents".equals(method.getName())) {
+                mixinWrapsLoadWithComponents = true;
+            }
+            if ("ultimaLoadCustomOnly".equals(method.getName())) {
+                mixinWrapsLoadCustomOnly = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.ContainerEntityMixin.class.getDeclaredMethods()) {
+            if ("ultimaUnpackLootTable".equals(method.getName())) {
+                mixinWrapsVehicleUnpack = true;
+            }
         }
         assertTrue(mixinWrapsReplaceWith, "InventoryMixin must wrap vanilla replaceWith");
+        assertTrue(mixinWrapsPickSlot, "InventoryMixin must wrap pickSlot (items.set swap)");
+        assertTrue(mixinWrapsUnpack, "RandomizableContainerMixin must wrap unpackLootTable");
+        assertTrue(mixinWrapsRemoveNoUpdate, "ListBackedContainerMixin must wrap removeItemNoUpdate");
+        assertTrue(mixinWrapsSetItemNoUpdate, "ListBackedContainerMixin must wrap setItemNoUpdate");
+        assertTrue(
+                mixinWrapsInstanceSetChanged && mixinWrapsStaticSetChanged,
+                "BlockEntityMixin must wrap both setChanged overloads");
+        assertTrue(mixinWrapsApplyComponents, "BlockEntityMixin must wrap applyComponents (copyInto, not setItems)");
+        assertTrue(
+                mixinWrapsLoadWithComponents && mixinWrapsLoadCustomOnly,
+                "BlockEntityMixin must wrap loadWithComponents and loadCustomOnly");
+        assertTrue(mixinWrapsVehicleUnpack, "ContainerEntityMixin must wrap unpackChestVehicleLootTable");
     }
 
     /**
@@ -114,6 +192,102 @@ public final class SlotMaskEntityQueryTest {
         assertTrue(
                 !mask.trusted(),
                 "enter/exit depth must not leak: in-place setChanged must still invalidate after a thrown write");
+    }
+
+    /**
+     * Production helper used by {@code RandomizableContainerMixin.unpackLootTable}.
+     * Mixins do not apply in this harness; a live loot table is not claimed.
+     */
+    private static void testUnpackLootTableInvalidatesAfterThrow() {
+        SimpleContainer container = new SimpleContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        SlotOccupancy midLoot = SlotOccupancy.of(27, slot -> slot == 0);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(midLoot)),
+                "precondition: trusted empty mask is a false-negative after partial loot");
+        try {
+            SlotMaskHooks.runInvalidate(container, () -> {
+                throw new IllegalStateException("lootTable.fill failed mid-generation");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(midLoot)),
+                "unpackLootTable finally must invalidate so a mid-fill throw cannot leave a false empty");
+    }
+
+    /**
+     * No-op unpack (loot table already consumed) must not untrust the mask. Unconditional
+     * invalidate on every {@code getItem} would make the chest mask useless.
+     */
+    private static void testUnpackNoopDoesNotInvalidate() {
+        SimpleContainer container = new SimpleContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        SlotOccupancy occupied = SlotOccupancy.of(27, slot -> slot == 0);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(occupied)),
+                "precondition: trusted empty mask still reports empty against occupied occupancy");
+        try {
+            SlotMaskHooks.runInvalidateIf(container, false, () -> {
+                throw new IllegalStateException("no-op unpack still threw");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(occupied)),
+                "no-op unpack must not invalidate: a trusted empty mask must still be a false-negative");
+        assertTrue(mask.trusted(), "no-op unpack leaves the mask trusted");
+    }
+
+    /**
+     * Production helper used by {@code BlockEntityMixin.applyComponents} and load wraps.
+     */
+    private static void testApplyComponentsAndLoadInvalidateAfterThrow() {
+        SimpleContainer container = new SimpleContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        SlotOccupancy copiedIn = SlotOccupancy.of(27, slot -> slot == 3);
+        try {
+            SlotMaskHooks.runInvalidateIfContainer(container, () -> {
+                throw new IllegalStateException("copyInto failed mid-applyComponents");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(copiedIn)),
+                "applyComponents/load finally must invalidate after a throw so copyInto cannot leave a false empty");
+    }
+
+    /**
+     * Production helper used by {@code BlockEntityMixin.setChanged} wraps.
+     */
+    private static void testSetChangedUnindexedMutationAfterThrow() {
+        SimpleContainer container = new SimpleContainer(3);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        SlotOccupancy grown = SlotOccupancy.of(3, slot -> slot == 1);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(grown)),
+                "precondition: trusted empty mask hides an in-place grow until setChanged");
+        try {
+            SlotMaskHooks.runUnindexedMutation(container, () -> {
+                throw new IllegalStateException("setChanged failed after in-place grow");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(grown)),
+                "setChanged finally must untrust the mask after a throw");
     }
 
     private static void testPartialOccupiedVisitDoesNotRescan() {

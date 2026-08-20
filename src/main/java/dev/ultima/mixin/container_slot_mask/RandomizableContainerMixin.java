@@ -12,10 +12,10 @@ import org.spongepowered.asm.mixin.Mixin;
 public interface RandomizableContainerMixin {
     @WrapMethod(method = "unpackLootTable")
     default void ultimaUnpackLootTable(final Player player, final Operation<Void> original) {
-        if (this instanceof Container container) {
-            SlotMaskHooks.runInvalidate(container, () -> original.call(player));
+        if (!(this instanceof Container container)) {
+            original.call(player);
             return;
         }
-        original.call(player);
+        SlotMaskHooks.runInvalidateIf(container, this.getLootTable() != null, () -> original.call(player));
     }
 }

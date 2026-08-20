@@ -53,7 +53,7 @@ public final class SlotMaskHooks {
 
     /**
      * Runs {@code vanilla} and always invalidates afterwards, including when {@code vanilla}
-     * throws. Used by {@code unpackLootTable}, bulk replace, and NBT load wraps.
+     * throws. Used by {@code unpackLootTable}, {@code applyComponents}, bulk replace, and NBT load.
      */
     public static void runInvalidate(final Container container, final Runnable vanilla) {
         try {
@@ -61,6 +61,32 @@ public final class SlotMaskHooks {
         } finally {
             SlotMaskTracker.invalidate(container);
         }
+    }
+
+    /**
+     * Same as {@link #runInvalidate} when {@code shouldInvalidate} is true. When false, runs
+     * vanilla only: {@code unpackLootTable} is a no-op after the table is cleared, and wrapping
+     * that path with an unconditional invalidate would untrust every chest {@code getItem}.
+     */
+    public static void runInvalidateIf(
+            final Container container, final boolean shouldInvalidate, final Runnable vanilla) {
+        if (!shouldInvalidate) {
+            vanilla.run();
+            return;
+        }
+        runInvalidate(container, vanilla);
+    }
+
+    /**
+     * Invalidates after vanilla when {@code self} is a {@link Container}. Used by
+     * {@code BlockEntity} wraps that also run on non-container block entities.
+     */
+    public static void runInvalidateIfContainer(final Object self, final Runnable vanilla) {
+        if (self instanceof Container container) {
+            runInvalidate(container, vanilla);
+            return;
+        }
+        vanilla.run();
     }
 
     public static <T> T callInvalidate(final Container container, final Supplier<T> vanilla) {

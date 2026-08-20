@@ -1,7 +1,7 @@
 package dev.ultima.fsr;
 
+import dev.ultima.config.LoadedModCache;
 import java.util.List;
-import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * Capability-based policy for {@code fsr_upscaling}.
@@ -37,10 +37,6 @@ public final class FsrCompatibility {
             "Canvas owns the renderer; FSR is not applied.";
 
     private static final ThreadLocal<boolean[]> TEST_LOADED_MODS = new ThreadLocal<>();
-    /** Loaded-mod set cannot change at runtime; probe FabricLoader once. */
-    private static final boolean NATIVE_IRIS = probeNative("iris");
-    private static final boolean NATIVE_CANVAS = probeNative("canvas");
-    private static final boolean NATIVE_SODIUM = probeNative("sodium");
 
     public enum DisableReason {
         NONE(null, null),
@@ -171,19 +167,6 @@ public final class FsrCompatibility {
     }
 
     static boolean isModLoaded(final String modId) {
-        return switch (modId) {
-            case "iris" -> NATIVE_IRIS;
-            case "canvas" -> NATIVE_CANVAS;
-            case "sodium" -> NATIVE_SODIUM;
-            default -> probeNative(modId);
-        };
-    }
-
-    private static boolean probeNative(final String modId) {
-        try {
-            return FabricLoader.getInstance().isModLoaded(modId);
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return LoadedModCache.isLoaded(modId);
     }
 }
