@@ -3,10 +3,11 @@ package dev.ultima.util;
 /**
  * Overflow-safe range checks used by direct section-key iteration.
  *
- * <p>{@link #preferVanillaSectionWalk(long, int)} is the shared probe-budget
- * decision used by both {@code entity_section_lookup} and
- * {@code entity_query_early_out}. A dense key walk of a huge AABB is more
- * expensive than vanilla's strip walk of the already-loaded section map.
+ * <p>{@link #preferVanillaSectionWalk(long, int)} is the lookup-mixin decision:
+ * skip a dense key probe when the packed volume exceeds
+ * {@link #DIRECT_LOOKUP_BUDGET} <em>or</em> the number of already-loaded
+ * sections. {@code entity_query_early_out} shares only {@link #DIRECT_LOOKUP_BUDGET};
+ * it cannot use the loaded-count cap without changing the emptiness proof.
  */
 public final class SectionRangeMath {
     public static final long DIRECT_LOOKUP_BUDGET = 1024L;

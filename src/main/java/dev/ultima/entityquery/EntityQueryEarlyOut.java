@@ -23,10 +23,12 @@ import net.minecraft.world.phys.AABB;
  */
 public final class EntityQueryEarlyOut {
     /**
-     * Same budget as {@link SectionRangeMath#DIRECT_LOOKUP_BUDGET}: a huge query
-     * box is cheaper as vanilla's strip walk than as a dense key probe. Both
-     * this module and {@code entity_section_lookup} use
-     * {@link SectionRangeMath#preferVanillaSectionWalk(long, int)}.
+     * Same 1024-key budget as {@link SectionRangeMath#DIRECT_LOOKUP_BUDGET}.
+     * {@code entity_section_lookup} also skips when the packed volume exceeds
+     * {@code sections.size()} because it can fall back to vanilla's walk of the
+     * loaded map. This module cannot: proving emptiness requires probing AABB
+     * keys (a missing key is empty). Applying the loaded-count cap would skip
+     * the early-out in typical sparse worlds and is not equivalent.
      */
     public static final long SECTION_PROBE_BUDGET = SectionRangeMath.DIRECT_LOOKUP_BUDGET;
 
@@ -70,24 +72,6 @@ public final class EntityQueryEarlyOut {
             final int zMax,
             final EntityQueryKind kind,
             final SectionCounterLookup lookup) {
-        return allIntersectingEmpty(xMin, yMin, zMin, xMax, yMax, zMax, kind, lookup, Integer.MAX_VALUE);
-    }
-
-    /**
-     * @param loadedSectionCount size of {@code EntitySectionStorage.sections}. When the
-     *        packed AABB volume exceeds that, probing every key is worse than vanilla's
-     *        walk of the loaded map — the same cap {@code entity_section_lookup} uses.
-     */
-    public static boolean allIntersectingEmpty(
-            final int xMin,
-            final int yMin,
-            final int zMin,
-            final int xMax,
-            final int yMax,
-            final int zMax,
-            final EntityQueryKind kind,
-            final SectionCounterLookup lookup,
-            final int loadedSectionCount) {
         if (kind == EntityQueryKind.UNKNOWN) {
             return false;
         }
@@ -98,7 +82,7 @@ public final class EntityQueryEarlyOut {
             return false;
         }
         long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-        if (SectionRangeMath.preferVanillaSectionWalk(volume, loadedSectionCount)) {
+        if (volume > SECTION_PROBE_BUDGET) {
             return false;
         }
         for (long x = xMin; x <= xMax; x++) {

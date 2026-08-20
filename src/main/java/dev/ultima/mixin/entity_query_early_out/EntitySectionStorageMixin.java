@@ -62,8 +62,7 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
                 EntityQueryEarlyOut.yMax(bb),
                 EntityQueryEarlyOut.zMax(bb),
                 kind,
-                this::ultimaCountersIfAccessible,
-                this.sections.size());
+                this::ultimaCountersIfAccessible);
     }
 
     @Unique

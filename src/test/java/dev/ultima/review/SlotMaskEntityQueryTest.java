@@ -137,16 +137,24 @@ public final class SlotMaskEntityQueryTest {
                 EntityQueryEarlyOut.SECTION_PROBE_BUDGET == SectionRangeMath.DIRECT_LOOKUP_BUDGET,
                 "early-out budget must be the shared SectionRangeMath constant");
         assertTrue(SectionRangeMath.preferVanillaSectionWalk(1025L, Integer.MAX_VALUE), "volume over 1024");
-        assertTrue(SectionRangeMath.preferVanillaSectionWalk(10L, 3), "volume over loaded section count");
+        assertTrue(SectionRangeMath.preferVanillaSectionWalk(10L, 3), "lookup skips when volume > loaded count");
         assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 10), "volume equal to loaded count still probes");
         assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 11), "volume under loaded count probes");
         FakeSectionWorld world = new FakeSectionWorld();
         world.putAccessible(0, 4, 0, new EntitySectionCounters());
-        AABB huge = new AABB(0.0, 0.0, 0.0, 48.0, 48.0, 48.0);
-        assertTrue(!world.probeInBudget(huge), "wide box vs one loaded section exceeds the shared walk cap");
+        AABB sparse = new AABB(0.0, 0.0, 0.0, 48.0, 48.0, 48.0);
         assertTrue(
-                !world.earlyOut(huge, EntityQueryKind.ANY),
-                "early-out must fail open to vanilla when the shared walk cap says not to probe");
+                world.lookupWouldSkipDenseProbe(sparse),
+                "lookup mixin skips a dense probe when volume exceeds loaded section count");
+        assertTrue(world.probeInBudget(sparse), "125 padded keys are still under the 1024 early-out budget");
+        assertTrue(
+                world.earlyOut(sparse, EntityQueryKind.ANY),
+                "early-out still proves emptiness under the 1024 budget in a sparse world");
+        AABB overBudget = new AABB(0.0, 0.0, 0.0, 176.0, 176.0, 176.0);
+        assertTrue(!world.probeInBudget(overBudget), "wide box exceeds the 1024-key early-out budget");
+        assertTrue(
+                !world.earlyOut(overBudget, EntityQueryKind.ANY),
+                "early-out must fail open to vanilla when the 1024-key budget is exceeded");
     }
 
     private static void testRandomOccupancyMatchesScan() {
@@ -493,7 +501,7 @@ public final class SlotMaskEntityQueryTest {
             int yMax = sectionCoord(box.maxY);
             int zMax = sectionCoord(box.maxZ + 2.0);
             return EntityQueryEarlyOut.allIntersectingEmpty(
-                    xMin, yMin, zMin, xMax, yMax, zMax, kind, key -> this.accessible.get(key), this.accessible.size());
+                    xMin, yMin, zMin, xMax, yMax, zMax, kind, key -> this.accessible.get(key));
         }
 
         boolean probeInBudget(final AABB box) {
@@ -504,7 +512,18 @@ public final class SlotMaskEntityQueryTest {
             int yMax = sectionCoord(box.maxY);
             int zMax = sectionCoord(box.maxZ + 2.0);
             long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-            return !SectionRangeMath.preferVanillaSectionWalk(volume, this.accessible.size());
+            return volume <= SectionRangeMath.DIRECT_LOOKUP_BUDGET;
+        }
+
+        boolean lookupWouldSkipDenseProbe(final AABB box) {
+            int xMin = sectionCoord(box.minX - 2.0);
+            int yMin = sectionCoord(box.minY - 4.0);
+            int zMin = sectionCoord(box.minZ - 2.0);
+            int xMax = sectionCoord(box.maxX + 2.0);
+            int yMax = sectionCoord(box.maxY);
+            int zMax = sectionCoord(box.maxZ + 2.0);
+            long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
+            return SectionRangeMath.preferVanillaSectionWalk(volume, this.accessible.size());
         }
 
         boolean allAccessibleZero(final AABB box, final EntityQueryKind kind) {
