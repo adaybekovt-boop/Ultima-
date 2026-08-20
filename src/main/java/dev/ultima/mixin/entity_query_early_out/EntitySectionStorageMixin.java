@@ -4,6 +4,7 @@ import dev.ultima.entityquery.EntityQueryEarlyOut;
 import dev.ultima.entityquery.EntityQueryKind;
 import dev.ultima.entityquery.EntitySectionCounterHolder;
 import dev.ultima.entityquery.EntitySectionCounters;
+import dev.ultima.failopen.FailOpenGuard;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import net.minecraft.util.AbortableIterationConsumer;
 import net.minecraft.world.level.entity.EntityAccess;
@@ -35,8 +36,12 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
     @Inject(method = "getEntities(Lnet/minecraft/world/phys/AABB;Lnet/minecraft/util/AbortableIterationConsumer;)V", at = @At("HEAD"), cancellable = true)
     private void ultimaEmptyEarlyOutAll(final AABB bb, final AbortableIterationConsumer<T> output, final CallbackInfo ci) {
-        if (ultimaAllEmpty(bb, EntityQueryKind.ANY)) {
-            ci.cancel();
+        try {
+            if (ultimaAllEmpty(bb, EntityQueryKind.ANY)) {
+                ci.cancel();
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.ENTITY_QUERY_EARLY_OUT, EntityQueryKind.ANY, error);
         }
     }
 
@@ -46,9 +51,13 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
             cancellable = true)
     private <U extends T> void ultimaEmptyEarlyOutTyped(
             final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer, final CallbackInfo ci) {
-        EntityQueryKind kind = EntityQueryKind.ofQueryClass(type.getBaseClass());
-        if (ultimaAllEmpty(bb, kind)) {
-            ci.cancel();
+        try {
+            EntityQueryKind kind = EntityQueryKind.ofQueryClass(type.getBaseClass());
+            if (ultimaAllEmpty(bb, kind)) {
+                ci.cancel();
+            }
+        } catch (Throwable error) {
+            FailOpenGuard.failOpen(FailOpenGuard.Module.ENTITY_QUERY_EARLY_OUT, "typed-query", error);
         }
     }
 

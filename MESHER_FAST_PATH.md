@@ -127,19 +127,30 @@ empty occluder so tests never guess voxel joins.
 
 ## Equivalence tests
 
-Two layers, both required:
+**Honesty constraint:** kernel tests in `MesherFastPathChecks` exercise
+`FastPathCubeMesher` / `VanillaCubeOracle` / `OcclusionMask`. Those classes are
+**not** called from `SectionCompilerMixin`. Production compile goes through
+`HybridSectionMesher.tessellateFastCube`. Kernel PASS does **not** by itself
+prove production vertices, UVs, or AO.
 
-1. **Production identity by construction.** Cached vanilla `BakedQuad` +
-   vanilla cull / light / tint. Weighted cubes emit the child vanilla
-   would have `collectParts`'d at that `BlockPos` seed. Anything not a
-   proven opaque 6-quad unit cube is vanilla `tesselateBlock` /
-   `FluidRenderer`.
+Two layers:
+
+1. **Production culling (this revision).**
+   `HybridSectionMesherProductionChecks` calls
+   `HybridSectionMesher.forEachVisibleFastCubeFace` — the only culling loop
+   `tessellateFastCube` uses — with real `Block.STONE` / `Block.AIR` and
+   compares the emitted faces to vanilla `Block.shouldRenderFace` for the same
+   neighbors. AO on/off is the production predicate
+   (`ambientOcclusion && lightEmission == 0 && cube.useAmbientOcclusion()`).
+   Full vertex/UV/AO identity vs `ModelBlockRenderer.tesselateBlock` still
+   needs a booted client `BlockStateModelSet` and is **not** claimed here.
 2. **Kernel tests** in `MesherFastPathChecks`: visit order, occlusion vs
    the first `shouldRenderFace` branches, FaceInfo winding, ordered vertex
    identity, fail-open, circuit breaker, glass fallback, animated UVs,
    multiple tint providers, unloaded-neighbor edges, cache reload,
    realistic CPU datasets, **weighted / facing / axis cube equivalence**,
    grass-overlay and multipart fallback, and vanilla weighted RNG identity.
+   These remain synthetic-kernel coverage.
 
 ## CPU meshing time
 

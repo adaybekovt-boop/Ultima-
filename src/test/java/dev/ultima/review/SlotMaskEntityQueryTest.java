@@ -5,12 +5,19 @@ import dev.ultima.entityquery.EntityQueryKind;
 import dev.ultima.entityquery.EntitySectionCounters;
 import dev.ultima.entityquery.LithiumIntersection;
 import dev.ultima.inventory.NonEmptySlotMask;
+import dev.ultima.inventory.SlotMaskHooks;
+import dev.ultima.inventory.SlotMaskTracker;
 import dev.ultima.inventory.SlotOccupancy;
 import dev.ultima.inventory.VanillaInventoryMutationSources;
+import dev.ultima.util.SectionRangeMath;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Differential checks for container slot masks and entity-query empty early-outs.
@@ -26,7 +33,16 @@ public final class SlotMaskEntityQueryTest {
     }
 
     static void run() {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         testMutationCatalogPresent();
+        testReplaceWithInvalidatesStaleEmptyMask();
+        testIndexedWriteDepthRecoversAfterThrow();
+        testUnpackLootTableInvalidatesAfterThrow();
+        testUnpackNoopDoesNotInvalidate();
+        testSetChangedUnindexedMutationAfterThrow();
+        testApplyComponentsAndLoadInvalidateAfterThrow();
+        testPartialOccupiedVisitDoesNotRescan();
+        testSharedSectionWalkBudget();
         testRandomOccupancyMatchesScan();
         testIterationOrderMatchesForLoop();
         testConservativeVerifyCatchesCorruption();
@@ -38,11 +54,21 @@ public final class SlotMaskEntityQueryTest {
         System.out.println("Slot-mask / entity-query equivalence checks passed.");
     }
 
+    /**
+     * Mixin-wiring contract, not a behavior proof. Behavior of replaceWith / unpack / setItem
+     * exception-after-mutation is {@link #testReplaceWithInvalidatesStaleEmptyMask},
+     * {@link #testUnpackLootTableInvalidatesAfterThrow}, and
+     * {@link #testIndexedWriteDepthRecoversAfterThrow}. Reflection here only checks that the
+     * production Mixin classes still declare the wrap methods named in the catalog.
+     */
     private static void testMutationCatalogPresent() {
         assertTrue(VanillaInventoryMutationSources.sourceCount() >= 20, "mutation catalog must list the 26.2 sources");
         boolean sawSetItem = false;
         boolean sawSetChanged = false;
         boolean sawLoot = false;
+        boolean sawReplaceWith = false;
+        boolean sawApplyComponents = false;
+        boolean sawSetItemNoUpdate = false;
         for (String source : VanillaInventoryMutationSources.SOURCES) {
             if (source.contains("setItem")) {
                 sawSetItem = true;
@@ -53,8 +79,304 @@ public final class SlotMaskEntityQueryTest {
             if (source.contains("unpackLootTable")) {
                 sawLoot = true;
             }
+            if (source.contains("replaceWith")) {
+                sawReplaceWith = true;
+            }
+            if (source.contains("applyComponents")) {
+                sawApplyComponents = true;
+            }
+            if (source.contains("setItemNoUpdate")) {
+                sawSetItemNoUpdate = true;
+            }
         }
         assertTrue(sawSetItem && sawSetChanged && sawLoot, "catalog covers setItem, setChanged, loot unpack");
+        assertTrue(sawReplaceWith, "catalog must list Inventory.replaceWith (Variant A: mixin hook, not verify-only)");
+        assertTrue(sawApplyComponents, "catalog must prove applyComponents covers copyInto, not setItems");
+        assertTrue(sawSetItemNoUpdate, "catalog must list ListBackedContainer.setItemNoUpdate");
+        boolean mixinWrapsReplaceWith = false;
+        boolean mixinWrapsPickSlot = false;
+        boolean mixinWrapsUnpack = false;
+        boolean mixinWrapsRemoveNoUpdate = false;
+        boolean mixinWrapsSetItemNoUpdate = false;
+        boolean mixinWrapsInstanceSetChanged = false;
+        boolean mixinWrapsStaticSetChanged = false;
+        boolean mixinWrapsApplyComponents = false;
+        boolean mixinWrapsLoadWithComponents = false;
+        boolean mixinWrapsLoadCustomOnly = false;
+        boolean mixinWrapsVehicleUnpack = false;
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.InventoryMixin.class.getDeclaredMethods()) {
+            if ("ultimaReplaceWith".equals(method.getName())) {
+                mixinWrapsReplaceWith = true;
+            }
+            if ("ultimaPickSlot".equals(method.getName())) {
+                mixinWrapsPickSlot = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.RandomizableContainerMixin.class.getDeclaredMethods()) {
+            if ("ultimaUnpackLootTable".equals(method.getName())) {
+                mixinWrapsUnpack = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.ListBackedContainerMixin.class.getDeclaredMethods()) {
+            if ("ultimaRemoveNoUpdate".equals(method.getName())) {
+                mixinWrapsRemoveNoUpdate = true;
+            }
+            if ("ultimaSetItemNoUpdate".equals(method.getName())) {
+                mixinWrapsSetItemNoUpdate = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.BlockEntityMixin.class.getDeclaredMethods()) {
+            if ("ultimaInstanceSetChanged".equals(method.getName())) {
+                mixinWrapsInstanceSetChanged = true;
+            }
+            if ("ultimaStaticSetChanged".equals(method.getName())) {
+                mixinWrapsStaticSetChanged = true;
+            }
+            if ("ultimaApplyComponents".equals(method.getName())) {
+                mixinWrapsApplyComponents = true;
+            }
+            if ("ultimaLoadWithComponents".equals(method.getName())) {
+                mixinWrapsLoadWithComponents = true;
+            }
+            if ("ultimaLoadCustomOnly".equals(method.getName())) {
+                mixinWrapsLoadCustomOnly = true;
+            }
+        }
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.ContainerEntityMixin.class.getDeclaredMethods()) {
+            if ("ultimaUnpackLootTable".equals(method.getName())) {
+                mixinWrapsVehicleUnpack = true;
+            }
+        }
+        assertTrue(mixinWrapsReplaceWith, "InventoryMixin must wrap vanilla replaceWith");
+        assertTrue(mixinWrapsPickSlot, "InventoryMixin must wrap pickSlot (items.set swap)");
+        assertTrue(mixinWrapsUnpack, "RandomizableContainerMixin must wrap unpackLootTable");
+        assertTrue(mixinWrapsRemoveNoUpdate, "ListBackedContainerMixin must wrap removeItemNoUpdate");
+        assertTrue(mixinWrapsSetItemNoUpdate, "ListBackedContainerMixin must wrap setItemNoUpdate");
+        assertTrue(
+                mixinWrapsInstanceSetChanged && mixinWrapsStaticSetChanged,
+                "BlockEntityMixin must wrap both setChanged overloads");
+        assertTrue(mixinWrapsApplyComponents, "BlockEntityMixin must wrap applyComponents (copyInto, not setItems)");
+        assertTrue(
+                mixinWrapsLoadWithComponents && mixinWrapsLoadCustomOnly,
+                "BlockEntityMixin must wrap loadWithComponents and loadCustomOnly");
+        assertTrue(mixinWrapsVehicleUnpack, "ContainerEntityMixin must wrap unpackChestVehicleLootTable");
+    }
+
+    /**
+     * Production path used by {@code InventoryMixin.replaceWith}: {@link SlotMaskHooks#runInvalidate}
+     * wrapping a backing-list copy that never goes through {@code setItem}.
+     *
+     * <p>Live {@code Inventory.replaceWith} is not invoked here (needs a player Inventory). This
+     * runs the same helper the Mixin calls, with the same {@code items.set} mutation vanilla uses.
+     */
+    private static void testReplaceWithInvalidatesStaleEmptyMask() {
+        MinecraftTestItems.ensureBootstrapped("replaceWith backing-list copy");
+        SimpleContainer dest = new SimpleContainer(5);
+        SimpleContainer src = new SimpleContainer(5);
+        itemsOf(src).set(0, MinecraftTestItems.dirt());
+        NonEmptySlotMask mask = SlotMaskTracker.of(dest);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(5, slot -> false));
+        assertTrue(Boolean.TRUE.equals(mask.tryExactEmpty(SlotOccupancy.of(5, slot -> false))), "starts empty");
+        SlotMaskHooks.runInvalidate(dest, () -> copyBackingListLikeReplaceWith(dest, src));
+        assertTrue(!itemsOf(dest).get(0).isEmpty(), "replaceWith-like copy wrote the stack into dest");
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(SlotMaskTracker.occupancy(dest))),
+                "after replaceWith the mask must rebuild from occupancy and see the filled slot");
+    }
+
+    /**
+     * Production {@code SimpleContainerMixin.setItem} body:
+     * {@code SlotMaskHooks.runIndexedWrite(this, slot, () -> original.call(slot, stack))}.
+     * Mixins do not apply in this JavaExec harness, so {@code original.call} is vanilla
+     * {@link SimpleContainer#setItem} (items.set then setChanged).
+     *
+     * <p>This is the exception-AFTER-mutation case: the stack is in the backing list, then
+     * {@code setChanged} throws. {@code noteSlot} must not be required for safety — the
+     * finally abort path untrusts the mask.
+     */
+    private static void testIndexedWriteDepthRecoversAfterThrow() {
+        MinecraftTestItems.ensureBootstrapped("indexed-write exception-after-mutation");
+        SetChangedThrowsContainer container = new SetChangedThrowsContainer(3);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        ItemStack dirt = MinecraftTestItems.dirt();
+        try {
+            SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, dirt));
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    expected.getMessage().contains("blockEntityChanged"),
+                    "throw is from setChanged after the write, not from the helper");
+        }
+        assertTrue(!container.getItem(0).isEmpty(), "vanilla items.set happened before setChanged threw");
+        assertTrue(!itemsOf(container).get(0).isEmpty(), "backing NonNullList still holds the stack");
+        assertTrue(
+                !mask.trusted(),
+                "option-a abort must untrust before the next occupancy walk; noteSlot did not run");
+        assertFalseNegativeGone(mask, container, "indexed-write abort must not leave trusted empty");
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        mask.onUnindexedMutation();
+        assertTrue(
+                !mask.trusted(),
+                "enter/exit depth must not leak: in-place setChanged must still invalidate after a thrown write");
+    }
+
+    /**
+     * Production {@code RandomizableContainerMixin.unpackLootTable} body:
+     * {@code SlotMaskHooks.runInvalidateIf(self, table != null, () -> original.call(player))}
+     * and {@code LootTable.fill} writes via {@code container.setItem}.
+     *
+     * <p>Live {@code LootTable.fill} is not invoked (needs a loot manager / world). This runs
+     * the same helpers in fill order: successful setItem, then a later setItem that writes
+     * the backing list and throws from setChanged.
+     */
+    private static void testUnpackLootTableInvalidatesAfterThrow() {
+        MinecraftTestItems.ensureBootstrapped("unpackLootTable fill-then-throw");
+        SetChangedThrowsContainer container = new SetChangedThrowsContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        container.throwOnSetChanged = false;
+        try {
+            SlotMaskHooks.runInvalidateIf(container, true, () -> {
+                SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, MinecraftTestItems.dirt()));
+                SlotMaskHooks.runIndexedWrite(container, 3, () -> container.setItem(3, MinecraftTestItems.dirt()));
+                assertTrue(!container.getItem(0).isEmpty(), "first loot stack is in the chest before the failure");
+                assertTrue(!container.getItem(3).isEmpty(), "second loot stack is in the chest before the failure");
+                container.throwOnSetChanged = true;
+                SlotMaskHooks.runIndexedWrite(container, 8, () -> container.setItem(8, MinecraftTestItems.dirt()));
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    expected.getMessage().contains("blockEntityChanged"),
+                    "throw is from setChanged after a later fill write");
+        }
+        assertTrue(!container.getItem(0).isEmpty(), "earlier loot stacks survive the failed fill");
+        assertTrue(!container.getItem(3).isEmpty(), "earlier loot stacks survive the failed fill");
+        assertTrue(!container.getItem(8).isEmpty(), "the failing setItem still wrote the backing list");
+        assertTrue(!mask.trusted(), "unpack finally / indexed abort must untrust after a partial fill throw");
+        assertFalseNegativeGone(mask, container, "partial loot unpack must not leave trusted empty");
+    }
+
+    /**
+     * No-op unpack (loot table already consumed) must not untrust the mask. Unconditional
+     * invalidate on every {@code getItem} would make the chest mask useless.
+     */
+    private static void testUnpackNoopDoesNotInvalidate() {
+        SimpleContainer container = new SimpleContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        SlotOccupancy occupied = SlotOccupancy.of(27, slot -> slot == 0);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(occupied)),
+                "precondition: trusted empty mask still reports empty against occupied occupancy");
+        try {
+            SlotMaskHooks.runInvalidateIf(container, false, () -> {
+                throw new IllegalStateException("no-op unpack still threw");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(occupied)),
+                "no-op unpack must not invalidate: a trusted empty mask must still be a false-negative");
+        assertTrue(mask.trusted(), "no-op unpack leaves the mask trusted");
+    }
+
+    /**
+     * Production helper used by {@code BlockEntityMixin.applyComponents} and load wraps.
+     */
+    private static void testApplyComponentsAndLoadInvalidateAfterThrow() {
+        SimpleContainer container = new SimpleContainer(27);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(27, slot -> false));
+        SlotOccupancy copiedIn = SlotOccupancy.of(27, slot -> slot == 3);
+        try {
+            SlotMaskHooks.runInvalidateIfContainer(container, () -> {
+                throw new IllegalStateException("copyInto failed mid-applyComponents");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(copiedIn)),
+                "applyComponents/load finally must invalidate after a throw so copyInto cannot leave a false empty");
+    }
+
+    /**
+     * Production helper used by {@code BlockEntityMixin.setChanged} wraps.
+     */
+    private static void testSetChangedUnindexedMutationAfterThrow() {
+        SimpleContainer container = new SimpleContainer(3);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        SlotOccupancy grown = SlotOccupancy.of(3, slot -> slot == 1);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(grown)),
+                "precondition: trusted empty mask hides an in-place grow until setChanged");
+        try {
+            SlotMaskHooks.runUnindexedMutation(container, () -> {
+                throw new IllegalStateException("setChanged failed after in-place grow");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(grown)),
+                "setChanged finally must untrust the mask after a throw");
+    }
+
+    private static void testPartialOccupiedVisitDoesNotRescan() {
+        int[] counts = {1, 1, 1};
+        NonEmptySlotMask mask = new NonEmptySlotMask();
+        mask.rebuild(occupancy(counts));
+        List<Integer> visited = new ArrayList<>();
+        try {
+            mask.forEachOccupied(occupancy(counts), slot -> {
+                visited.add(slot);
+                throw new IllegalStateException("visitor failed at " + slot);
+            });
+            throw new AssertionError("visitor throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(visited.equals(List.of(0)), "only the failing slot is visited, got " + visited);
+        assertTrue(!mask.trusted(), "partial walk must untrust the mask instead of scan-visiting again");
+    }
+
+    private static void testSharedSectionWalkBudget() {
+        assertTrue(
+                EntityQueryEarlyOut.SECTION_PROBE_BUDGET == SectionRangeMath.DIRECT_LOOKUP_BUDGET,
+                "early-out budget must be the shared SectionRangeMath constant");
+        assertTrue(SectionRangeMath.preferVanillaSectionWalk(1025L, Integer.MAX_VALUE), "volume over 1024");
+        assertTrue(SectionRangeMath.preferVanillaSectionWalk(10L, 3), "lookup skips when volume > loaded count");
+        assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 10), "volume equal to loaded count still probes");
+        assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 11), "volume under loaded count probes");
+        FakeSectionWorld world = new FakeSectionWorld();
+        world.putAccessible(0, 4, 0, new EntitySectionCounters());
+        AABB sparse = new AABB(0.0, 0.0, 0.0, 48.0, 48.0, 48.0);
+        assertTrue(
+                world.lookupWouldSkipDenseProbe(sparse),
+                "lookup mixin skips a dense probe when volume exceeds loaded section count");
+        assertTrue(world.probeInBudget(sparse), "125 padded keys are still under the 1024 early-out budget");
+        assertTrue(
+                world.earlyOut(sparse, EntityQueryKind.ANY),
+                "early-out still proves emptiness under the 1024 budget in a sparse world");
+        AABB overBudget = new AABB(0.0, 0.0, 0.0, 176.0, 176.0, 176.0);
+        assertTrue(!world.probeInBudget(overBudget), "wide box exceeds the 1024-key early-out budget");
+        assertTrue(
+                !world.earlyOut(overBudget, EntityQueryKind.ANY),
+                "early-out must fail open to vanilla when the 1024-key budget is exceeded");
     }
 
     private static void testRandomOccupancyMatchesScan() {
@@ -332,6 +654,62 @@ public final class SlotMaskEntityQueryTest {
         }
     }
 
+    /**
+     * After an aborted mutation the mask must not report trusted-empty while the container
+     * holds items. Untrusted (honest rescan) or trusted bits that match occupancy are both OK.
+     */
+    private static void assertFalseNegativeGone(
+            final NonEmptySlotMask mask, final SimpleContainer container, final String message) {
+        Boolean empty = mask.tryExactEmpty(SlotMaskTracker.occupancy(container));
+        if (Boolean.TRUE.equals(empty)) {
+            throw new AssertionError(message + ": trusted empty while container has items, trusted=" + mask.trusted());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static NonNullList<ItemStack> itemsOf(final SimpleContainer container) {
+        for (Field field : SimpleContainer.class.getDeclaredFields()) {
+            if (NonNullList.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                try {
+                    return (NonNullList<ItemStack>) field.get(container);
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError("could not read SimpleContainer backing list", e);
+                }
+            }
+        }
+        throw new AssertionError("SimpleContainer has no NonNullList backing field to model items.set");
+    }
+
+    private static void copyBackingListLikeReplaceWith(final SimpleContainer dest, final SimpleContainer src) {
+        NonNullList<ItemStack> destItems = itemsOf(dest);
+        NonNullList<ItemStack> srcItems = itemsOf(src);
+        int n = Math.min(destItems.size(), srcItems.size());
+        for (int i = 0; i < n; i++) {
+            destItems.set(i, srcItems.get(i).copy());
+        }
+    }
+
+    /**
+     * Vanilla {@code SimpleContainer.setItem} writes {@code items.set} then {@code setChanged}.
+     * Throwing from {@code setChanged} is the comparator / {@code level.blockEntityChanged} case.
+     */
+    private static final class SetChangedThrowsContainer extends SimpleContainer {
+        boolean throwOnSetChanged = true;
+
+        SetChangedThrowsContainer(final int size) {
+            super(size);
+        }
+
+        @Override
+        public void setChanged() {
+            if (this.throwOnSetChanged) {
+                throw new IllegalStateException("blockEntityChanged after items.set");
+            }
+            super.setChanged();
+        }
+    }
+
     private record AABB(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
         static AABB random(final Random random) {
             double minX = random.nextInt(-32, 32);
@@ -411,8 +789,19 @@ public final class SlotMaskEntityQueryTest {
             int xMax = sectionCoord(box.maxX + 2.0);
             int yMax = sectionCoord(box.maxY);
             int zMax = sectionCoord(box.maxZ + 2.0);
-            return dev.ultima.util.SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax)
-                    <= EntityQueryEarlyOut.SECTION_PROBE_BUDGET;
+            long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
+            return volume <= SectionRangeMath.DIRECT_LOOKUP_BUDGET;
+        }
+
+        boolean lookupWouldSkipDenseProbe(final AABB box) {
+            int xMin = sectionCoord(box.minX - 2.0);
+            int yMin = sectionCoord(box.minY - 4.0);
+            int zMin = sectionCoord(box.minZ - 2.0);
+            int xMax = sectionCoord(box.maxX + 2.0);
+            int yMax = sectionCoord(box.maxY);
+            int zMax = sectionCoord(box.maxZ + 2.0);
+            long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
+            return SectionRangeMath.preferVanillaSectionWalk(volume, this.accessible.size());
         }
 
         boolean allAccessibleZero(final AABB box, final EntityQueryKind kind) {

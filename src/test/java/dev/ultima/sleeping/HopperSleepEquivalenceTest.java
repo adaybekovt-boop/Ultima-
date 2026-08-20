@@ -319,6 +319,11 @@ public final class HopperSleepEquivalenceTest {
         HopperSleepFailOpen.clearTestFault();
     }
 
+    /**
+     * Mixin-wiring: {@code Ultima.onInitialize} must subscribe Fabric unload events.
+     * {@link BlockEntitySleepRuntime#clearAll()} / {@code clearLevel} behavior is tested above.
+     * Firing the real Fabric callbacks needs a live Minecraft server.
+     */
     private static void testWorldUnloadClearsWakeRegistry() {
         BlockEntitySleepRuntime.clearAll();
         assertFalse(BlockEntitySleepRuntime.registry().hasWatchers(), "clearAll drops wake subscriptions");

@@ -1,7 +1,9 @@
 package dev.ultima.review;
 
+import dev.ultima.client.benchmark.ClientFrameBenchmark;
 import dev.ultima.client.renderer.meshing.CubeModelCache;
 import dev.ultima.client.renderer.meshing.HybridSectionMesher;
+import dev.ultima.client.renderer.meshing.HybridSectionMesherProductionChecks;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.meshing.BlockRenderFlags;
@@ -29,9 +31,6 @@ import dev.ultima.meshing.VanillaVisitOracle;
 import dev.ultima.meshing.VanillaWeightedPick;
 import dev.ultima.meshing.VanillaCubeCoverage;
 import java.lang.reflect.Constructor;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -335,53 +334,8 @@ final class MesherFastPathChecks {
     }
 
     private static void testProductionPathUsesVanillaCullingAndLighting() {
-        String hybrid = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/meshing/HybridSectionMesher.java"));
-        String cache = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/meshing/CubeModelCache.java"));
-        if (!hybrid.contains("Block.shouldRenderFace")) {
-            throw new AssertionError("production fast path must cull with Block.shouldRenderFace");
-        }
-        if (!hybrid.contains("getSeed")) {
-            throw new AssertionError("production fast path must pick weighted cubes with BlockState.getSeed");
-        }
-        if (!hybrid.contains("prepareQuadAmbientOcclusion") || !hybrid.contains("prepareQuadFlat")) {
-            throw new AssertionError("production fast path must light with BlockModelLighter");
-        }
-        if (!hybrid.contains("tesselateBlock") || !hybrid.contains("fluidRenderer.tesselate")) {
-            throw new AssertionError("fallback must remain vanilla ModelBlockRenderer/FluidRenderer");
-        }
-        if (!cache.contains("instanceof SingleVariant") || !cache.contains("instanceof LeavesBlock")) {
-            throw new AssertionError("cube cache must require SingleVariant children and reject LeavesBlock");
-        }
-        if (!cache.contains("WeightedVariants") || !cache.contains("VanillaWeightedPick") || !cache.contains("getSeed")) {
-            throw new AssertionError("cube cache must pick weighted unit cubes with vanilla BlockState seed");
-        }
-        if (!cache.contains("MultiPartModel") || !cache.contains("MULTIPART_MODEL")) {
-            throw new AssertionError("cube cache must reject multipart models");
-        }
-        if (!cache.contains("IdentityHashMap<BlockState") && !cache.contains("IdentityHashMap<BlockState,")) {
-            throw new AssertionError("cube cache must key hits by BlockState identity");
-        }
-        if (!cache.contains("isUnitCubeFace")) {
-            throw new AssertionError("cube cache must reject non-unit-cube quads");
-        }
-        if (!cache.contains("TRANSLUCENT") || !cache.contains("TRANSLUCENT_LAYER")) {
-            throw new AssertionError("cube cache must reject translucent-layer quads");
-        }
-        String snapshot = readUtf8(Path.of("src/client/java/dev/ultima/client/renderer/snapshot/RenderSectionSnapshot.java"));
-        int productionFlags = snapshot.indexOf("int flagsOf(");
-        int testFlags = snapshot.indexOf("public static int flagsOfForTest");
-        int occlusion = snapshot.indexOf("state.getFaceOcclusionShape");
-        if (productionFlags < 0 || testFlags < 0 || occlusion < 0 || occlusion < testFlags) {
-            throw new AssertionError("getFaceOcclusionShape must live only in flagsOfForTest");
-        }
-        String mixin = readUtf8(Path.of("src/client/java/dev/ultima/mixin/mesher_fast_path/SectionCompilerMixin.java"));
-        if (!mixin.contains("catch (Throwable") || !mixin.contains("MesherSectionFailOpen")) {
-            throw new AssertionError("SectionCompiler mixin must fail open to vanilla compile");
-        }
-        if (!hybrid.contains("discardStartedLayers") || !hybrid.contains("mesh.close()")) {
-            throw new AssertionError("failed hybrid compile must close partial MeshData before vanilla reuse");
-        }
-        pass("production_uses_vanilla_cull_light_fallback");
+        HybridSectionMesherProductionChecks.assertCullingMatchesVanillaShouldRenderFace();
+        pass("production_tessellateFastCube_culling_matches_vanilla_shouldRenderFace");
     }
 
     private static void testIsolatedFullCubeGeometry() {
@@ -1016,11 +970,18 @@ final class MesherFastPathChecks {
                 || !MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.weightedFastPathBlocks")) {
             throw new AssertionError("hardware metric list must include real-world coverage");
         }
-        String recorder = readUtf8(Path.of("src/client/java/dev/ultima/client/benchmark/ClientFrameBenchmark.java"));
-        if (!recorder.contains("mesher_cold_load")
-                || !recorder.contains("mesher_rebuild_storm")
-                || !recorder.contains("mesher_chunk_flight")) {
-            throw new AssertionError("ClientFrameBenchmark must default warmup/camera for the three mesher scenes");
+        if (ClientFrameBenchmark.warmupFramesForScene("mesher_cold_load") != 60
+                || ClientFrameBenchmark.sampleFramesForScene("mesher_cold_load") != 2400) {
+            throw new AssertionError("cold-load scene must use the short warmup/sample window");
+        }
+        if (ClientFrameBenchmark.warmupFramesForScene("mesher_rebuild_storm") != 600) {
+            throw new AssertionError("rebuild-storm scene must use the 600-frame warmup");
+        }
+        if (!"chunk_flight".equals(ClientFrameBenchmark.cameraModeForScene("mesher_chunk_flight"))) {
+            throw new AssertionError("chunk-flight scene must default the camera to chunk_flight");
+        }
+        if (!"stationary".equals(ClientFrameBenchmark.cameraModeForScene("mesher_cold_load"))) {
+            throw new AssertionError("cold-load scene stays stationary");
         }
         pass("mesher_benchmark_scenes");
     }
@@ -1087,13 +1048,5 @@ final class MesherFastPathChecks {
 
     private static void pass(final String name) {
         CASE_RESULTS.add("PASS  " + name);
-    }
-
-    private static String readUtf8(final Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new AssertionError("could not read " + path, e);
-        }
     }
 }

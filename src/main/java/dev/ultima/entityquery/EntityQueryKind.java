@@ -3,10 +3,11 @@ package dev.ultima.entityquery;
 /**
  * Which section counter an empty early-out is allowed to consult.
  *
- * <p>{@link #UNKNOWN} never skips the vanilla query. {@link #COLLIDABLE} is a conservative alias
- * of "any entity in the section": {@code isPickable}/{@code canBeHitByProjectile} are instance
+ * <p>{@link #UNKNOWN} never skips the vanilla query. {@link #COLLIDABLE} is an explicit
+ * alias of {@link #ANY}: {@code isPickable}/{@code canBeHitByProjectile} are instance
  * state and are not tracked, so a collidable query may early-out only when the section has no
- * entities at all.
+ * entities at all. {@link #ofQueryClass(Class)} never returns {@code COLLIDABLE}; callers that
+ * know they are asking a collidable question pass it explicitly and share the total counter.
  */
 public enum EntityQueryKind {
     ANY,

@@ -283,6 +283,10 @@ final class ServerTelemetryChecks {
         assertEquals(1, ServerMetrics.last(MetricId.BE_THRASHES), "thrash pin exports be.thrashes");
     }
 
+    /**
+     * Mixin-wiring: Lithium-fragile INVOKE targets use {@code require = 0} so apply does not fail.
+     * This does not prove the inject still matches with Lithium loaded.
+     */
     private static void testFragileInvokeRequireZero() {
         String serverLevel = read(Path.of("src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java"));
         assertTrue(

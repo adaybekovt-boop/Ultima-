@@ -1,7 +1,6 @@
 package dev.ultima.mixin.settings_ui;
 
 import dev.ultima.client.settings.UltimaConfigScreen;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
@@ -25,7 +24,7 @@ public abstract class TitleScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At("RETURN"))
     private void ultimaAddSettingsButton(final CallbackInfo ci) {
-        if (FabricLoader.getInstance().isModLoaded("modmenu")) {
+        if (dev.ultima.config.LoadedModCache.isLoaded("modmenu")) {
             return;
         }
         this.addRenderableWidget(Button.builder(

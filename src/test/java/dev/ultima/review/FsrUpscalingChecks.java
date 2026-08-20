@@ -1,9 +1,15 @@
 package dev.ultima.review;
 
+import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaMixinPlugin;
 import dev.ultima.config.UltimaModules;
+import dev.ultima.client.fsr.FsrUpscaling;
 import dev.ultima.fsr.FsrCompatibility;
 import dev.ultima.fsr.FsrEasuConstants;
+import dev.ultima.fsr.FsrIrisCapabilities;
+import dev.ultima.fsr.FsrLatencyContract;
+import dev.ultima.fsr.FsrRuntimeGate;
 import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResolution;
@@ -21,7 +27,7 @@ import java.util.Properties;
 /**
  * GPU-free coverage for FSR1 planning, AMD constant setup, resize lifecycle,
  * C1 SkyRenderer park/rebind, H1 screenshot deferral, default-off gating,
- * and Sodium/Iris compatibility policy.
+ * Sodium-only / Iris capability policy, and the FSR1 latency contract.
  */
 final class FsrUpscalingChecks {
     private FsrUpscalingChecks() {
@@ -40,10 +46,15 @@ final class FsrUpscalingChecks {
         testOneByOneParkDoesNotDestroyWorldTarget();
         testScreenshotDeferredUntilAfterRcas();
         testCompatibilityPolicy();
+        testIrisCapabilityGates();
+        testLatencyContract();
+        testRuntimeGate();
         testPipelineGate();
         testModuleRegistryAndDefaults();
         testSettingsParsing();
         testResizeMixinPriority();
+        testIrisModPresenceIsCachedAndShared();
+        testIrisProtectionIsMixinPlugin();
         System.out.println("FSR upscaling checks passed.");
     }
 
@@ -283,35 +294,221 @@ final class FsrUpscalingChecks {
 
     private static void testCompatibilityPolicy() {
         assertTrue(
-                FsrCompatibility.evaluate(true, false, false) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
-                "Iris disables FSR");
+                FsrCompatibility.evaluate(true, false, false)
+                        == FsrCompatibility.DisableReason.NO_SAFE_POST_IRIS_INTEGRATION_POINT,
+                "Iris disables FSR because there is no official post-final hook");
         assertTrue(
                 FsrCompatibility.evaluate(false, true, false) == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
                 "Canvas disables FSR");
         assertTrue(
-                FsrCompatibility.evaluate(true, true, true) == FsrCompatibility.DisableReason.IRIS_OWNS_POST_PROCESS,
-                "Iris wins when both Iris and Canvas are present");
+                FsrCompatibility.evaluate(true, true, true) == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
+                "Canvas owns the whole renderer when both Canvas and Iris are present");
         assertTrue(
-                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.SODIUM_OWNS_RENDERER,
-                "Sodium disables FSR in the merged contract");
-        assertFalse(
+                FsrCompatibility.evaluate(false, false, true) == FsrCompatibility.DisableReason.NONE,
+                "Sodium-only does not unconditionally disable FSR");
+        assertTrue(
+                FsrCompatibility.evaluate(false, false, false) == FsrCompatibility.DisableReason.NONE,
+                "vanilla-only is allowed");
+        assertTrue(
                 FsrCompatibility.allowsWithSodiumOnly(true, false, false),
-                "Sodium-only is deliberately rejected");
+                "Sodium-only is allowed");
         assertFalse(
                 FsrCompatibility.allowsWithSodiumOnly(true, true, false),
-                "Sodium+Iris is not allowed");
+                "Sodium+Iris is not allowed without a post-Iris hook");
+        assertTrue(
+                FsrCompatibility.evaluate(true, false, false).configReason()
+                        .equals(FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK),
+                "Iris reason is not incompatible_mod");
+        assertFalse(
+                "incompatible_mod".equals(FsrCompatibility.evaluate(true, false, false).configReason()),
+                "Iris must not reuse the old incompatible_mod reason");
 
         UltimaModules.Module module = UltimaModules.byKey("fsr_upscaling");
         assertTrue(module != null, "fsr_upscaling is registered");
-        assertTrue(module.incompatibleMods().contains("sodium"), "Sodium is declared incompatible");
-        assertTrue(module.incompatibleMods().contains("iris"), "Iris is a declared post-process owner");
+        assertFalse(module.incompatibleMods().contains("sodium"),
+                "Sodium is not an unconditional FSR incompatible mod");
+        assertFalse(module.incompatibleMods().contains("iris"),
+                "Iris is gated by capability reasons, not incompatibleMods");
         assertTrue(module.incompatibleMods().contains("canvas"), "Canvas is a declared renderer owner");
+        assertTrue(module.incompatibleMods().equals(FsrCompatibility.unconditionalIncompatibleModIds()),
+                "registry incompatibleMods is FsrCompatibility.unconditionalIncompatibleModIds()");
         assertTrue(module.incompatibleMods().equals(FsrCompatibility.disablingModIds()),
-                "registry incompatibleMods is FsrCompatibility.disablingModIds()");
+                "disablingModIds stays the unconditional Canvas list");
         assertFalse(module.incompatibleMods().contains("lithium"), "FSR is not a simulation module");
         assertTrue(module.dependencies().isEmpty(), "FSR is isolated from retained/mesher modules");
         assertFalse(module.enabledByDefault(), "FSR is default off");
         assertTrue(module.clientOnly(), "FSR is client-only");
+
+        FsrCompatibility.runWithLoadedModsForTest(true, false, true, () -> {
+            try {
+                Constructor<UltimaConfig> constructor = UltimaConfig.class.getDeclaredConstructor(Map.class);
+                constructor.setAccessible(true);
+                Map<String, Boolean> requested = new LinkedHashMap<>();
+                for (UltimaModules.Module registered : UltimaModules.all()) {
+                    requested.put(registered.key(), registered.enabledByDefault());
+                }
+                requested.put("fsr_upscaling", true);
+                UltimaConfig config = constructor.newInstance(requested);
+                UltimaConfig.ResolvedModule resolved = config.resolve("fsr_upscaling");
+                assertFalse(resolved.enabled(), "requested FSR stays disabled under Sodium+Iris");
+                assertTrue(FsrCompatibility.blocks("fsr_upscaling"),
+                        "capability gate reports Iris as blocking");
+                assertTrue(
+                        FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason())
+                                || "not_client_environment".equals(resolved.reason()),
+                        "Sodium+Iris resolve reason is the hook finding on the client, "
+                                + "or client-only on a dedicated server, not " + resolved.reason());
+                assertFalse(
+                        "incompatible_mod".equals(resolved.reason()),
+                        "Iris must not reuse incompatible_mod");
+                if (FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK.equals(resolved.reason())) {
+                    assertTrue(
+                            resolved.detail().contains("no official hook"),
+                            "Iris disable detail names the missing hook");
+                    assertTrue(
+                            resolved.detail().contains("internal render-target resolution"),
+                            "Iris disable detail also records the resolution limitation");
+                }
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError("could not resolve FSR under a fake Iris load", e);
+            }
+        });
+    }
+
+    private static void testIrisCapabilityGates() {
+        assertTrue(FsrIrisCapabilities.KNOWN_POST_FINAL_HOOK_METHODS.isEmpty(),
+                "no official post-final hook is allowlisted");
+        assertTrue(FsrIrisCapabilities.KNOWN_INTERNAL_RESOLUTION_METHODS.isEmpty(),
+                "no official Iris resolution setter is allowlisted");
+        assertFalse(FsrIrisCapabilities.hasOfficialPostProcessHook(),
+                "Iris 26.2 public API has no finished-frame hook");
+        assertFalse(FsrIrisCapabilities.canControlInternalResolution(),
+                "Iris internal resolution is not controllable from Ultima");
+        assertTrue(FsrIrisCapabilities.DOCUMENTED_IRIS_API_METHODS.contains("assignPipeline"),
+                "re-checked API includes assignPipeline");
+        assertTrue(FsrIrisCapabilities.DOCUMENTED_IRIS_API_METHODS.contains("isShaderPackInUse"),
+                "re-checked API includes isShaderPackInUse");
+        assertFalse(FsrIrisCapabilities.DOCUMENTED_IRIS_API_METHODS.contains("getFinalColorTexture"),
+                "IrisApi does not expose a final color texture");
+        assertFalse(FsrIrisCapabilities.DOCUMENTED_IRIS_API_CONFIG_METHODS.contains("setRenderScale"),
+                "IrisApiConfig has no render-scale setter");
+        for (String method : FsrIrisCapabilities.DOCUMENTED_IRIS_API_METHODS) {
+            String lower = method.toLowerCase();
+            assertFalse(lower.contains("finalcolor") || lower.contains("postprocess")
+                            || lower.contains("afterfinal") || lower.contains("composited"),
+                    method + " is not a finished-frame capture hook");
+        }
+        assertTrue(FsrIrisCapabilities.probe() == FsrIrisCapabilities.IrisApiProbe.IRIS_ABSENT
+                        || !FsrIrisCapabilities.probe().hasAllowlistedPostFinalHook(),
+                "absent Iris or empty allowlist means no hook");
+    }
+
+    private static void testLatencyContract() {
+        assertFalse(FsrLatencyContract.usesTemporalHistory(), "FSR1 is spatial");
+        assertFalse(FsrLatencyContract.holdsCurrentFrameForInterpolation(),
+                "FSR1 does not hold the current frame for the next");
+        assertTrue(FsrLatencyContract.extraDisplayedFramesOfDelay() == 0,
+                "no extra displayed frame of delay");
+        assertFalse(FsrLatencyContract.addsGpuPassWhenIrisPresent(),
+                "Iris path does not run FSR, so added GPU pass time is zero");
+        assertTrue(FsrLatencyContract.ADDED_COST.contains("EASU+RCAS"),
+                "documented added cost is the spatial pass, not a queued frame");
+    }
+
+    private static void testRuntimeGate() {
+        assertTrue(FsrRuntimeGate.allowWorldTargetHijack(true, false, false),
+                "vanilla/Sodium-only world hijack is allowed");
+        assertFalse(FsrRuntimeGate.allowWorldTargetHijack(true, false, true),
+                "Iris present refuses the world-target hijack");
+        assertFalse(FsrRuntimeGate.allowWorldTargetHijack(true, true, false),
+                "failed-open FSR never hijacks");
+        assertFalse(FsrRuntimeGate.allowWorldTargetHijack(false, false, false),
+                "disabled module never hijacks");
+    }
+
+    private static void testIrisModPresenceIsCachedAndShared() {
+        java.util.concurrent.atomic.AtomicInteger probes = new java.util.concurrent.atomic.AtomicInteger();
+        LoadedModCache.runWithProbeForTest(
+                id -> {
+                    probes.incrementAndGet();
+                    return "canvas".equals(id) || "iris".equals(id) || "sodium".equals(id);
+                },
+                () -> {
+                    Map<String, Boolean> requested = new LinkedHashMap<>();
+                    for (UltimaModules.Module module : UltimaModules.all()) {
+                        requested.put(module.key(), module.enabledByDefault());
+                    }
+                    requested.put("fsr_upscaling", true);
+                    UltimaConfig config = UltimaConfig.createForTests(requested);
+
+                    UltimaConfig.ResolvedModule resolved = config.resolve("fsr_upscaling");
+                    assertTrue(
+                            resolved.loadedIncompatibleMods().contains("canvas"),
+                            "UltimaConfig.loadedIncompatibleMods must use LoadedModCache, not raw FabricLoader");
+                    assertTrue(
+                            FsrCompatibility.current() == FsrCompatibility.DisableReason.CANVAS_OWNS_RENDERER,
+                            "FsrCompatibility.canvasLoaded must use LoadedModCache, not raw FabricLoader");
+                    assertTrue(
+                            FsrIrisCapabilities.isIrisModLoaded(),
+                            "FsrIrisCapabilities must use LoadedModCache, not raw FabricLoader");
+
+                    simulateFsrFrameModProbes(config);
+                    int afterWarmup = probes.get();
+                    assertTrue(afterWarmup > 0, "warmup must probe the backend at least once");
+                    assertEquals(
+                            afterWarmup,
+                            LoadedModCache.probeCallCount(),
+                            "LoadedModCache probe counter must match the test probe");
+                    for (int frame = 0; frame < 5; frame++) {
+                        simulateFsrFrameModProbes(config);
+                    }
+                    assertEquals(
+                            afterWarmup,
+                            probes.get(),
+                            "FSR per-frame paths must not call isModLoaded after cache warmup");
+                });
+    }
+
+    /**
+     * Production methods {@code GameRendererMixin} hits every world frame for mod presence:
+     * {@code moduleEnabled} (UltimaConfig), {@code FsrCompatibility.current}/{@code blocks},
+     * {@code FsrIrisCapabilities.isIrisModLoaded}, companion-target sizing.
+     */
+    private static void simulateFsrFrameModProbes(final UltimaConfig config) {
+        config.isEnabled("fsr_upscaling");
+        config.resolve("fsr_upscaling");
+        FsrCompatibility.current();
+        FsrCompatibility.blocks("fsr_upscaling");
+        boolean irisLoaded = FsrIrisCapabilities.isIrisModLoaded();
+        FsrRuntimeGate.allowWorldTargetHijack(config.isEnabled("fsr_upscaling"), false, irisLoaded);
+        FsrUpscaling.get().moduleEnabled();
+        FsrUpscaling.get().companionTargetSize(1920, 1080);
+        FsrUpscaling.get().syncCompanionTarget(null, 1920, 1080);
+    }
+
+    private static void testIrisProtectionIsMixinPlugin() {
+        UltimaMixinPlugin plugin = new UltimaMixinPlugin();
+        assertFalse(
+                plugin.shouldApplyMixin(
+                        "net.minecraft.client.renderer.GameRenderer",
+                        "dev.ultima.mixin.fsr_upscaling.GameRendererMixin"),
+                "UltimaMixinPlugin must skip fsr_upscaling mixins while the module is inactive");
+        LoadedModCache.runWithProbeForTest(
+                "iris"::equals,
+                () -> {
+                    Map<String, Boolean> requested = new LinkedHashMap<>();
+                    for (UltimaModules.Module module : UltimaModules.all()) {
+                        requested.put(module.key(), module.enabledByDefault());
+                    }
+                    requested.put("fsr_upscaling", true);
+                    UltimaConfig on = UltimaConfig.createForTests(requested);
+                    assertTrue(FsrCompatibility.blocks("fsr_upscaling"), "Iris capability gate blocks FSR");
+                    assertFalse(on.isEnabled("fsr_upscaling"), "requested FSR stays disabled under Iris");
+                });
+        assertTrue(
+                "dev.ultima.mixin.fsr_upscaling"
+                        .equals(dev.ultima.mixin.fsr_upscaling.GameRendererMixin.class.getPackageName()),
+                "GameRendererMixin lives in the fsr_upscaling package the plugin gates");
     }
 
     private static void testPipelineGate() {
@@ -374,11 +571,17 @@ final class FsrUpscalingChecks {
         assertEqualsFloat(0.2F, FsrSettings.fromProperties(new Properties()).sharpnessStops(), "missing sharpness");
     }
 
+    /**
+     * Mixin-wiring: {@code @Mixin} is CLASS retention, so reflection cannot read priority.
+     * This reads the two GameRenderer mixin sources. Resize apply order is not proven live.
+     */
     private static void testResizeMixinPriority() {
         String temporal = readSource("src/client/java/dev/ultima/mixin/temporal/GameRendererMixin.java");
         String fsr = readSource("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
         assertTrue(temporal.contains("priority = 900"), "temporal GameRenderer mixin is 900");
-        assertTrue(fsr.contains("priority = 1100"), "FSR GameRenderer mixin is 1100 so resize sees native size after temporal");
+        assertTrue(
+                fsr.contains("priority = 1100"),
+                "FSR GameRenderer mixin is 1100 so resize sees native size after temporal");
         assertTrue(temporal.contains("method = \"resize\""), "temporal still injects GameRenderer.resize");
         assertTrue(fsr.contains("method = \"resize\""), "FSR still injects GameRenderer.resize");
     }

@@ -5,16 +5,15 @@ package dev.ultima.entityquery;
  * successful {@code remove}. Over-counting is conservative (blocks the early-out). Under-counting
  * is forbidden and is the reason unknown {@code EntityAccess} types set {@link #unknown}.
  *
- * <p>{@code collidable} equals {@code total}: projectile/collision predicates consult instance
- * state ({@code isPickable}, {@code canBeHitByProjectile}) which can change without a section
- * add/remove. Empty-only early-out for those queries is therefore identical to "the section has
- * no entities".
+ * <p>{@link EntityQueryKind#COLLIDABLE} is an explicit alias of {@link #total}: projectile and
+ * collision predicates consult instance state ({@code isPickable}, {@code canBeHitByProjectile})
+ * which can change without a section add/remove. There is no separate collidable counter to
+ * update on spawn/despawn.
  */
 public final class EntitySectionCounters {
     private int players;
     private int living;
     private int items;
-    private int collidable;
     private int total;
     private boolean unknown;
 
@@ -23,7 +22,6 @@ public final class EntitySectionCounters {
             this.unknown = true;
         }
         this.total++;
-        this.collidable++;
         if (player) {
             this.players++;
         }
@@ -37,7 +35,6 @@ public final class EntitySectionCounters {
 
     public void remove(final boolean player, final boolean livingEntity, final boolean itemEntity, final boolean unknownType) {
         this.total = saturateDec(this.total);
-        this.collidable = saturateDec(this.collidable);
         if (player) {
             this.players = saturateDec(this.players);
         }
@@ -62,10 +59,6 @@ public final class EntitySectionCounters {
 
     public int items() {
         return this.items;
-    }
-
-    public int collidable() {
-        return this.collidable;
     }
 
     public int total() {

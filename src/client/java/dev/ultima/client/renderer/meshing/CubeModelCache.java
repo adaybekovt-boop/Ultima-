@@ -136,18 +136,21 @@ public final class CubeModelCache {
             final BlockStateModel model,
             final boolean cutoutLeaves,
             final long seed) {
-        Result early = classifyState(state, cutoutLeaves);
-        if (!early.fastPath()) {
-            this.misses.put(state, early.reason());
-            return new Lookup(null, early);
-        }
         CachedGeometry hit = this.hits.get(state);
         if (hit != null) {
             return new Lookup(hit.pick(seed, this.random), hit.result());
         }
         Reason remembered = this.misses.get(state);
-        if (remembered != null) {
+        if (remembered != null && remembered != Reason.SKIP_RENDERING) {
             return new Lookup(null, Result.fallback(remembered));
+        }
+        Result early = classifyState(state, cutoutLeaves);
+        if (!early.fastPath()) {
+            this.misses.put(state, early.reason());
+            return new Lookup(null, early);
+        }
+        if (remembered == Reason.SKIP_RENDERING) {
+            this.misses.remove(state);
         }
         Inspected inspected = inspect(model);
         if (inspected.geometry() == null) {

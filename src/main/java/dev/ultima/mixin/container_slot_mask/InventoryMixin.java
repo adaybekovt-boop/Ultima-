@@ -1,5 +1,7 @@
 package dev.ultima.mixin.container_slot_mask;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.ultima.inventory.SlotMaskHooks;
 import dev.ultima.inventory.SlotMaskQueries;
 import net.minecraft.world.Container;
@@ -8,74 +10,76 @@ import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Inventory.class)
 public abstract class InventoryMixin implements Container {
-    @Inject(method = "setItem", at = @At("HEAD"))
-    private void ultimaBeforeSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "setItem")
+    private void ultimaSetItem(final int slot, final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runIndexedWrite(this, slot, () -> original.call(slot, itemStack));
     }
 
-    @Inject(method = "setItem", at = @At("RETURN"))
-    private void ultimaAfterSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
+    @WrapMethod(method = "removeItem(II)Lnet/minecraft/world/item/ItemStack;")
+    private ItemStack ultimaRemoveItem(final int slot, final int count, final Operation<ItemStack> original) {
+        return SlotMaskHooks.callIndexedWrite(this, slot, () -> original.call(slot, count));
     }
 
-    @Inject(method = "removeItem(II)Lnet/minecraft/world/item/ItemStack;", at = @At("HEAD"))
-    private void ultimaBeforeRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "removeItemNoUpdate")
+    private ItemStack ultimaRemoveNoUpdate(final int slot, final Operation<ItemStack> original) {
+        return SlotMaskHooks.callIndexedWrite(this, slot, () -> original.call(slot));
     }
 
-    @Inject(method = "removeItem(II)Lnet/minecraft/world/item/ItemStack;", at = @At("RETURN"))
-    private void ultimaAfterRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
+    @WrapMethod(method = "removeItem(Lnet/minecraft/world/item/ItemStack;)V")
+    private void ultimaIdentityRemove(final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(itemStack));
     }
 
-    @Inject(method = "removeItemNoUpdate", at = @At("HEAD"))
-    private void ultimaBeforeRemoveNoUpdate(final int slot, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "clearContent")
+    private void ultimaClear(final Operation<Void> original) {
+        SlotMaskHooks.runClear(this, original::call);
     }
 
-    @Inject(method = "removeItemNoUpdate", at = @At("RETURN"))
-    private void ultimaAfterRemoveNoUpdate(final int slot, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
+    @WrapMethod(method = "setChanged")
+    private void ultimaSetChanged(final Operation<Void> original) {
+        SlotMaskHooks.runUnindexedMutation(this, original::call);
     }
 
-    @Inject(method = "removeItem(Lnet/minecraft/world/item/ItemStack;)V", at = @At("RETURN"))
-    private void ultimaAfterIdentityRemove(final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.invalidate(this);
+    @WrapMethod(method = "add(ILnet/minecraft/world/item/ItemStack;)Z")
+    private boolean ultimaAdd(final int slot, final ItemStack itemStack, final Operation<Boolean> original) {
+        return SlotMaskHooks.callInvalidate(this, () -> original.call(slot, itemStack));
     }
 
-    @Inject(method = "clearContent", at = @At("HEAD"))
-    private void ultimaBeforeClear(final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "dropAll")
+    private void ultimaDropAll(final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, original::call);
     }
 
-    @Inject(method = "clearContent", at = @At("RETURN"))
-    private void ultimaAfterClear(final CallbackInfo ci) {
-        SlotMaskHooks.afterClearWrapped(this);
+    @WrapMethod(method = "replaceWith")
+    private void ultimaReplaceWith(final Inventory other, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(other));
     }
 
-    @Inject(method = "setChanged", at = @At("RETURN"))
-    private void ultimaAfterSetChanged(final CallbackInfo ci) {
-        SlotMaskHooks.afterSetChanged(this);
+    @WrapMethod(method = "load")
+    private void ultimaLoad(
+            final net.minecraft.world.level.storage.ValueInput.TypedInputList<net.minecraft.world.ItemStackWithSlot> input,
+            final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(input));
     }
 
-    @Inject(method = "add(ILnet/minecraft/world/item/ItemStack;)Z", at = @At("RETURN"))
-    private void ultimaAfterAdd(final int slot, final ItemStack itemStack, final CallbackInfoReturnable<Boolean> cir) {
-        SlotMaskHooks.invalidate(this);
+    @WrapMethod(method = "setSelectedItem")
+    private ItemStack ultimaSetSelectedItem(final ItemStack itemStack, final Operation<ItemStack> original) {
+        Inventory self = (Inventory)(Object)this;
+        return SlotMaskHooks.callIndexedWrite(self, self.getSelectedSlot(), () -> original.call(itemStack));
     }
 
-    @Inject(method = "dropAll", at = @At("RETURN"))
-    private void ultimaAfterDropAll(final CallbackInfo ci) {
-        SlotMaskHooks.invalidate(this);
+    @WrapMethod(method = "addAndPickItem")
+    private void ultimaAddAndPickItem(final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(itemStack));
     }
 
-    @Inject(method = "load", at = @At("RETURN"))
-    private void ultimaAfterLoad(final net.minecraft.world.level.storage.ValueInput.TypedInputList<net.minecraft.world.ItemStackWithSlot> input, final CallbackInfo ci) {
-        SlotMaskHooks.invalidate(this);
+    @WrapMethod(method = "pickSlot")
+    private void ultimaPickSlot(final int slot, final Operation<Void> original) {
+        SlotMaskHooks.runInvalidate(this, () -> original.call(slot));
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)

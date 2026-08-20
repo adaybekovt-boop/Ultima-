@@ -11,7 +11,6 @@ import net.minecraft.world.phys.AABB;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -30,10 +29,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(EntitySectionStorage.class)
 public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
-    /** Broad direct probes can be much worse than vanilla in an empty or sparsely populated strip. */
-    @Unique
-    private static final long ULTIMA_DIRECT_LOOKUP_BUDGET = 1024L;
-
     @Shadow
     @Final
     private Long2ObjectMap<EntitySection<T>> sections;
@@ -62,7 +57,7 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
         // Saturation is required: the three spans can have a mathematical product up to 2^96.
         long candidates = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
-        if (candidates > ULTIMA_DIRECT_LOOKUP_BUDGET || candidates > this.sections.size()) {
+        if (SectionRangeMath.preferVanillaSectionWalk(candidates, this.sections.size())) {
             return;
         }
 

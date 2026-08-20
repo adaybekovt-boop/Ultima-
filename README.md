@@ -87,9 +87,12 @@ simulation optimizations, including hopper sleeping, slot masks, entity-query ea
 tag bitsets, and the state-property cache. `recipe_match_cache` deliberately remains
 compatible because Lithium has no equivalent first-match recipe lookup cache.
 
-`Sodium`, `Iris`, and `Canvas` disable Ultima's client renderer integrations. In the merged
-contract this includes `retained_terrain`, `mesher_fast_path`, and `fsr_upscaling`; the FSR
-module no longer has the branch-local Sodium-only exception.
+`Sodium`, `Iris`, and `Canvas` disable Ultima's geometry renderer integrations
+(`retained_terrain`, `mesher_fast_path`, and the other terrain/mesher modules).
+`fsr_upscaling` is separate: Canvas still auto-disables it; Sodium-only is allowed;
+Iris (with or without Sodium) stays off for a specific capability reason — no
+official post-final hook and no external control of Iris internal resolution —
+not the old blanket `incompatible_mod`.
 
 The settings screen exposes all 24 registered modules under Rendering, Simulation, or
 Advanced. Every toggle that changes Mixins uses the restart-required apply policy.

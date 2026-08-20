@@ -27,6 +27,7 @@ public final class StatePropertyCacheEquivalenceTest {
     }
 
     public static void run() {
+        dev.ultima.failopen.Wave2FailOpenTest.run();
         testPackRoundTrip();
         testSkipKind();
         testPathfindableIndependentBits();

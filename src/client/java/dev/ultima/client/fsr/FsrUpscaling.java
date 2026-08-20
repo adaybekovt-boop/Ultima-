@@ -12,6 +12,8 @@ import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.fsr.FsrEasuConstants;
+import dev.ultima.fsr.FsrIrisCapabilities;
+import dev.ultima.fsr.FsrRuntimeGate;
 import dev.ultima.fsr.FsrPipelineGate;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrResourcePlan;
@@ -128,12 +130,30 @@ public final class FsrUpscaling {
         return vanillaMain;
     }
 
+    /**
+     * Plan this frame's world-pass redirect.
+     *
+     * <p>Iris protection is <em>not</em> this method. When Iris is loaded,
+     * {@link dev.ultima.fsr.FsrCompatibility#blocks(String)} disables
+     * {@code fsr_upscaling}, and {@link dev.ultima.config.UltimaMixinPlugin}
+     * never applies {@code GameRendererMixin}, so this method is not called.
+     * {@link FsrRuntimeGate} is a last-line refuse for tests or a mixin that
+     * was already applied; it is unreachable for a live Iris load.
+     */
     public FsrResourcePlan beginWorldPass(final int nativeWidth, final int nativeHeight) {
         this.evaluatedThisFrame = false;
         this.hudAfterUpscaleThisFrame = false;
-        if (this.failedOpen || !this.moduleEnabled()) {
-            this.releaseIfInactive(nativeWidth, nativeHeight);
-            this.worldPass = false;
+        boolean enabled = this.moduleEnabled();
+        boolean irisLoaded = FsrIrisCapabilities.isIrisModLoaded();
+        if (!FsrRuntimeGate.allowWorldTargetHijack(enabled, this.failedOpen, irisLoaded)) {
+            if (irisLoaded && enabled && !this.failedOpen) {
+                this.failOpen(
+                        "Iris is loaded without a safe post-Iris FSR hook; leaving Iris rendering untouched",
+                        null);
+            } else {
+                this.releaseIfInactive(nativeWidth, nativeHeight);
+                this.worldPass = false;
+            }
             this.activePlan = FsrResourcePlan.inactive(nativeWidth, nativeHeight);
             return this.activePlan;
         }

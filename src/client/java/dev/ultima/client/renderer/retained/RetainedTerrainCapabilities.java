@@ -1,9 +1,9 @@
 package dev.ultima.client.renderer.retained;
 
+import dev.ultima.config.LoadedModCache;
 import com.mojang.blaze3d.systems.DeviceFeatures;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,9 +39,9 @@ public final class RetainedTerrainCapabilities {
     }
 
     private static boolean detect() {
-        if (FabricLoader.getInstance().isModLoaded("sodium")
-                || FabricLoader.getInstance().isModLoaded("iris")
-                || FabricLoader.getInstance().isModLoaded("canvas")) {
+        if (LoadedModCache.isLoaded("sodium")
+                || LoadedModCache.isLoaded("iris")
+                || LoadedModCache.isLoaded("canvas")) {
             LOGGER.info("Retained terrain disabled: a replacement renderer/shader mod is loaded.");
             cachedMode = "incompatible_mod";
             return false;
