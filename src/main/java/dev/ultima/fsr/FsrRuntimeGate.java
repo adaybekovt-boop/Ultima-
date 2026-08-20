@@ -10,7 +10,7 @@ package dev.ultima.fsr;
  * every mixin in the {@code fsr_upscaling} package, including
  * {@code GameRendererMixin}. {@code beginWorldPass} is therefore not called.
  * This gate remains for tests ({@code runWithLoadedModsForTest} after mixins
- * already applied) and as a last line if the mixin was applied without Iris
+ * already applied) and as a last-line refuse if the mixin was applied without Iris
  * and Iris later appears in a hypothetical loader that could change the
  * loaded-mod set — which Fabric does not.
  *
