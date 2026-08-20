@@ -5,12 +5,16 @@ import dev.ultima.entityquery.EntityQueryKind;
 import dev.ultima.entityquery.EntitySectionCounters;
 import dev.ultima.entityquery.LithiumIntersection;
 import dev.ultima.inventory.NonEmptySlotMask;
+import dev.ultima.inventory.SlotMaskHooks;
+import dev.ultima.inventory.SlotMaskTracker;
 import dev.ultima.inventory.SlotOccupancy;
 import dev.ultima.inventory.VanillaInventoryMutationSources;
+import dev.ultima.util.SectionRangeMath;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import net.minecraft.world.SimpleContainer;
 
 /**
  * Differential checks for container slot masks and entity-query empty early-outs.
@@ -27,6 +31,10 @@ public final class SlotMaskEntityQueryTest {
 
     static void run() {
         testMutationCatalogPresent();
+        testReplaceWithInvalidatesStaleEmptyMask();
+        testIndexedWriteDepthRecoversAfterThrow();
+        testPartialOccupiedVisitDoesNotRescan();
+        testSharedSectionWalkBudget();
         testRandomOccupancyMatchesScan();
         testIterationOrderMatchesForLoop();
         testConservativeVerifyCatchesCorruption();
@@ -43,6 +51,7 @@ public final class SlotMaskEntityQueryTest {
         boolean sawSetItem = false;
         boolean sawSetChanged = false;
         boolean sawLoot = false;
+        boolean sawReplaceWith = false;
         for (String source : VanillaInventoryMutationSources.SOURCES) {
             if (source.contains("setItem")) {
                 sawSetItem = true;
@@ -53,8 +62,91 @@ public final class SlotMaskEntityQueryTest {
             if (source.contains("unpackLootTable")) {
                 sawLoot = true;
             }
+            if (source.contains("replaceWith")) {
+                sawReplaceWith = true;
+            }
         }
         assertTrue(sawSetItem && sawSetChanged && sawLoot, "catalog covers setItem, setChanged, loot unpack");
+        assertTrue(sawReplaceWith, "catalog must list Inventory.replaceWith (Variant A: mixin hook, not verify-only)");
+        boolean mixinWrapsReplaceWith = false;
+        for (java.lang.reflect.Method method :
+                dev.ultima.mixin.container_slot_mask.InventoryMixin.class.getDeclaredMethods()) {
+            if ("ultimaReplaceWith".equals(method.getName())) {
+                mixinWrapsReplaceWith = true;
+            }
+        }
+        assertTrue(mixinWrapsReplaceWith, "InventoryMixin must wrap vanilla replaceWith");
+    }
+
+    /**
+     * Production hook used by {@code InventoryMixin.replaceWith}: a trusted empty mask
+     * must not keep reporting empty after a bulk copy that never went through {@code setItem}.
+     */
+    private static void testReplaceWithInvalidatesStaleEmptyMask() {
+        SimpleContainer container = new SimpleContainer(5);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
+        mask.rebuild(SlotOccupancy.of(5, slot -> false));
+        assertTrue(Boolean.TRUE.equals(mask.tryExactEmpty(SlotOccupancy.of(5, slot -> false))), "starts empty");
+        SlotOccupancy filled = SlotOccupancy.of(5, slot -> slot == 0);
+        assertTrue(
+                Boolean.TRUE.equals(mask.tryExactEmpty(filled)),
+                "without the replaceWith hook a trusted empty mask is a false-negative until periodic verify");
+        SlotMaskHooks.afterBulkReplace(container);
+        assertTrue(
+                Boolean.FALSE.equals(mask.tryExactEmpty(filled)),
+                "after replaceWith the mask must rebuild from occupancy and see the filled slot");
+    }
+
+    private static void testIndexedWriteDepthRecoversAfterThrow() {
+        SimpleContainer container = new SimpleContainer(3);
+        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        try {
+            SlotMaskHooks.runIndexedWrite(container, 0, () -> {
+                throw new IllegalStateException("vanilla setItem failed");
+            });
+            throw new AssertionError("vanilla throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        mask.onUnindexedMutation();
+        assertTrue(
+                !mask.trusted(),
+                "enter/exit depth must not leak: in-place setChanged must still invalidate after a thrown write");
+    }
+
+    private static void testPartialOccupiedVisitDoesNotRescan() {
+        int[] counts = {1, 1, 1};
+        NonEmptySlotMask mask = new NonEmptySlotMask();
+        mask.rebuild(occupancy(counts));
+        List<Integer> visited = new ArrayList<>();
+        try {
+            mask.forEachOccupied(occupancy(counts), slot -> {
+                visited.add(slot);
+                throw new IllegalStateException("visitor failed at " + slot);
+            });
+            throw new AssertionError("visitor throw must propagate");
+        } catch (IllegalStateException ignored) {
+        }
+        assertTrue(visited.equals(List.of(0)), "only the failing slot is visited, got " + visited);
+        assertTrue(!mask.trusted(), "partial walk must untrust the mask instead of scan-visiting again");
+    }
+
+    private static void testSharedSectionWalkBudget() {
+        assertTrue(
+                EntityQueryEarlyOut.SECTION_PROBE_BUDGET == SectionRangeMath.DIRECT_LOOKUP_BUDGET,
+                "early-out budget must be the shared SectionRangeMath constant");
+        assertTrue(SectionRangeMath.preferVanillaSectionWalk(1025L, Integer.MAX_VALUE), "volume over 1024");
+        assertTrue(SectionRangeMath.preferVanillaSectionWalk(10L, 3), "volume over loaded section count");
+        assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 10), "volume equal to loaded count still probes");
+        assertTrue(!SectionRangeMath.preferVanillaSectionWalk(10L, 11), "volume under loaded count probes");
+        FakeSectionWorld world = new FakeSectionWorld();
+        world.putAccessible(0, 4, 0, new EntitySectionCounters());
+        AABB huge = new AABB(0.0, 0.0, 0.0, 48.0, 48.0, 48.0);
+        assertTrue(!world.probeInBudget(huge), "wide box vs one loaded section exceeds the shared walk cap");
+        assertTrue(
+                !world.earlyOut(huge, EntityQueryKind.ANY),
+                "early-out must fail open to vanilla when the shared walk cap says not to probe");
     }
 
     private static void testRandomOccupancyMatchesScan() {
@@ -401,7 +493,7 @@ public final class SlotMaskEntityQueryTest {
             int yMax = sectionCoord(box.maxY);
             int zMax = sectionCoord(box.maxZ + 2.0);
             return EntityQueryEarlyOut.allIntersectingEmpty(
-                    xMin, yMin, zMin, xMax, yMax, zMax, kind, key -> this.accessible.get(key));
+                    xMin, yMin, zMin, xMax, yMax, zMax, kind, key -> this.accessible.get(key), this.accessible.size());
         }
 
         boolean probeInBudget(final AABB box) {
@@ -411,8 +503,8 @@ public final class SlotMaskEntityQueryTest {
             int xMax = sectionCoord(box.maxX + 2.0);
             int yMax = sectionCoord(box.maxY);
             int zMax = sectionCoord(box.maxZ + 2.0);
-            return dev.ultima.util.SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax)
-                    <= EntityQueryEarlyOut.SECTION_PROBE_BUDGET;
+            long volume = SectionRangeMath.saturatedVolume(xMin, yMin, zMin, xMax, yMax, zMax);
+            return !SectionRangeMath.preferVanillaSectionWalk(volume, this.accessible.size());
         }
 
         boolean allAccessibleZero(final AABB box, final EntityQueryKind kind) {

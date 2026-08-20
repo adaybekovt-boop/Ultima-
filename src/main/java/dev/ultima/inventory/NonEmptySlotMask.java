@@ -175,25 +175,29 @@ public final class NonEmptySlotMask {
             scanVisit(occupancy, visitor);
             return false;
         }
-        int visited = 0;
-        for (int wordIndex = 0; wordIndex < this.words.length; wordIndex++) {
-            long bits = this.words[wordIndex];
-            while (bits != 0L) {
-                int bit = Long.numberOfTrailingZeros(bits);
-                int slot = (wordIndex << 6) + bit;
-                bits &= bits - 1L;
-                if (slot >= this.size) {
-                    break;
-                }
-                if (occupancy.isOccupied(slot)) {
-                    visitor.accept(slot);
-                    visited++;
-                } else {
-                    setBit(this.words, slot, false);
+        try {
+            for (int wordIndex = 0; wordIndex < this.words.length; wordIndex++) {
+                long bits = this.words[wordIndex];
+                while (bits != 0L) {
+                    int bit = Long.numberOfTrailingZeros(bits);
+                    int slot = (wordIndex << 6) + bit;
+                    bits &= bits - 1L;
+                    if (slot >= this.size) {
+                        break;
+                    }
+                    if (occupancy.isOccupied(slot)) {
+                        visitor.accept(slot);
+                    } else {
+                        setBit(this.words, slot, false);
+                    }
                 }
             }
+            return true;
+        } catch (Throwable error) {
+            // Do not scanVisit: the visitor may already have mutated earlier slots.
+            this.invalidate();
+            throw error;
         }
-        return true;
     }
 
     /**

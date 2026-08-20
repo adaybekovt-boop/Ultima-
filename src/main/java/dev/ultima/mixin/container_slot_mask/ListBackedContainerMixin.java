@@ -1,5 +1,7 @@
 package dev.ultima.mixin.container_slot_mask;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.ultima.inventory.SlotMaskHooks;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
@@ -7,43 +9,27 @@ import net.minecraft.world.level.block.entity.ListBackedContainer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ListBackedContainer.class)
 public interface ListBackedContainerMixin {
-    @Inject(method = "setItem", at = @At("HEAD"))
-    private void ultimaBeforeSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite((Container)(Object)this);
+    @WrapMethod(method = "setItem")
+    default void ultimaSetItem(final int slot, final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runIndexedWrite((Container)(Object)this, slot, () -> original.call(slot, itemStack));
     }
 
-    @Inject(method = "setItem", at = @At("RETURN"))
-    private void ultimaAfterSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.afterIndexedWrite((Container)(Object)this, slot);
+    @WrapMethod(method = "removeItem")
+    default ItemStack ultimaRemoveItem(final int slot, final int count, final Operation<ItemStack> original) {
+        return SlotMaskHooks.callIndexedWrite((Container)(Object)this, slot, () -> original.call(slot, count));
     }
 
-    @Inject(method = "removeItem", at = @At("HEAD"))
-    private void ultimaBeforeRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.beforeIndexedWrite((Container)(Object)this);
-    }
-
-    @Inject(method = "removeItem", at = @At("RETURN"))
-    private void ultimaAfterRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.afterIndexedWrite((Container)(Object)this, slot);
-    }
-
-    @Inject(method = "clearContent", at = @At("HEAD"))
-    private void ultimaBeforeClear(final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite((Container)(Object)this);
-    }
-
-    @Inject(method = "clearContent", at = @At("RETURN"))
-    private void ultimaAfterClear(final CallbackInfo ci) {
-        SlotMaskHooks.afterClearWrapped((Container)(Object)this);
+    @WrapMethod(method = "clearContent")
+    default void ultimaClear(final Operation<Void> original) {
+        SlotMaskHooks.runClear((Container)(Object)this, original::call);
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)
-    private void ultimaIsEmpty(final CallbackInfoReturnable<Boolean> cir) {
+    default void ultimaIsEmpty(final CallbackInfoReturnable<Boolean> cir) {
         Boolean empty = dev.ultima.inventory.SlotMaskQueries.tryExactEmpty((Container)(Object)this);
         if (empty != null) {
             cir.setReturnValue(empty);

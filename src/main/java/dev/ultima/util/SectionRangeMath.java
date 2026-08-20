@@ -2,8 +2,14 @@ package dev.ultima.util;
 
 /**
  * Overflow-safe range checks used by direct section-key iteration.
+ *
+ * <p>{@link #preferVanillaSectionWalk(long, int)} is the shared probe-budget
+ * decision used by both {@code entity_section_lookup} and
+ * {@code entity_query_early_out}. A dense key walk of a huge AABB is more
+ * expensive than vanilla's strip walk of the already-loaded section map.
  */
 public final class SectionRangeMath {
+    public static final long DIRECT_LOOKUP_BUDGET = 1024L;
     private static final int MIN_PACKED_XZ = -(1 << 21);
     private static final int MAX_PACKED_XZ = (1 << 21) - 1;
     private static final int MIN_PACKED_Y = -(1 << 19);
@@ -42,6 +48,14 @@ public final class SectionRangeMath {
         }
 
         return saturatedMultiply(saturatedMultiply(xSpan, ySpan), zSpan);
+    }
+
+    /**
+     * @return {@code true} when a dense section-key probe should be skipped in
+     *         favour of vanilla's walk of the loaded {@code sections} map
+     */
+    public static boolean preferVanillaSectionWalk(final long packedVolume, final int loadedSectionCount) {
+        return packedVolume > DIRECT_LOOKUP_BUDGET || packedVolume > loadedSectionCount;
     }
 
     private static long saturatedMultiply(final long left, final long right) {

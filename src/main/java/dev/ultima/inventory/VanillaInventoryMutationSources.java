@@ -7,7 +7,9 @@ package dev.ultima.inventory;
  * <p>The mask is updated on the indexed {@code Container} methods and invalidated on
  * {@code setChanged} that is not nested in those methods (in-place {@code ItemStack} grow/shrink).
  * Unlisted or modded paths fail open: the hint is marked untrusted and the next use rebuilds from
- * {@code getItem}.
+ * {@code getItem}. {@code Inventory.replaceWith} is hooked (Variant A): respawn and
+ * dimension change copy the whole inventory without per-slot {@code setItem}, so the
+ * mixin invalidates the mask immediately rather than waiting for periodic verify.
  */
 public final class VanillaInventoryMutationSources {
     /**
@@ -37,7 +39,7 @@ public final class VanillaInventoryMutationSources {
             "RandomizableContainer.unpackLootTable / lootTable.fill — generates items into previously empty slots",
             "BaseContainerBlockEntity.applyImplicitComponents (DataComponents.CONTAINER) — item-form chests",
             "BaseContainerBlockEntity.setItems — replaces the backing NonNullList (loadAdditional)",
-            "Inventory.add / addResource / removeItem(ItemStack) / dropAll / load — player inventory bulk and identity remove",
+            "Inventory.add / addResource / removeItem(ItemStack) / dropAll / replaceWith / load — player inventory bulk, respawn/dimension copy, and identity remove",
             "ContainerEntity.setChestVehicleItem / removeChestVehicleItem / clearChestVehicleContent / readChestVehicleSaveData",
             "CompoundContainer.setItem/removeItem — delegated to container1/container2; mask lives on the halves"
     };

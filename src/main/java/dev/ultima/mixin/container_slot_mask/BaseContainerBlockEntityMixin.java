@@ -1,5 +1,7 @@
 package dev.ultima.mixin.container_slot_mask;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.ultima.inventory.SlotMaskHooks;
 import dev.ultima.inventory.SlotMaskQueries;
 import net.minecraft.core.NonNullList;
@@ -9,54 +11,37 @@ import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(BaseContainerBlockEntity.class)
 public abstract class BaseContainerBlockEntityMixin implements Container {
-    @Inject(method = "setItem", at = @At("HEAD"))
-    private void ultimaBeforeSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "setItem")
+    private void ultimaSetItem(final int slot, final ItemStack itemStack, final Operation<Void> original) {
+        SlotMaskHooks.runIndexedWrite(this, slot, () -> original.call(slot, itemStack));
     }
 
-    @Inject(method = "setItem", at = @At("RETURN"))
-    private void ultimaAfterSetItem(final int slot, final ItemStack itemStack, final CallbackInfo ci) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
+    @WrapMethod(method = "removeItem")
+    private ItemStack ultimaRemoveItem(final int slot, final int count, final Operation<ItemStack> original) {
+        return SlotMaskHooks.callIndexedWrite(this, slot, () -> original.call(slot, count));
     }
 
-    @Inject(method = "removeItem", at = @At("HEAD"))
-    private void ultimaBeforeRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.beforeIndexedWrite(this);
+    @WrapMethod(method = "removeItemNoUpdate")
+    private ItemStack ultimaRemoveNoUpdate(final int slot, final Operation<ItemStack> original) {
+        return SlotMaskHooks.callIndexedWrite(this, slot, () -> original.call(slot));
     }
 
-    @Inject(method = "removeItem", at = @At("RETURN"))
-    private void ultimaAfterRemoveItem(final int slot, final int count, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
+    @WrapMethod(method = "clearContent")
+    private void ultimaClear(final Operation<Void> original) {
+        SlotMaskHooks.runClear(this, original::call);
     }
 
-    @Inject(method = "removeItemNoUpdate", at = @At("HEAD"))
-    private void ultimaBeforeRemoveNoUpdate(final int slot, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.beforeIndexedWrite(this);
-    }
-
-    @Inject(method = "removeItemNoUpdate", at = @At("RETURN"))
-    private void ultimaAfterRemoveNoUpdate(final int slot, final CallbackInfoReturnable<ItemStack> cir) {
-        SlotMaskHooks.afterIndexedWrite(this, slot);
-    }
-
-    @Inject(method = "clearContent", at = @At("HEAD"))
-    private void ultimaBeforeClear(final CallbackInfo ci) {
-        SlotMaskHooks.beforeIndexedWrite(this);
-    }
-
-    @Inject(method = "clearContent", at = @At("RETURN"))
-    private void ultimaAfterClear(final CallbackInfo ci) {
-        SlotMaskHooks.afterClearWrapped(this);
-    }
-
-    @Inject(method = "setItems", at = @At("RETURN"))
-    private void ultimaAfterSetItems(final NonNullList<ItemStack> items, final CallbackInfo ci) {
-        SlotMaskHooks.invalidate(this);
+    @WrapMethod(method = "setItems")
+    private void ultimaSetItems(final NonNullList<ItemStack> items, final Operation<Void> original) {
+        try {
+            original.call(items);
+        } finally {
+            SlotMaskHooks.invalidate(this);
+        }
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)

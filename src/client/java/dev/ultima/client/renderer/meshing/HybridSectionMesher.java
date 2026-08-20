@@ -33,6 +33,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.BlockPos.MutableBlockPos;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -292,7 +293,35 @@ public final class HybridSectionMesher {
         startedLayers.clear();
     }
 
-    private static void tessellateFastCube(
+    /**
+     * Production culling + AO decision for a fast-path cube. {@link #tessellateFastCube}
+     * is the only caller; tests invoke this method with real {@link Block#shouldRenderFace}
+     * rather than grepping the source.
+     */
+    static void forEachVisibleFastCubeFace(
+            final BlockState state,
+            final BlockGetter view,
+            final BlockPos pos,
+            final MutableBlockPos neighborPos,
+            final boolean ambientOcclusion,
+            final boolean cubeUsesAmbientOcclusion,
+            final VisibleFastCubeFace consumer) {
+        boolean useAo = ambientOcclusion && state.getLightEmission() == 0 && cubeUsesAmbientOcclusion;
+        for (Direction direction : DIRECTIONS) {
+            neighborPos.setWithOffset(pos, direction);
+            if (!Block.shouldRenderFace(state, view.getBlockState(neighborPos), direction)) {
+                continue;
+            }
+            consumer.accept(direction, useAo);
+        }
+    }
+
+    @FunctionalInterface
+    interface VisibleFastCubeFace {
+        void accept(Direction direction, boolean useAo);
+    }
+
+    static void tessellateFastCube(
             final CubeModelCache.CachedCube cube,
             final BlockQuadOutput output,
             final float localX,
@@ -307,23 +336,25 @@ public final class HybridSectionMesher {
             final QuadInstance quadInstance,
             final Scratch scratch,
             final BlockColors blockColors) {
-        boolean useAo = ambientOcclusion && state.getLightEmission() == 0 && cube.useAmbientOcclusion();
         scratch.resetTint();
-        for (Direction direction : DIRECTIONS) {
-            neighborPos.setWithOffset(pos, direction);
-            if (!Block.shouldRenderFace(state, view.getBlockState(neighborPos), direction)) {
-                continue;
-            }
-            BakedQuad quad = cube.quad(direction);
-            if (useAo) {
-                lighter.prepareQuadAmbientOcclusion(view, state, pos, quad, quadInstance);
-            } else {
-                int lightCoords = lighter.getLightCoords(state, view, neighborPos);
-                lighter.prepareQuadFlat(view, state, pos, lightCoords, quad, quadInstance);
-            }
-            applyTint(quadInstance, view, state, pos, quad, scratch, blockColors);
-            output.put(localX, localY, localZ, quad, quadInstance);
-        }
+        forEachVisibleFastCubeFace(
+                state,
+                view,
+                pos,
+                neighborPos,
+                ambientOcclusion,
+                cube.useAmbientOcclusion(),
+                (direction, useAo) -> {
+                    BakedQuad quad = cube.quad(direction);
+                    if (useAo) {
+                        lighter.prepareQuadAmbientOcclusion(view, state, pos, quad, quadInstance);
+                    } else {
+                        int lightCoords = lighter.getLightCoords(state, view, neighborPos);
+                        lighter.prepareQuadFlat(view, state, pos, lightCoords, quad, quadInstance);
+                    }
+                    applyTint(quadInstance, view, state, pos, quad, scratch, blockColors);
+                    output.put(localX, localY, localZ, quad, quadInstance);
+                });
     }
 
     private static void applyTint(
@@ -360,7 +391,6 @@ public final class HybridSectionMesher {
         private boolean ambientOcclusion;
         private BlockColors blockColors;
         private FluidStateModelSet fluidModelSet;
-        private Object blockModelSet;
         private ModelBlockRenderer blockRenderer;
         private FluidRenderer fluidRenderer;
         private int tintCacheIndex = -1;
@@ -371,10 +401,6 @@ public final class HybridSectionMesher {
         }
 
         private CubeModelCache cubeCache(final Object blockModelSet) {
-            if (this.blockModelSet != blockModelSet) {
-                this.blockModelSet = blockModelSet;
-                this.cubeCache.clear();
-            }
             this.cubeCache.bindModelSet(blockModelSet);
             return this.cubeCache;
         }
