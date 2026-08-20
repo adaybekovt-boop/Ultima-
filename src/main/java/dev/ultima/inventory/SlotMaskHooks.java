@@ -11,6 +11,13 @@ import net.minecraft.world.Container;
  * enter/note/exit depth counter is restored even when the vanilla method throws. HEAD/RETURN
  * inject pairs cannot provide that: Mixin {@code RETURN} is skipped on exceptional exit.
  *
+ * <p>If vanilla mutates the backing list and then throws (typical: {@code items.set} then
+ * {@code setChanged} / comparator update), {@code noteSlot} never runs. Nested
+ * {@code onUnindexedMutation} ignores {@code setChanged} while depth {@code > 0}. The
+ * {@code finally} block therefore untrusts the whole mask (option a): the next occupancy
+ * walk does an honest rescan. False-negatives ("trusted empty" after a successful write)
+ * are forbidden; losing the per-slot bit is acceptable.
+ *
  * <p>Bulk invalidation ({@link #runInvalidate}) and unindexed {@code setChanged}
  * ({@link #runUnindexedMutation}) use the same wrap + {@code try}/{@code finally} shape so
  * {@code unpackLootTable} and {@code BlockEntity.setChanged} cannot leave a trusted empty
@@ -22,32 +29,47 @@ public final class SlotMaskHooks {
 
     public static void runIndexedWrite(final Container container, final int slot, final Runnable vanilla) {
         SlotMaskTracker.enterSlotWrite(container);
+        boolean noted = false;
         try {
             vanilla.run();
             noteSlotGuarded(container, slot);
+            noted = true;
         } finally {
             SlotMaskTracker.exitSlotWrite(container);
+            if (!noted) {
+                abortIndexedWrite(container);
+            }
         }
     }
 
     public static <T> T callIndexedWrite(final Container container, final int slot, final Supplier<T> vanilla) {
         SlotMaskTracker.enterSlotWrite(container);
+        boolean noted = false;
         try {
             T result = vanilla.get();
             noteSlotGuarded(container, slot);
+            noted = true;
             return result;
         } finally {
             SlotMaskTracker.exitSlotWrite(container);
+            if (!noted) {
+                abortIndexedWrite(container);
+            }
         }
     }
 
     public static void runClear(final Container container, final Runnable vanilla) {
         SlotMaskTracker.enterSlotWrite(container);
+        boolean noted = false;
         try {
             vanilla.run();
             noteClearedGuarded(container);
+            noted = true;
         } finally {
             SlotMaskTracker.exitSlotWrite(container);
+            if (!noted) {
+                abortIndexedWrite(container);
+            }
         }
     }
 
@@ -109,10 +131,6 @@ public final class SlotMaskHooks {
         }
     }
 
-    public static void afterBulkReplace(final Container container) {
-        SlotMaskTracker.invalidate(container);
-    }
-
     public static void afterSetChanged(final Container container) {
         FailOpenGuard.run(
                 FailOpenGuard.Module.CONTAINER_SLOT_MASK,
@@ -145,5 +163,16 @@ public final class SlotMaskHooks {
                 throw error;
             }
         });
+    }
+
+    /**
+     * Option (a): any exceptional exit from an indexed write may have mutated the backing
+     * list before {@code noteSlot} ran ({@code items.set} then {@code setChanged} throw).
+     * Nested {@code setChanged} is ignored while {@code slotWriteDepth > 0}, so the only
+     * safe recovery is to untrust the whole mask. Direct {@link SlotMaskTracker#invalidate}
+     * is intentional: a tripped FailOpenGuard must not skip this.
+     */
+    private static void abortIndexedWrite(final Container container) {
+        SlotMaskTracker.invalidate(container);
     }
 }

@@ -56,7 +56,7 @@ public final class ClientFrameBenchmark {
             "ultima.clientBenchmark.screenshotPrefix", "ultima-client-benchmark");
     private static final String CAMERA_MODE = System.getProperty(
             "ultima.clientBenchmark.cameraMode",
-            "mesher_chunk_flight".equals(SCENE) ? "chunk_flight" : "stationary");
+            cameraModeForScene(SCENE));
     private static final Double CAMERA_X = doubleProperty("ultima.clientBenchmark.cameraX");
     private static final Double CAMERA_Y = doubleProperty("ultima.clientBenchmark.cameraY");
     private static final Double CAMERA_Z = doubleProperty("ultima.clientBenchmark.cameraZ");
@@ -724,6 +724,18 @@ public final class ClientFrameBenchmark {
     }
 
     private static int defaultWarmupFrames(final String scene) {
+        return warmupFramesForScene(scene);
+    }
+
+    private static int defaultSampleFrames(final String scene) {
+        return sampleFramesForScene(scene);
+    }
+
+    /**
+     * Default warmup frames for a mesher hardware scene id. Tests use this instead of grepping
+     * this file for scene identifiers.
+     */
+    public static int warmupFramesForScene(final String scene) {
         return switch (scene) {
             case "mesher_cold_load" -> 60;
             case "mesher_rebuild_storm" -> 600;
@@ -731,11 +743,21 @@ public final class ClientFrameBenchmark {
         };
     }
 
-    private static int defaultSampleFrames(final String scene) {
+    /**
+     * Default sample frames for a mesher hardware scene id.
+     */
+    public static int sampleFramesForScene(final String scene) {
         return switch (scene) {
             case "mesher_cold_load" -> 2400;
             default -> 12000;
         };
+    }
+
+    /**
+     * Default camera mode for a mesher hardware scene id.
+     */
+    public static String cameraModeForScene(final String scene) {
+        return "mesher_chunk_flight".equals(scene) ? "chunk_flight" : "stationary";
     }
 
     private static int positiveIntegerProperty(final String key, final int defaultValue) {

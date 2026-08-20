@@ -2,6 +2,7 @@ package dev.ultima.review;
 
 import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaMixinPlugin;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.client.fsr.FsrUpscaling;
 import dev.ultima.fsr.FsrCompatibility;
@@ -19,9 +20,13 @@ import dev.ultima.fsr.FsrSize;
 import dev.ultima.fsr.FsrSkySafetyModel;
 import dev.ultima.fsr.FsrTargetModel;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.Inject;
 
 /**
  * GPU-free coverage for FSR1 planning, AMD constant setup, resize lifecycle,
@@ -423,11 +428,6 @@ final class FsrUpscalingChecks {
                 "failed-open FSR never hijacks");
         assertFalse(FsrRuntimeGate.allowWorldTargetHijack(false, false, false),
                 "disabled module never hijacks");
-        String gate = readSource("src/main/java/dev/ultima/fsr/FsrRuntimeGate.java");
-        assertTrue(gate.contains("UltimaMixinPlugin"),
-                "runtime gate javadoc must name the mixin plugin as the live Iris protection");
-        assertTrue(gate.contains("last-line"),
-                "runtime gate javadoc must call itself last-line, not the live mechanism");
     }
 
     private static void testIrisModPresenceIsCachedAndShared() {
@@ -491,19 +491,28 @@ final class FsrUpscalingChecks {
     }
 
     private static void testIrisProtectionIsMixinPlugin() {
-        String plugin = readSource("src/main/java/dev/ultima/config/UltimaMixinPlugin.java");
-        String changelog = readSource("CHANGELOG.md");
-        assertTrue(plugin.contains("fsr_upscaling"),
-                "mixin plugin javadoc must name fsr_upscaling as the Iris gate");
-        assertTrue(plugin.contains("GameRendererMixin"),
-                "mixin plugin javadoc must name GameRendererMixin as skipped under Iris");
-        assertTrue(changelog.contains("UltimaMixinPlugin"),
-                "CHANGELOG must describe the mixin-plugin gate, not a live runtime hijack refuse");
-        assertFalse(changelog.contains("Runtime fail-open: if Iris is present, FSR will not hijack"),
-                "CHANGELOG must not claim the runtime hijack refuse as the live Iris mechanism");
-        String mixin = readSource("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
-        assertTrue(mixin.contains("package dev.ultima.mixin.fsr_upscaling"),
-                "GameRendererMixin lives in the fsr_upscaling mixin package the plugin gates");
+        UltimaMixinPlugin plugin = new UltimaMixinPlugin();
+        assertFalse(
+                plugin.shouldApplyMixin(
+                        "net.minecraft.client.renderer.GameRenderer",
+                        "dev.ultima.mixin.fsr_upscaling.GameRendererMixin"),
+                "UltimaMixinPlugin must skip fsr_upscaling mixins while the module is inactive");
+        LoadedModCache.runWithProbeForTest(
+                "iris"::equals,
+                () -> {
+                    Map<String, Boolean> requested = new LinkedHashMap<>();
+                    for (UltimaModules.Module module : UltimaModules.all()) {
+                        requested.put(module.key(), module.enabledByDefault());
+                    }
+                    requested.put("fsr_upscaling", true);
+                    UltimaConfig on = UltimaConfig.createForTests(requested);
+                    assertTrue(FsrCompatibility.blocks("fsr_upscaling"), "Iris capability gate blocks FSR");
+                    assertFalse(on.isEnabled("fsr_upscaling"), "requested FSR stays disabled under Iris");
+                });
+        assertTrue(
+                "dev.ultima.mixin.fsr_upscaling"
+                        .equals(dev.ultima.mixin.fsr_upscaling.GameRendererMixin.class.getPackageName()),
+                "GameRendererMixin lives in the fsr_upscaling package the plugin gates");
     }
 
     private static void testPipelineGate() {
@@ -567,20 +576,26 @@ final class FsrUpscalingChecks {
     }
 
     private static void testResizeMixinPriority() {
-        String temporal = readSource("src/client/java/dev/ultima/mixin/temporal/GameRendererMixin.java");
-        String fsr = readSource("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
-        assertTrue(temporal.contains("priority = 900"), "temporal GameRenderer mixin is 900");
-        assertTrue(fsr.contains("priority = 1100"), "FSR GameRenderer mixin is 1100 so resize sees native size after temporal");
-        assertTrue(temporal.contains("method = \"resize\""), "temporal still injects GameRenderer.resize");
-        assertTrue(fsr.contains("method = \"resize\""), "FSR still injects GameRenderer.resize");
+        Mixin temporal = dev.ultima.mixin.temporal.GameRendererMixin.class.getAnnotation(Mixin.class);
+        Mixin fsr = dev.ultima.mixin.fsr_upscaling.GameRendererMixin.class.getAnnotation(Mixin.class);
+        assertTrue(temporal != null && temporal.priority() == 900, "temporal GameRenderer mixin is 900");
+        assertTrue(fsr != null && fsr.priority() == 1100, "FSR GameRenderer mixin is 1100 so resize sees native size after temporal");
+        assertTrue(
+                injectsResize(dev.ultima.mixin.temporal.GameRendererMixin.class),
+                "temporal still injects GameRenderer.resize");
+        assertTrue(
+                injectsResize(dev.ultima.mixin.fsr_upscaling.GameRendererMixin.class),
+                "FSR still injects GameRenderer.resize");
     }
 
-    private static String readSource(final String path) {
-        try {
-            return java.nio.file.Files.readString(java.nio.file.Path.of(path));
-        } catch (java.io.IOException e) {
-            throw new AssertionError("could not read " + path, e);
+    private static boolean injectsResize(final Class<?> mixinClass) {
+        for (Method method : mixinClass.getDeclaredMethods()) {
+            Inject inject = method.getAnnotation(Inject.class);
+            if (inject != null && Arrays.asList(inject.method()).contains("resize")) {
+                return true;
+            }
         }
+        return false;
     }
 
     private static UltimaModules.Module module(final String key) {

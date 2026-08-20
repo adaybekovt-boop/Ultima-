@@ -23,11 +23,9 @@ public final class RecipeFirstMatchCache {
     private RecipeCachePolicy policy = RecipeCachePolicy.EMPTY;
 
     public void onRecipesReplaced(final RecipeCachePolicy policy) {
-        FailOpenGuard.run(FailOpenGuard.Module.RECIPE_MATCH_CACHE, "reload", () -> {
-            this.policy = policy;
-            this.table.invalidate();
-            RecipeMatchTelemetry.invalidation();
-        });
+        this.policy = policy;
+        this.table.invalidate();
+        RecipeMatchTelemetry.invalidation();
     }
 
     /**
@@ -54,7 +52,11 @@ public final class RecipeFirstMatchCache {
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE, type, () -> this.hintedHitUnchecked(type, input, hint));
     }
 
-    private @Nullable Optional<RecipeHolder<?>> lookupUnchecked(
+    /**
+     * Cache probe without a fail-open door. Mixins wrap this with
+     * {@link FailOpenGuard#callNullable}; do not nest another door around {@link #lookup}.
+     */
+    public @Nullable Optional<RecipeHolder<?>> lookupUnchecked(
             final RecipeType<?> type, final RecipeInput input, final boolean recordTelemetry) {
         if (input.isEmpty()) {
             return Optional.empty();
@@ -77,7 +79,10 @@ public final class RecipeFirstMatchCache {
         return hit;
     }
 
-    private void storeUnchecked(
+    /**
+     * Cache store without a fail-open door. Mixins wrap this with {@link FailOpenGuard#run}.
+     */
+    public void storeUnchecked(
             final RecipeType<?> type, final RecipeInput input, final Optional<? extends RecipeHolder<?>> result) {
         if (input.isEmpty() || this.policy.shouldBypassCache(type, input)) {
             return;
@@ -91,7 +96,11 @@ public final class RecipeFirstMatchCache {
         this.table.put(key, stored);
     }
 
-    private @Nullable Optional<RecipeHolder<?>> hintedHitUnchecked(
+    /**
+     * Hinted probe without a fail-open door. Mixins wrap this with
+     * {@link FailOpenGuard#callNullable}.
+     */
+    public @Nullable Optional<RecipeHolder<?>> hintedHitUnchecked(
             final RecipeType<?> type, final RecipeInput input, final RecipeHolder<?> hint) {
         Optional<RecipeHolder<?>> first = this.lookupUnchecked(type, input, false);
         if (first == null) {

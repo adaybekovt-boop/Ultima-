@@ -16,10 +16,8 @@ public final class BrewingFirstMatchCache {
     private final FirstMatchTable<RecipeMatchKeys.BrewingKey, Object> table = new FirstMatchTable<>();
 
     public void invalidate() {
-        FailOpenGuard.run(FailOpenGuard.Module.RECIPE_MATCH_CACHE, "brewing-reload", () -> {
-            this.table.invalidate();
-            RecipeMatchTelemetry.invalidation();
-        });
+        this.table.invalidate();
+        RecipeMatchTelemetry.invalidation();
     }
 
     public boolean isEmpty() {
@@ -30,55 +28,81 @@ public final class BrewingFirstMatchCache {
         return FailOpenGuard.callNullable(
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE,
                 RecipeMatchKeys.BrewingKey.Kind.INGREDIENT,
-                () -> this.lookupBoolean(RecipeMatchKeys.BrewingKey.ingredient(ingredient)));
+                () -> this.lookupIngredientUnchecked(ingredient));
+    }
+
+    /**
+     * Ingredient probe without a fail-open door. Mixins wrap this with
+     * {@link FailOpenGuard#callNullable}.
+     */
+    public @Nullable Boolean lookupIngredientUnchecked(final ItemStack ingredient) {
+        return this.lookupBoolean(RecipeMatchKeys.BrewingKey.ingredient(ingredient));
     }
 
     public void storeIngredient(final ItemStack ingredient, final boolean result) {
         FailOpenGuard.run(
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE,
                 RecipeMatchKeys.BrewingKey.Kind.INGREDIENT,
-                () -> this.table.put(RecipeMatchKeys.BrewingKey.ingredient(ingredient), result));
+                () -> this.storeIngredientUnchecked(ingredient, result));
+    }
+
+    public void storeIngredientUnchecked(final ItemStack ingredient, final boolean result) {
+        this.table.put(RecipeMatchKeys.BrewingKey.ingredient(ingredient), result);
     }
 
     public @Nullable Boolean lookupHasMix(final ItemStack source, final ItemStack ingredient) {
         return FailOpenGuard.callNullable(
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE,
                 RecipeMatchKeys.BrewingKey.Kind.HAS_MIX,
-                () -> this.lookupBoolean(
-                        RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient)));
+                () -> this.lookupHasMixUnchecked(source, ingredient));
+    }
+
+    public @Nullable Boolean lookupHasMixUnchecked(final ItemStack source, final ItemStack ingredient) {
+        return this.lookupBoolean(
+                RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient));
     }
 
     public void storeHasMix(final ItemStack source, final ItemStack ingredient, final boolean result) {
         FailOpenGuard.run(
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE,
                 RecipeMatchKeys.BrewingKey.Kind.HAS_MIX,
-                () -> this.table.put(
-                        RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient),
-                        result));
+                () -> this.storeHasMixUnchecked(source, ingredient, result));
+    }
+
+    public void storeHasMixUnchecked(final ItemStack source, final ItemStack ingredient, final boolean result) {
+        this.table.put(
+                RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.HAS_MIX, source, ingredient), result);
     }
 
     public @Nullable MixDecision lookupMix(final ItemStack source, final ItemStack ingredient) {
         return FailOpenGuard.callNullable(
                 FailOpenGuard.Module.RECIPE_MATCH_CACHE,
                 RecipeMatchKeys.BrewingKey.Kind.MIX,
-                () -> {
-                    RecipeMatchKeys.BrewingKey key =
-                            RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient);
-                    if (!this.table.contains(key)) {
-                        RecipeMatchTelemetry.brewingMiss();
-                        return null;
-                    }
-                    RecipeMatchTelemetry.brewingHit();
-                    return (MixDecision) this.table.get(key);
-                });
+                () -> this.lookupMixUnchecked(source, ingredient));
+    }
+
+    public @Nullable MixDecision lookupMixUnchecked(final ItemStack source, final ItemStack ingredient) {
+        RecipeMatchKeys.BrewingKey key =
+                RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient);
+        if (!this.table.contains(key)) {
+            RecipeMatchTelemetry.brewingMiss();
+            return null;
+        }
+        RecipeMatchTelemetry.brewingHit();
+        return (MixDecision) this.table.get(key);
     }
 
     public void storeMix(final ItemStack source, final ItemStack ingredient, final ItemStack result) {
-        FailOpenGuard.run(FailOpenGuard.Module.RECIPE_MATCH_CACHE, RecipeMatchKeys.BrewingKey.Kind.MIX, () -> {
-            MixDecision decision = result == source ? MixDecision.UNCHANGED : MixDecision.changed(result.copy());
-            this.table.put(
-                    RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient), decision);
-        });
+        FailOpenGuard.run(
+                FailOpenGuard.Module.RECIPE_MATCH_CACHE,
+                RecipeMatchKeys.BrewingKey.Kind.MIX,
+                () -> this.storeMixUnchecked(source, ingredient, result));
+    }
+
+    public void storeMixUnchecked(final ItemStack source, final ItemStack ingredient, final ItemStack result) {
+        MixDecision decision = result == source ? MixDecision.UNCHANGED : MixDecision.changed(result.copy());
+        this.table.put(
+                RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient), decision);
     }
 
     private @Nullable Boolean lookupBoolean(final RecipeMatchKeys.BrewingKey key) {

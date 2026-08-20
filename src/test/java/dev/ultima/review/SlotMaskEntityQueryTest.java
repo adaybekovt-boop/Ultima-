@@ -10,11 +10,17 @@ import dev.ultima.inventory.SlotMaskTracker;
 import dev.ultima.inventory.SlotOccupancy;
 import dev.ultima.inventory.VanillaInventoryMutationSources;
 import dev.ultima.util.SectionRangeMath;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import net.minecraft.SharedConstants;
+import net.minecraft.core.NonNullList;
+import net.minecraft.server.Bootstrap;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
  * Differential checks for container slot masks and entity-query empty early-outs.
@@ -51,6 +57,13 @@ public final class SlotMaskEntityQueryTest {
         System.out.println("Slot-mask / entity-query equivalence checks passed.");
     }
 
+    /**
+     * Mixin-wiring contract, not a behavior proof. Behavior of replaceWith / unpack / setItem
+     * exception-after-mutation is {@link #testReplaceWithInvalidatesStaleEmptyMask},
+     * {@link #testUnpackLootTableInvalidatesAfterThrow}, and
+     * {@link #testIndexedWriteDepthRecoversAfterThrow}. Reflection here only checks that the
+     * production Mixin classes still declare the wrap methods named in the catalog.
+     */
     private static void testMutationCatalogPresent() {
         assertTrue(VanillaInventoryMutationSources.sourceCount() >= 20, "mutation catalog must list the 26.2 sources");
         boolean sawSetItem = false;
@@ -158,36 +171,60 @@ public final class SlotMaskEntityQueryTest {
     }
 
     /**
-     * Production hook used by {@code InventoryMixin.replaceWith}: a trusted empty mask
-     * must not keep reporting empty after a bulk copy that never went through {@code setItem}.
+     * Production path used by {@code InventoryMixin.replaceWith}: {@link SlotMaskHooks#runInvalidate}
+     * wrapping a backing-list copy that never goes through {@code setItem}.
+     *
+     * <p>Live {@code Inventory.replaceWith} is not invoked here (needs a player Inventory). This
+     * runs the same helper the Mixin calls, with the same {@code items.set} mutation vanilla uses.
      */
     private static void testReplaceWithInvalidatesStaleEmptyMask() {
-        SimpleContainer container = new SimpleContainer(5);
-        NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        requireMinecraftBootstrap("replaceWith backing-list copy");
+        SimpleContainer dest = new SimpleContainer(5);
+        SimpleContainer src = new SimpleContainer(5);
+        itemsOf(src).set(0, new ItemStack(Items.DIRT));
+        NonEmptySlotMask mask = SlotMaskTracker.of(dest);
         mask.setVerifyPeriod(256);
         mask.rebuild(SlotOccupancy.of(5, slot -> false));
         assertTrue(Boolean.TRUE.equals(mask.tryExactEmpty(SlotOccupancy.of(5, slot -> false))), "starts empty");
-        SlotOccupancy filled = SlotOccupancy.of(5, slot -> slot == 0);
+        SlotMaskHooks.runInvalidate(dest, () -> copyBackingListLikeReplaceWith(dest, src));
+        assertTrue(!itemsOf(dest).get(0).isEmpty(), "replaceWith-like copy wrote the stack into dest");
         assertTrue(
-                Boolean.TRUE.equals(mask.tryExactEmpty(filled)),
-                "without the replaceWith hook a trusted empty mask is a false-negative until periodic verify");
-        SlotMaskHooks.afterBulkReplace(container);
-        assertTrue(
-                Boolean.FALSE.equals(mask.tryExactEmpty(filled)),
+                Boolean.FALSE.equals(mask.tryExactEmpty(SlotMaskTracker.occupancy(dest))),
                 "after replaceWith the mask must rebuild from occupancy and see the filled slot");
     }
 
+    /**
+     * Production {@code SimpleContainerMixin.setItem} body:
+     * {@code SlotMaskHooks.runIndexedWrite(this, slot, () -> original.call(slot, stack))}.
+     * Mixins do not apply in this JavaExec harness, so {@code original.call} is vanilla
+     * {@link SimpleContainer#setItem} (items.set then setChanged).
+     *
+     * <p>This is the exception-AFTER-mutation case: the stack is in the backing list, then
+     * {@code setChanged} throws. {@code noteSlot} must not be required for safety — the
+     * finally abort path untrusts the mask.
+     */
     private static void testIndexedWriteDepthRecoversAfterThrow() {
-        SimpleContainer container = new SimpleContainer(3);
+        requireMinecraftBootstrap("indexed-write exception-after-mutation");
+        SetChangedThrowsContainer container = new SetChangedThrowsContainer(3);
         NonEmptySlotMask mask = SlotMaskTracker.of(container);
+        mask.setVerifyPeriod(256);
         mask.rebuild(SlotOccupancy.of(3, slot -> false));
+        ItemStack dirt = new ItemStack(Items.DIRT);
         try {
-            SlotMaskHooks.runIndexedWrite(container, 0, () -> {
-                throw new IllegalStateException("vanilla setItem failed");
-            });
+            SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, dirt));
             throw new AssertionError("vanilla throw must propagate");
-        } catch (IllegalStateException ignored) {
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    expected.getMessage().contains("blockEntityChanged"),
+                    "throw is from setChanged after the write, not from the helper");
         }
+        assertTrue(!container.getItem(0).isEmpty(), "vanilla items.set happened before setChanged threw");
+        assertTrue(!itemsOf(container).get(0).isEmpty(), "backing NonNullList still holds the stack");
+        assertTrue(
+                !mask.trusted(),
+                "option-a abort must untrust before the next occupancy walk; noteSlot did not run");
+        assertFalseNegativeGone(mask, container, "indexed-write abort must not leave trusted empty");
+        mask.rebuild(SlotOccupancy.of(3, slot -> false));
         mask.onUnindexedMutation();
         assertTrue(
                 !mask.trusted(),
@@ -195,28 +232,41 @@ public final class SlotMaskEntityQueryTest {
     }
 
     /**
-     * Production helper used by {@code RandomizableContainerMixin.unpackLootTable}.
-     * Mixins do not apply in this harness; a live loot table is not claimed.
+     * Production {@code RandomizableContainerMixin.unpackLootTable} body:
+     * {@code SlotMaskHooks.runInvalidateIf(self, table != null, () -> original.call(player))}
+     * and {@code LootTable.fill} writes via {@code container.setItem}.
+     *
+     * <p>Live {@code LootTable.fill} is not invoked (needs a loot manager / world). This runs
+     * the same helpers in fill order: successful setItem, then a later setItem that writes
+     * the backing list and throws from setChanged.
      */
     private static void testUnpackLootTableInvalidatesAfterThrow() {
-        SimpleContainer container = new SimpleContainer(27);
+        requireMinecraftBootstrap("unpackLootTable fill-then-throw");
+        SetChangedThrowsContainer container = new SetChangedThrowsContainer(27);
         NonEmptySlotMask mask = SlotMaskTracker.of(container);
         mask.setVerifyPeriod(256);
         mask.rebuild(SlotOccupancy.of(27, slot -> false));
-        SlotOccupancy midLoot = SlotOccupancy.of(27, slot -> slot == 0);
-        assertTrue(
-                Boolean.TRUE.equals(mask.tryExactEmpty(midLoot)),
-                "precondition: trusted empty mask is a false-negative after partial loot");
+        container.throwOnSetChanged = false;
         try {
-            SlotMaskHooks.runInvalidate(container, () -> {
-                throw new IllegalStateException("lootTable.fill failed mid-generation");
+            SlotMaskHooks.runInvalidateIf(container, true, () -> {
+                SlotMaskHooks.runIndexedWrite(container, 0, () -> container.setItem(0, new ItemStack(Items.DIRT)));
+                SlotMaskHooks.runIndexedWrite(container, 3, () -> container.setItem(3, new ItemStack(Items.DIRT)));
+                assertTrue(!container.getItem(0).isEmpty(), "first loot stack is in the chest before the failure");
+                assertTrue(!container.getItem(3).isEmpty(), "second loot stack is in the chest before the failure");
+                container.throwOnSetChanged = true;
+                SlotMaskHooks.runIndexedWrite(container, 8, () -> container.setItem(8, new ItemStack(Items.DIRT)));
             });
             throw new AssertionError("vanilla throw must propagate");
-        } catch (IllegalStateException ignored) {
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    expected.getMessage().contains("blockEntityChanged"),
+                    "throw is from setChanged after a later fill write");
         }
-        assertTrue(
-                Boolean.FALSE.equals(mask.tryExactEmpty(midLoot)),
-                "unpackLootTable finally must invalidate so a mid-fill throw cannot leave a false empty");
+        assertTrue(!container.getItem(0).isEmpty(), "earlier loot stacks survive the failed fill");
+        assertTrue(!container.getItem(3).isEmpty(), "earlier loot stacks survive the failed fill");
+        assertTrue(!container.getItem(8).isEmpty(), "the failing setItem still wrote the backing list");
+        assertTrue(!mask.trusted(), "unpack finally / indexed abort must untrust after a partial fill throw");
+        assertFalseNegativeGone(mask, container, "partial loot unpack must not leave trusted empty");
     }
 
     /**
@@ -604,6 +654,81 @@ public final class SlotMaskEntityQueryTest {
     private static void assertTrue(final boolean value, final String message) {
         if (!value) {
             throw new AssertionError(message);
+        }
+    }
+
+    /**
+     * After an aborted mutation the mask must not report trusted-empty while the container
+     * holds items. Untrusted (honest rescan) or trusted bits that match occupancy are both OK.
+     */
+    private static void assertFalseNegativeGone(
+            final NonEmptySlotMask mask, final SimpleContainer container, final String message) {
+        Boolean empty = mask.tryExactEmpty(SlotMaskTracker.occupancy(container));
+        if (Boolean.TRUE.equals(empty)) {
+            throw new AssertionError(message + ": trusted empty while container has items, trusted=" + mask.trusted());
+        }
+    }
+
+    private static void requireMinecraftBootstrap(final String purpose) {
+        if (!tryBootstrap()) {
+            throw new AssertionError(
+                    "Minecraft bootstrap is required for " + purpose
+                            + "; this check must not pass without placing a real ItemStack in the backing list");
+        }
+    }
+
+    private static boolean tryBootstrap() {
+        try {
+            SharedConstants.tryDetectVersion();
+            Bootstrap.bootStrap();
+            return Items.DIRT != null && !new ItemStack(Items.DIRT).isEmpty();
+        } catch (Throwable error) {
+            System.out.println("Slot-mask production ItemStack bootstrap failed: " + error);
+            return false;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static NonNullList<ItemStack> itemsOf(final SimpleContainer container) {
+        for (Field field : SimpleContainer.class.getDeclaredFields()) {
+            if (NonNullList.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                try {
+                    return (NonNullList<ItemStack>) field.get(container);
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError("could not read SimpleContainer backing list", e);
+                }
+            }
+        }
+        throw new AssertionError("SimpleContainer has no NonNullList backing field to model items.set");
+    }
+
+    private static void copyBackingListLikeReplaceWith(final SimpleContainer dest, final SimpleContainer src) {
+        NonNullList<ItemStack> destItems = itemsOf(dest);
+        NonNullList<ItemStack> srcItems = itemsOf(src);
+        int n = Math.min(destItems.size(), srcItems.size());
+        for (int i = 0; i < n; i++) {
+            destItems.set(i, srcItems.get(i).copy());
+        }
+    }
+
+    /**
+     * Vanilla {@code SimpleContainer.setItem} writes {@code items.set} then {@code setChanged}.
+     * Throwing from {@code setChanged} is the comparator / {@code level.blockEntityChanged} case.
+     */
+    private static final class SetChangedThrowsContainer extends SimpleContainer {
+        boolean throwOnSetChanged = true;
+
+        SetChangedThrowsContainer(final int size) {
+            super(size);
+        }
+
+        @Override
+        public void setChanged() {
+            if (this.throwOnSetChanged) {
+                throw new IllegalStateException("blockEntityChanged after items.set");
+            }
+            super.setChanged();
         }
     }
 

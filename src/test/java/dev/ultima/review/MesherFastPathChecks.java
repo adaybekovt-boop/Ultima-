@@ -1,5 +1,6 @@
 package dev.ultima.review;
 
+import dev.ultima.client.benchmark.ClientFrameBenchmark;
 import dev.ultima.client.renderer.meshing.CubeModelCache;
 import dev.ultima.client.renderer.meshing.HybridSectionMesher;
 import dev.ultima.client.renderer.meshing.HybridSectionMesherProductionChecks;
@@ -30,9 +31,6 @@ import dev.ultima.meshing.VanillaVisitOracle;
 import dev.ultima.meshing.VanillaWeightedPick;
 import dev.ultima.meshing.VanillaCubeCoverage;
 import java.lang.reflect.Constructor;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -972,11 +970,18 @@ final class MesherFastPathChecks {
                 || !MesherBenchmarkScenes.HARDWARE_METRICS.contains("mesherMetrics.weightedFastPathBlocks")) {
             throw new AssertionError("hardware metric list must include real-world coverage");
         }
-        String recorder = readUtf8(Path.of("src/client/java/dev/ultima/client/benchmark/ClientFrameBenchmark.java"));
-        if (!recorder.contains("mesher_cold_load")
-                || !recorder.contains("mesher_rebuild_storm")
-                || !recorder.contains("mesher_chunk_flight")) {
-            throw new AssertionError("ClientFrameBenchmark must default warmup/camera for the three mesher scenes");
+        if (ClientFrameBenchmark.warmupFramesForScene("mesher_cold_load") != 60
+                || ClientFrameBenchmark.sampleFramesForScene("mesher_cold_load") != 2400) {
+            throw new AssertionError("cold-load scene must use the short warmup/sample window");
+        }
+        if (ClientFrameBenchmark.warmupFramesForScene("mesher_rebuild_storm") != 600) {
+            throw new AssertionError("rebuild-storm scene must use the 600-frame warmup");
+        }
+        if (!"chunk_flight".equals(ClientFrameBenchmark.cameraModeForScene("mesher_chunk_flight"))) {
+            throw new AssertionError("chunk-flight scene must default the camera to chunk_flight");
+        }
+        if (!"stationary".equals(ClientFrameBenchmark.cameraModeForScene("mesher_cold_load"))) {
+            throw new AssertionError("cold-load scene stays stationary");
         }
         pass("mesher_benchmark_scenes");
     }
@@ -1043,13 +1048,5 @@ final class MesherFastPathChecks {
 
     private static void pass(final String name) {
         CASE_RESULTS.add("PASS  " + name);
-    }
-
-    private static String readUtf8(final Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new AssertionError("could not read " + path, e);
-        }
     }
 }
