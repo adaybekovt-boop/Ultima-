@@ -138,22 +138,38 @@ public final class SettingsScreenLogicTest {
     }
 
     private static void testFsrRendererDisableReason() {
-        List<String> expected = List.of("sodium", "iris", "canvas");
+        List<String> expected = List.of("canvas");
         assertTrue(FsrCompatibility.disablingModIds().equals(expected),
-                "Sodium/Iris/Canvas are the merged FSR disable list");
+                "Canvas is the only unconditional FSR incompatible mod");
         assertTrue(UltimaModules.byKey("fsr_upscaling").incompatibleMods().equals(expected),
                 "module incompatibleMods matches FsrCompatibility");
 
-        for (String mod : expected) {
-            UltimaConfig.ResolvedModule resolved = new UltimaConfig.ResolvedModule(
-                    "fsr_upscaling", true, false, false, true,
-                    "incompatible_mod",
-                    "Disabled because incompatible mod(s) are loaded: " + mod + ".",
-                    List.of(), expected, List.of(mod), null, "opt_in_experiment");
-            assertTrue(ModuleDisableMessages.isHardLock(resolved), mod + " is an FSR hard lock");
-            assertTrue(ModuleDisableMessages.playerFacing(resolved).startsWith("Disabled:"),
-                    mod + " has player-facing disable copy");
-        }
+        UltimaConfig.ResolvedModule canvas = new UltimaConfig.ResolvedModule(
+                "fsr_upscaling", true, false, false, true,
+                "incompatible_mod",
+                "Disabled because incompatible mod(s) are loaded: canvas.",
+                List.of(), expected, List.of("canvas"), null, "opt_in_experiment");
+        assertTrue(ModuleDisableMessages.isHardLock(canvas), "Canvas is an FSR hard lock");
+        assertTrue(ModuleDisableMessages.playerFacing(canvas).startsWith("Disabled:"),
+                "Canvas has player-facing disable copy");
+
+        UltimaConfig.ResolvedModule irisHook = new UltimaConfig.ResolvedModule(
+                "fsr_upscaling", true, false, false, true,
+                FsrCompatibility.REASON_NO_SAFE_POST_IRIS_HOOK,
+                FsrCompatibility.DETAIL_NO_SAFE_POST_IRIS_HOOK,
+                List.of(), expected, List.of(), null, "opt_in_experiment");
+        assertTrue(ModuleDisableMessages.isHardLock(irisHook), "missing Iris hook is a hard lock");
+        assertTrue(ModuleDisableMessages.playerFacing(irisHook).contains("no safe post-Iris integration point"),
+                "Iris hook reason has distinct player-facing copy");
+
+        UltimaConfig.ResolvedModule irisScale = new UltimaConfig.ResolvedModule(
+                "fsr_upscaling", true, false, false, true,
+                FsrCompatibility.REASON_IRIS_RESOLUTION_NOT_CONTROLLABLE,
+                FsrCompatibility.DETAIL_IRIS_RESOLUTION_NOT_CONTROLLABLE,
+                List.of(), expected, List.of(), null, "opt_in_experiment");
+        assertTrue(ModuleDisableMessages.isHardLock(irisScale), "Iris resolution limit is a hard lock");
+        assertTrue(ModuleDisableMessages.playerFacing(irisScale).contains("internal resolution"),
+                "Iris resolution reason has distinct player-facing copy");
 
         UltimaConfig config = defaults();
         UltimaConfig.ResolvedModule live = config.resolve("fsr_upscaling");

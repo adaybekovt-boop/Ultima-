@@ -53,7 +53,8 @@ public final class UltimaModules {
 
     private static final List<String> LITHIUM_FAMILY = List.of("lithium", "canary", "radium");
     private static final List<String> RENDERER_FAMILY = List.of("sodium", "iris", "canvas");
-    private static final List<String> FSR_RENDERER_FAMILY = FsrCompatibility.disablingModIds();
+    private static final List<String> FSR_UNCONDITIONAL_INCOMPATIBLE =
+            FsrCompatibility.unconditionalIncompatibleModIds();
 
     private static final List<Module> ALL = List.of(
             new Module("entity_section_lookup", true,
@@ -193,9 +194,10 @@ public final class UltimaModules {
             Module.client("fsr_upscaling", false,
                     "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
                             + "and upscales to native before HUD/GUI. Default off. Isolated from retained_terrain "
-                            + "and mesher modules. Automatically disabled when Sodium, Iris, or Canvas is loaded "
-                            + "because those renderer integrations own or replace parts of the render pipeline.",
-                    FSR_RENDERER_FAMILY),
+                            + "and mesher modules. Canvas still auto-disables this module. Sodium-only is allowed. "
+                            + "Iris (with or without Sodium) is disabled with a specific capability reason: no "
+                            + "official post-final hook and no external control of Iris internal resolution.",
+                    FSR_UNCONDITIONAL_INCOMPATIBLE),
             Module.client("settings_ui", true,
                     "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
                             + "does not change networking or world simulation. Disable to hide the button; "

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import dev.ultima.fsr.FsrCompatibility;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrSettings;
 import net.fabricmc.api.EnvType;
@@ -100,6 +101,7 @@ public final class UltimaConfig {
         if (definition == null
                 || !isApplicableInCurrentEnvironment(definition)
                 || hasLoadedIncompatibility(definition)
+                || FsrCompatibility.blocks(module)
                 || !Boolean.TRUE.equals(this.modules.get(module))
                 || !resolving.add(module)) {
             return false;
@@ -266,6 +268,10 @@ public final class UltimaConfig {
             reason = "incompatible_mod";
             detail = "Disabled because incompatible mod(s) are loaded: "
                     + String.join(", ", loadedIncompatible) + ".";
+        } else if (requested && FsrCompatibility.blocks(module)) {
+            FsrCompatibility.DisableReason fsr = FsrCompatibility.current();
+            reason = fsr.configReason();
+            detail = fsr.detail();
         } else if (!requested) {
             if (definition.enabledByDefault()) {
                 reason = "disabled_by_config";
