@@ -4,7 +4,6 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * Re-checked Iris public surface for a <em>finished-frame</em> post-process hook
@@ -85,7 +84,7 @@ public final class FsrIrisCapabilities {
         if (override != null) {
             return override;
         }
-        return isModLoaded(IRIS_MOD_ID);
+        return FsrCompatibility.isModLoaded(IRIS_MOD_ID);
     }
 
     /**
@@ -156,14 +155,6 @@ public final class FsrIrisCapabilities {
             }
         }
         return false;
-    }
-
-    private static boolean isModLoaded(final String modId) {
-        try {
-            return FabricLoader.getInstance().isModLoaded(modId);
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     public record IrisApiProbe(

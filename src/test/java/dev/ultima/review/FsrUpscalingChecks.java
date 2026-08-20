@@ -50,6 +50,8 @@ final class FsrUpscalingChecks {
         testModuleRegistryAndDefaults();
         testSettingsParsing();
         testResizeMixinPriority();
+        testIrisModPresenceIsCachedAndShared();
+        testIrisProtectionIsMixinPlugin();
         System.out.println("FSR upscaling checks passed.");
     }
 
@@ -419,6 +421,56 @@ final class FsrUpscalingChecks {
                 "failed-open FSR never hijacks");
         assertFalse(FsrRuntimeGate.allowWorldTargetHijack(false, false, false),
                 "disabled module never hijacks");
+        String gate = readSource("src/main/java/dev/ultima/fsr/FsrRuntimeGate.java");
+        assertTrue(gate.contains("UltimaMixinPlugin"),
+                "runtime gate javadoc must name the mixin plugin as the live Iris protection");
+        assertTrue(gate.contains("last-line"),
+                "runtime gate javadoc must call itself last-line, not the live mechanism");
+    }
+
+    private static void testIrisModPresenceIsCachedAndShared() {
+        String compatibility = readSource("src/main/java/dev/ultima/fsr/FsrCompatibility.java");
+        String irisCaps = readSource("src/main/java/dev/ultima/fsr/FsrIrisCapabilities.java");
+        String upscaling = readSource("src/client/java/dev/ultima/client/fsr/FsrUpscaling.java");
+        assertTrue(compatibility.contains("NATIVE_IRIS"),
+                "native Iris presence is probed once into a static");
+        assertTrue(compatibility.contains("NATIVE_CANVAS") && compatibility.contains("NATIVE_SODIUM"),
+                "Canvas and Sodium presence are probed once into statics");
+        assertFalse(irisCaps.contains("FabricLoader.getInstance().isModLoaded"),
+                "Iris capabilities must not duplicate FabricLoader.isModLoaded");
+        assertTrue(irisCaps.contains("FsrCompatibility.isModLoaded"),
+                "Iris capabilities reuse FsrCompatibility.isModLoaded");
+        int irisCalls = 0;
+        int from = 0;
+        while (true) {
+            int at = upscaling.indexOf("FsrIrisCapabilities.isIrisModLoaded()", from);
+            if (at < 0) {
+                break;
+            }
+            irisCalls++;
+            from = at + 1;
+        }
+        assertEquals(1, irisCalls, "beginWorldPass must call isIrisModLoaded once (local), not twice");
+        assertTrue(upscaling.contains("boolean irisLoaded"),
+                "beginWorldPass caches the Iris flag for the frame");
+        assertFalse(compatibility.contains("modId()"),
+                "DisableReason.modId was unused and must stay removed");
+    }
+
+    private static void testIrisProtectionIsMixinPlugin() {
+        String plugin = readSource("src/main/java/dev/ultima/config/UltimaMixinPlugin.java");
+        String changelog = readSource("CHANGELOG.md");
+        assertTrue(plugin.contains("fsr_upscaling"),
+                "mixin plugin javadoc must name fsr_upscaling as the Iris gate");
+        assertTrue(plugin.contains("GameRendererMixin"),
+                "mixin plugin javadoc must name GameRendererMixin as skipped under Iris");
+        assertTrue(changelog.contains("UltimaMixinPlugin"),
+                "CHANGELOG must describe the mixin-plugin gate, not a live runtime hijack refuse");
+        assertFalse(changelog.contains("Runtime fail-open: if Iris is present, FSR will not hijack"),
+                "CHANGELOG must not claim the runtime hijack refuse as the live Iris mechanism");
+        String mixin = readSource("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
+        assertTrue(mixin.contains("package dev.ultima.mixin.fsr_upscaling"),
+                "GameRendererMixin lives in the fsr_upscaling mixin package the plugin gates");
     }
 
     private static void testPipelineGate() {

@@ -15,8 +15,11 @@ FSR policy after this pass:
   has no official hook after the shader `final` program, and Ultima cannot
   set Iris internal render-target resolution. A native-res sharpen-only blit
   is not shipped as upscaling.
-- Runtime fail-open: if Iris is present, FSR will not hijack
-  `mainRenderTarget`. Iris keeps working.
+- Live Iris protection is the mixin plugin: `FsrCompatibility.blocks` disables
+  the module, so `UltimaMixinPlugin` never applies `fsr_upscaling` mixins
+  (including `GameRendererMixin`). `FsrRuntimeGate` in `beginWorldPass` is a
+  last-line refuse for tests; it does not run when Iris was present at mixin
+  apply time.
 
 No Iris FSR pass is inserted, so this revision adds no GPU time and no frame
 hold-back when Iris is loaded. Hardware timing of EASU+RCAS remains a manual

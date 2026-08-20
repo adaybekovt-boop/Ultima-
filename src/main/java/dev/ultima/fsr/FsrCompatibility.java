@@ -37,33 +37,28 @@ public final class FsrCompatibility {
             "Canvas owns the renderer; FSR is not applied.";
 
     private static final ThreadLocal<boolean[]> TEST_LOADED_MODS = new ThreadLocal<>();
+    /** Loaded-mod set cannot change at runtime; probe FabricLoader once. */
+    private static final boolean NATIVE_IRIS = probeNative("iris");
+    private static final boolean NATIVE_CANVAS = probeNative("canvas");
+    private static final boolean NATIVE_SODIUM = probeNative("sodium");
 
     public enum DisableReason {
-        NONE(null, null, null),
-        CANVAS_OWNS_RENDERER("incompatible_mod", "canvas", DETAIL_CANVAS),
-        NO_SAFE_POST_IRIS_INTEGRATION_POINT(
-                REASON_NO_SAFE_POST_IRIS_HOOK, "iris", DETAIL_NO_SAFE_POST_IRIS_HOOK),
+        NONE(null, null),
+        CANVAS_OWNS_RENDERER("incompatible_mod", DETAIL_CANVAS),
+        NO_SAFE_POST_IRIS_INTEGRATION_POINT(REASON_NO_SAFE_POST_IRIS_HOOK, DETAIL_NO_SAFE_POST_IRIS_HOOK),
         IRIS_INTERNAL_RESOLUTION_NOT_CONTROLLABLE(
-                REASON_IRIS_RESOLUTION_NOT_CONTROLLABLE,
-                "iris",
-                DETAIL_IRIS_RESOLUTION_NOT_CONTROLLABLE);
+                REASON_IRIS_RESOLUTION_NOT_CONTROLLABLE, DETAIL_IRIS_RESOLUTION_NOT_CONTROLLABLE);
 
         private final String configReason;
-        private final String modId;
         private final String detail;
 
-        DisableReason(final String configReason, final String modId, final String detail) {
+        DisableReason(final String configReason, final String detail) {
             this.configReason = configReason;
-            this.modId = modId;
             this.detail = detail;
         }
 
         public String configReason() {
             return this.configReason;
-        }
-
-        public String modId() {
-            return this.modId;
         }
 
         public String detail() {
@@ -175,7 +170,16 @@ public final class FsrCompatibility {
         return isModLoaded("sodium");
     }
 
-    private static boolean isModLoaded(final String modId) {
+    static boolean isModLoaded(final String modId) {
+        return switch (modId) {
+            case "iris" -> NATIVE_IRIS;
+            case "canvas" -> NATIVE_CANVAS;
+            case "sodium" -> NATIVE_SODIUM;
+            default -> probeNative(modId);
+        };
+    }
+
+    private static boolean probeNative(final String modId) {
         try {
             return FabricLoader.getInstance().isModLoaded(modId);
         } catch (Throwable ignored) {

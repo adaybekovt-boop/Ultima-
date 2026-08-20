@@ -204,9 +204,12 @@ window/viewport tricks conflict with Iris
 control, FSR would only blit an already-native Iris frame — visual sharpen,
 no render-load reduction. That reduced mode is **not** implemented.
 
-Fail-open: if Iris is present, FSR Mixins do not apply and the runtime gate
-refuses to hijack `mainRenderTarget`. Iris keeps working. FSR never takes
-Iris down with it.
+Fail-open: if Iris is present, `FsrCompatibility.blocks("fsr_upscaling")`
+disables the module and **`UltimaMixinPlugin` does not apply FSR mixins**
+(`GameRendererMixin` included). `beginWorldPass` is not called, so it cannot
+hijack `mainRenderTarget`. `FsrRuntimeGate` is a last-line refuse for tests
+or a mixin that was already applied; it is not a second live protection
+layer. Iris keeps working. FSR never takes Iris down with it.
 
 ### Latency (FSR1 vs Frame Generation)
 

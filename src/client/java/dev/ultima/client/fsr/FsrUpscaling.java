@@ -130,12 +130,23 @@ public final class FsrUpscaling {
         return vanillaMain;
     }
 
+    /**
+     * Plan this frame's world-pass redirect.
+     *
+     * <p>Iris protection is <em>not</em> this method. When Iris is loaded,
+     * {@link dev.ultima.fsr.FsrCompatibility#blocks(String)} disables
+     * {@code fsr_upscaling}, and {@link dev.ultima.config.UltimaMixinPlugin}
+     * never applies {@code GameRendererMixin}, so this method is not called.
+     * {@link FsrRuntimeGate} is a last-line refuse for tests or a mixin that
+     * was already applied; it is unreachable for a live Iris load.
+     */
     public FsrResourcePlan beginWorldPass(final int nativeWidth, final int nativeHeight) {
         this.evaluatedThisFrame = false;
         this.hudAfterUpscaleThisFrame = false;
-        if (!FsrRuntimeGate.allowWorldTargetHijack(
-                this.moduleEnabled(), this.failedOpen, FsrIrisCapabilities.isIrisModLoaded())) {
-            if (FsrIrisCapabilities.isIrisModLoaded() && this.moduleEnabled() && !this.failedOpen) {
+        boolean enabled = this.moduleEnabled();
+        boolean irisLoaded = FsrIrisCapabilities.isIrisModLoaded();
+        if (!FsrRuntimeGate.allowWorldTargetHijack(enabled, this.failedOpen, irisLoaded)) {
+            if (irisLoaded && enabled && !this.failedOpen) {
                 this.failOpen(
                         "Iris is loaded without a safe post-Iris FSR hook; leaving Iris rendering untouched",
                         null);

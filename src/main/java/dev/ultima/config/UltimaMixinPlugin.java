@@ -12,6 +12,12 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 /**
  * Gates every Ultima Mixin on its owning module being enabled, so a single problematic optimization
  * can be switched off without disabling the mod.
+ *
+ * <p>This is the live Iris protection for {@code fsr_upscaling}: when Iris is loaded,
+ * {@link dev.ultima.fsr.FsrCompatibility#blocks(String)} makes the module inactive, and
+ * this plugin skips {@code mixin.fsr_upscaling.*} (including {@code GameRendererMixin}).
+ * There is no separate runtime hijack of {@code mainRenderTarget} on a live Iris load,
+ * because that mixin never applies.
  */
 public final class UltimaMixinPlugin implements IMixinConfigPlugin {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-mixin");
