@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.ultima.client.broker.CrossPipelineBroker;
 import java.util.Collection;
-import java.util.List;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.UniformBufferManager;
@@ -26,7 +25,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Sodium 0.9.2 adapter. Active cancellation occurs only before deferred dequeue. */
 @Mixin(value = RenderSectionManager.class, remap = false)
@@ -34,9 +32,6 @@ public abstract class RenderSectionManagerMixin {
     @Shadow @Final private ChunkBuilder builder;
     @Shadow @Final private SectionStorage renderSections;
     @Shadow private DeferredTaskList taskLists;
-
-    @Unique private boolean ultima$wasBuilt;
-    @Unique private long ultima$requestStartedNanos;
 
     @Inject(method = "updateChunks", at = @At("HEAD"), require = 0)
     private void ultima$beginChunkUpdate(
@@ -84,29 +79,6 @@ public abstract class RenderSectionManagerMixin {
         CrossPipelineBroker.cameraPosition(cameraPosition.x(), cameraPosition.y(), cameraPosition.z());
     }
 
-    @Inject(method = "updateWithResult", at = @At("HEAD"), require = 0)
-    private void ultima$beforeApplyResult(
-            final Viewport viewport,
-            final RenderSection section,
-            final ChunkBuildOutput output,
-            final List<RenderSection> pendingPresentPatches,
-            final CallbackInfoReturnable<Integer> cir) {
-        this.ultima$wasBuilt = section.isBuilt();
-        this.ultima$requestStartedNanos = section.getPendingUpdateSince();
-    }
-
-    @Inject(method = "updateWithResult", at = @At("RETURN"), require = 0)
-    private void ultima$afterApplyResult(
-            final Viewport viewport,
-            final RenderSection section,
-            final ChunkBuildOutput output,
-            final List<RenderSection> pendingPresentPatches,
-            final CallbackInfoReturnable<Integer> cir) {
-        if (!this.ultima$wasBuilt && section.isBuilt()) {
-            CrossPipelineBroker.firstRenderable(System.nanoTime() - this.ultima$requestStartedNanos);
-        }
-    }
-
     @WrapOperation(
             method = "processChunkBuildResults",
             at = @At(
@@ -129,6 +101,23 @@ public abstract class RenderSectionManagerMixin {
         } finally {
             CrossPipelineBroker.uploadCompleted(System.nanoTime() - started);
         }
+    }
+
+    @WrapOperation(
+            method = "applyBuildOutputs",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/RenderSection;addBuildOutput(Lnet/caffeinemc/mods/sodium/client/render/chunk/compile/BuilderTaskOutput;)Z"),
+            require = 0)
+    private boolean ultima$observeMeshReady(
+            final RenderSection section,
+            final BuilderTaskOutput output,
+            final Operation<Boolean> original) {
+        boolean accepted = original.call(section, output);
+        if (output instanceof ChunkBuildOutput) {
+            CrossPipelineBroker.meshReady();
+        }
+        return accepted;
     }
 
     @Unique

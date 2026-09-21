@@ -129,8 +129,15 @@ public final class CrossPipelineBroker {
             long age = Math.max(0L, pendingAgeNanos);
             METRICS.pendingAgeNanosTotal += age;
             METRICS.maximumPendingAgeNanos = Math.max(METRICS.maximumPendingAgeNanos, age);
+            METRICS.recordPendingAge(age);
         } catch (Throwable throwable) {
             disable("task_submission_observer", throwable);
+        }
+    }
+
+    public static void meshReady() {
+        if (!failedOpen) {
+            METRICS.meshReadyResults++;
         }
     }
 
@@ -170,15 +177,30 @@ public final class CrossPipelineBroker {
         METRICS.uploadNanos += Math.max(0L, nanos);
     }
 
-    public static void firstRenderable(final long requestAgeNanos) {
+    public static void initialBuildRequested() {
+        if (failedOpen) {
+            return;
+        }
+        METRICS.initialBuildRequested();
+    }
+
+    public static void initialBuildRenderable(final long requestAgeNanos) {
         if (failedOpen) {
             return;
         }
         long age = Math.max(0L, requestAgeNanos);
+        METRICS.initialBuildFinished(false);
         METRICS.firstRenderableCount++;
         METRICS.requestToFirstRenderableNanosTotal += age;
         METRICS.maximumRequestToFirstRenderableNanos = Math.max(
                 METRICS.maximumRequestToFirstRenderableNanos, age);
+        METRICS.recordFirstRenderableAge(age);
+    }
+
+    public static void initialBuildCancelled() {
+        if (!failedOpen) {
+            METRICS.initialBuildFinished(true);
+        }
     }
 
     public static void cameraPosition(final double x, final double y, final double z) {

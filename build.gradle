@@ -191,6 +191,14 @@ tasks.register("admissionBrokerTest", JavaExec) {
     mainClass = "dev.ultima.broker.AdmissionControllerTest"
 }
 
+tasks.register("brokerMetricsTest", JavaExec) {
+    group = "verification"
+    description = "Runs bounded broker latency and initial-build backlog metric checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.client.broker.BrokerMetricsTest"
+}
+
 tasks.register("renderWarmupTest", JavaExec) {
     group = "verification"
     description = "Runs budget, continuation, cancellation, and fail-open warmup contract checks."
@@ -223,6 +231,7 @@ check.dependsOn benchmarkReplayTest
 check.dependsOn irisArtifactCacheTest
 check.dependsOn irisTransformKeyTest
 check.dependsOn admissionBrokerTest
+check.dependsOn brokerMetricsTest
 check.dependsOn renderWarmupTest
 check.dependsOn killerDiagnosticsTest
 
