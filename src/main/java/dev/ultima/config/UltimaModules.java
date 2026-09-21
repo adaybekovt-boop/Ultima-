@@ -94,11 +94,10 @@ public final class UltimaModules {
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
                             + "index by the volume's width and height at every position."),
-            new Module("server_metrics", true,
-                    "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
-                            + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "
-                            + "Expected cost: two nanoTime calls and one atomic add per instrumented phase, no "
-                            + "allocations on the always-on path."),
+            new Module("server_metrics", false,
+                    "Opt-in server subsystem timers and counters, plus /ultima profile tracing. "
+                            + "Instrumentation, not an optimization. Mixins are skipped when this module is off. "
+                            + "Enable it only while measuring."),
             new Module("blockentity_sleeping", false,
                     "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla mutation "
                             + "has a synchronous wake channel. Proof-of-correctness prototype, default off. "
@@ -204,14 +203,13 @@ public final class UltimaModules {
                             + "disabled by default until warm-cache A/B validation is complete.",
                     List.of()),
             Module.client("cross_pipeline_admission_broker", false,
-                    "Trace cross-pipeline pressure and, only in explicit control mode, defer admission of new low-"
-                            + "priority Sodium section work before dequeue. Urgent work bypasses the broker. Exact "
-                            + "Sodium adapter required; experimental and disabled by default.",
+                    "Observer for frame, Sodium queue, upload, server, and GC pressure. Does not defer or cancel "
+                            + "Sodium section tasks: 0.9.2 has no safe partial-budget API. Experimental, default off, "
+                            + "and pending runtime validation.",
                     List.of()),
             Module.client("render_warmup_system", false,
-                    "Profile measurable render-path first touches and run only state-safe, budgeted warmup adapters. "
-                            + "No fake entities/worlds and no automatic shader-pack or full-model preload. "
-                            + "Experimental and disabled by default.",
+                    "Profiler-only first-use instrumentation. No warmup adapter is active. Iris, GeckoLib, and "
+                            + "ModernFix are not warmed. Experimental, default off, and pending runtime validation.",
                     List.of()),
             Module.client("settings_ui", true,
                     "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "

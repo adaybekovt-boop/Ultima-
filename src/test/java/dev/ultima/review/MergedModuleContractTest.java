@@ -23,7 +23,7 @@ final class MergedModuleContractTest {
         expectedDefaults.put("supporting_block_shape_skip", true);
         expectedDefaults.put("full_cube_move", true);
         expectedDefaults.put("cursor_step", true);
-        expectedDefaults.put("server_metrics", true);
+        expectedDefaults.put("server_metrics", false);
         expectedDefaults.put("blockentity_sleeping", false);
         expectedDefaults.put("recipe_match_cache", false);
         expectedDefaults.put("tag_bitsets", false);
