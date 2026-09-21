@@ -40,10 +40,13 @@ public final class KillerModuleDiagnostics {
                 ? adapter.state()
                 : adapter.modId() + '@' + emptyAs(adapter.version(), "unknown") + " / " + adapter.state();
         return "Requested: " + row.requested()
+                + "\nSupported: " + adapter.supported()
                 + "\nActive: " + runtime.active()
+                + "\nMode: " + runtime.mode()
+                + "\nFail-closed reason: " + runtime.failClosedReason()
                 + "\nDisabled reason: " + disabled
                 + "\nAdapter/version state: " + adapterVersion
-                + "\nFailure/fail-open state: " + runtime.failureState();
+                + "\nLast failure: " + runtime.failureState();
     }
 
     public static String chatSummary(final UltimaConfig config) {
@@ -102,6 +105,8 @@ public final class KillerModuleDiagnostics {
                     .append("      \"disabledReason\": ").append(quote(runtime.active() ? "" : resolved.reason())).append(",\n")
                     .append("      \"disabledDetail\": ").append(quote(runtime.active() ? "" : resolved.detail())).append(",\n")
                     .append("      \"runtimeState\": ").append(quote(runtime.runtimeState())).append(",\n")
+                    .append("      \"mode\": ").append(quote(runtime.mode())).append(",\n")
+                    .append("      \"failClosedReason\": ").append(quote(runtime.failClosedReason())).append(",\n")
                     .append("      \"failureFailOpenState\": ").append(quote(runtime.failureState())).append(",\n")
                     .append("      \"adapter\": {\n")
                     .append("        \"supported\": ").append(adapter.supported()).append(",\n")
@@ -132,6 +137,9 @@ public final class KillerModuleDiagnostics {
         ArtifactCacheMetrics.Snapshot metrics = applied ? IrisFrontendArtifactCache.snapshot() : null;
         json.append("  \"artifactCache\": {\n")
                 .append("    \"available\": ").append(applied).append(",\n")
+                .append("    \"activation\": ")
+                .append(quote(applied ? IrisFrontendArtifactCache.activationState() : "module_not_applied")).append(",\n")
+                .append("    \"contractProven\": ").append(applied && IrisFrontendArtifactCache.contractProven()).append(",\n")
                 .append("    \"verifyMode\": ").append(applied && IrisFrontendArtifactCache.verifyMode()).append(",\n")
                 .append("    \"failedOpen\": ").append(applied && IrisFrontendArtifactCache.failedOpen()).append(",\n")
                 .append("    \"failureReason\": ").append(quote(applied ? IrisFrontendArtifactCache.failureReason() : "module_not_applied"));
@@ -169,7 +177,12 @@ public final class KillerModuleDiagnostics {
         json.append("  \"admissionBroker\": {\n")
                 .append("    \"available\": ").append(applied).append(",\n")
                 .append("    \"mode\": ").append(quote(applied ? CrossPipelineBroker.mode() : "module_not_applied")).append(",\n")
-                .append("    \"changesScheduling\": ").append(applied && CrossPipelineBroker.changesScheduling()).append(",\n")
+                .append("    \"requestedMode\": ")
+                .append(quote(applied ? CrossPipelineBroker.requestedMode() : "module_not_applied")).append(",\n")
+                .append("    \"controlAvailable\": false,\n")
+                .append("    \"controlUnavailableReason\": ")
+                .append(quote(applied ? CrossPipelineBroker.controlUnavailableReason() : "module_not_applied")).append(",\n")
+                .append("    \"changesScheduling\": false,\n")
                 .append("    \"failedOpen\": ").append(applied && CrossPipelineBroker.failedOpen()).append(",\n")
                 .append("    \"failureReason\": ")
                 .append(quote(applied ? CrossPipelineBroker.failureReason() : "module_not_applied")).append(",\n")
@@ -180,6 +193,9 @@ public final class KillerModuleDiagnostics {
                     .append("    \"frameWallNsTotal\": ").append(metrics.frameWallNanosTotal()).append(",\n")
                     .append("    \"frameCpuNsTotal\": ").append(metrics.frameCpuNanosTotal()).append(",\n")
                     .append("    \"gpuFrameNsTotal\": ").append(metrics.gpuFrameNanosTotal()).append(",\n")
+                    .append("    \"gpuSamplesNoData\": ").append(metrics.gpuSamplesNoData()).append(",\n")
+                    .append("    \"gpuSamplesZero\": ").append(metrics.gpuSamplesZero()).append(",\n")
+                    .append("    \"gpuSamplesValid\": ").append(metrics.gpuSamplesValid()).append(",\n")
                     .append("    \"admissionAttempts\": ").append(metrics.admissionAttempts()).append(",\n")
                     .append("    \"admissions\": ").append(metrics.admissions()).append(",\n")
                     .append("    \"deferrals\": ").append(metrics.deferrals()).append(",\n")
@@ -242,8 +258,10 @@ public final class KillerModuleDiagnostics {
         if (warmup != null && profiler != null) {
             json.append(",\n")
                     .append("    \"mode\": ").append(quote(WarmupCoordinator.mode())).append(",\n")
-                    .append("    \"changesRenderInitialization\": ")
-                    .append(WarmupCoordinator.changesRenderInitialization()).append(",\n")
+                    .append("    \"requestedMode\": ").append(quote(WarmupCoordinator.requestedMode())).append(",\n")
+                    .append("    \"activeWarmup\": false,\n")
+                    .append("    \"failClosedReason\": ").append(quote(WarmupCoordinator.failClosedReason())).append(",\n")
+                    .append("    \"changesRenderInitialization\": false,\n")
                     .append("    \"state\": ").append(quote(warmup.state())).append(",\n")
                     .append("    \"completedAdapters\": ").append(warmup.completedAdapters()).append(",\n")
                     .append("    \"totalAdapters\": ").append(warmup.totalAdapters()).append(",\n")
@@ -296,28 +314,57 @@ public final class KillerModuleDiagnostics {
 
     private static ModuleRuntime runtime(final String key, final UltimaConfig config) {
         if (!config.wasEnabledAtLaunch(key)) {
-            return new ModuleRuntime(false, "not_applied_at_launch", "inactive");
+            return new ModuleRuntime(false, "not_applied_at_launch", "inactive", "off", "not_applied");
         }
         return switch (key) {
-            case KillerModuleCompatibility.IRIS_MODULE -> IrisFrontendArtifactCache.failedOpen()
-                    ? new ModuleRuntime(false, "failed_open", IrisFrontendArtifactCache.failureReason())
-                    : new ModuleRuntime(true, "armed", "none");
-            case KillerModuleCompatibility.BROKER_MODULE -> CrossPipelineBroker.failedOpen()
-                    ? new ModuleRuntime(false, "failed_open", CrossPipelineBroker.failureReason())
-                    : new ModuleRuntime(
-                            true,
-                            CrossPipelineBroker.changesScheduling() ? "active_control" : "tracing_only",
-                            "none");
-            case KillerModuleCompatibility.WARMUP_MODULE -> {
-                WarmupCoordinator.Snapshot snapshot = WarmupCoordinator.snapshot();
-                yield WarmupCoordinator.failedOpen()
-                        ? new ModuleRuntime(false, "failed_open", WarmupCoordinator.failureReason())
-                        : new ModuleRuntime(
-                                true,
-                                snapshot.state(),
-                                snapshot.failures() == 0 ? "none" : "adapter_fail_open:" + snapshot.failures());
+            case KillerModuleCompatibility.IRIS_MODULE -> {
+                if (IrisFrontendArtifactCache.failedOpen()) {
+                    yield new ModuleRuntime(
+                            false,
+                            "failed_open",
+                            IrisFrontendArtifactCache.failureReason(),
+                            "failed_open",
+                            IrisFrontendArtifactCache.failureReason());
+                }
+                boolean proven = IrisFrontendArtifactCache.contractProven();
+                yield new ModuleRuntime(
+                        proven,
+                        IrisFrontendArtifactCache.activationState(),
+                        "none",
+                        IrisFrontendArtifactCache.activationState(),
+                        proven ? "none" : IrisFrontendArtifactCache.activationState());
             }
-            default -> new ModuleRuntime(false, "unknown", "unknown_module");
+            case KillerModuleCompatibility.BROKER_MODULE -> {
+                if (CrossPipelineBroker.failedOpen()) {
+                    yield new ModuleRuntime(
+                            false,
+                            "failed_open",
+                            CrossPipelineBroker.failureReason(),
+                            "observer",
+                            CrossPipelineBroker.failureReason());
+                }
+                boolean traceRequested = "trace".equals(CrossPipelineBroker.requestedMode());
+                yield new ModuleRuntime(
+                        traceRequested,
+                        "observer_only",
+                        "none",
+                        "observer",
+                        CrossPipelineBroker.controlUnavailableReason());
+            }
+            case KillerModuleCompatibility.WARMUP_MODULE -> WarmupCoordinator.failedOpen()
+                    ? new ModuleRuntime(
+                            false,
+                            "failed_open",
+                            WarmupCoordinator.failureReason(),
+                            "profiler_only",
+                            WarmupCoordinator.failureReason())
+                    : new ModuleRuntime(
+                            false,
+                            "profiler_only",
+                            "none",
+                            "profiler_only",
+                            WarmupCoordinator.failClosedReason());
+            default -> new ModuleRuntime(false, "unknown", "unknown_module", "unknown", "unknown_module");
         };
     }
 
@@ -387,6 +434,11 @@ public final class KillerModuleDiagnostics {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private record ModuleRuntime(boolean active, String runtimeState, String failureState) {
+    private record ModuleRuntime(
+            boolean active,
+            String runtimeState,
+            String failureState,
+            String mode,
+            String failClosedReason) {
     }
 }

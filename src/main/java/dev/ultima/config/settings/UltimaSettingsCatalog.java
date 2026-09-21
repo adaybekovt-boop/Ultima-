@@ -156,15 +156,14 @@ public final class UltimaSettingsCatalog {
         register(new ModuleSettingSpec(
                 "cross_pipeline_admission_broker",
                 "Cross-pipeline admission broker",
-                "Traces frame, Sodium queue, upload, server, and GC pressure. Trace mode never changes scheduling; "
-                        + "explicit control mode may defer only new low-priority Sodium work before dequeue.",
+                "Observes frame, Sodium queue, upload, server, and GC pressure. It does not defer Sodium work. "
+                        + "Control and static requests stay unavailable until a safe budget boundary exists.",
                 SettingsCategory.KILLER_MODULES,
                 ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(
                 "render_warmup_system",
                 "Render warmup system",
-                "Profiles render first-use work and runs only curated, state-safe warmup adapters under per-frame, "
-                        + "per-adapter, and total budgets. It never creates fake entities or preloads every model.",
+                "Profiler only. No safe warmup adapter is active, so this does not remove first-use hitches.",
                 SettingsCategory.KILLER_MODULES,
                 ApplyPolicy.RESTART_GAME));
 
