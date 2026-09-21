@@ -27,6 +27,7 @@ public final class ArtifactCacheStoreTest {
         Path root = Files.createTempDirectory("ultima-artifact-cache-test-");
         try {
             coldMissThenWarmHit(root.resolve("warm"));
+            sameJvmHotHitDoesNotRereadPayload(root.resolve("hot"));
             processRestartRetainsArtifact(root.resolve("restart"));
             keyMaterialChangesMiss(root.resolve("keys"));
             corruptedPayloadFallsBack(root.resolve("corrupt"));
@@ -54,6 +55,16 @@ public final class ArtifactCacheStoreTest {
         require(actual.transformNanos() == expected.transformNanos(), "transform estimate changed");
     }
 
+    private static void sameJvmHotHitDoesNotRereadPayload(final Path directory) {
+        ArtifactKey key = key("hot-path");
+        store(directory, 1_000_000L, 32).write(key, artifact("hot", 7L));
+        ArtifactCacheStore reopened = store(directory, 1_000_000L, 32);
+        require(reopened.read(key).orElseThrow().transformNanos() == 7L, "first read missed the written artifact");
+        require(reopened.payloadFileReads() == 1, "first read did not open the payload file");
+        require(reopened.read(key).orElseThrow().transformNanos() == 7L, "second read missed the hot artifact");
+        require(reopened.payloadFileReads() == 1, "same-JVM repeat reopened the payload file");
+    }
+
     private static void keyMaterialChangesMiss(final Path directory) {
         ArtifactCacheStore store = store(directory, 1_000_000L, 32);
         store.write(key("source=A;settings=1;iris=1.11.4;schema=1"), artifact("A", 1));
@@ -79,7 +90,8 @@ public final class ArtifactCacheStoreTest {
         byte[] bytes = Files.readAllBytes(file);
         bytes[bytes.length - 1] ^= 0x5a;
         Files.write(file, bytes);
-        require(store.read(key).isEmpty(), "corrupted payload was served");
+        ArtifactCacheStore restarted = store(directory, 1_000_000L, 32);
+        require(restarted.read(key).isEmpty(), "corrupted payload was served");
         require(!Files.exists(file), "corrupted payload was not removed");
     }
 
@@ -91,7 +103,7 @@ public final class ArtifactCacheStoreTest {
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE)) {
             channel.truncate(12);
         }
-        require(store.read(key).isEmpty(), "truncated payload was served");
+        require(store(directory, 1_000_000L, 32).read(key).isEmpty(), "truncated payload was served");
     }
 
     private static void unknownSchemaFallsBack(final Path directory) throws IOException {

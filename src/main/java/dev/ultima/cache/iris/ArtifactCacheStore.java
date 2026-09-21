@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Bounded, checksummed, atomic persistent store for transformed shader source.
@@ -44,6 +45,8 @@ public final class ArtifactCacheStore {
     private static final int MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
     private static final long TOUCH_INTERVAL_MILLIS = 60_000L;
     private static final String SUFFIX = ".uifa";
+    private static final int HOT_ENTRIES = 16;
+    private static final int HOT_CHAR_LIMIT = 256 * 1024;
 
     private final Path directory;
     private final long maxBytes;
@@ -51,6 +54,8 @@ public final class ArtifactCacheStore {
     private final ArtifactCacheMetrics metrics;
     private final Object[] stripes = new Object[64];
     private final Map<String, EntryMeta> index = new HashMap<>();
+    private final Map<String, ShaderArtifact> hotPayloads = new LinkedHashMap<>(HOT_ENTRIES, 0.75f, true);
+    private final AtomicInteger payloadFileReads = new AtomicInteger();
     private long indexedBytes;
 
     public ArtifactCacheStore(
@@ -72,6 +77,13 @@ public final class ArtifactCacheStore {
         this.metrics.requests.increment();
         long started = System.nanoTime();
         synchronized (stripe(key)) {
+            ShaderArtifact hot = hotPayload(key.hex());
+            if (hot != null) {
+                this.metrics.hits.increment();
+                this.metrics.transformNanosSaved.add(hot.transformNanos());
+                this.metrics.cacheReadNanos.add(System.nanoTime() - started);
+                return Optional.of(hot);
+            }
             EntryMeta metadata;
             synchronized (this.index) {
                 metadata = this.index.get(key.hex());
@@ -83,7 +95,9 @@ public final class ArtifactCacheStore {
             }
 
             try {
+                this.payloadFileReads.incrementAndGet();
                 ShaderArtifact artifact = readEntry(metadata.path(), key);
+                rememberHot(key.hex(), artifact);
                 this.metrics.hits.increment();
                 this.metrics.transformNanosSaved.add(artifact.transformNanos());
                 touch(metadata);
@@ -137,13 +151,12 @@ public final class ArtifactCacheStore {
                         StandardOpenOption.TRUNCATE_EXISTING)) {
                     writeFully(channel, header);
                     writeFully(channel, ByteBuffer.wrap(payload));
-                    channel.force(true);
                 }
 
                 Path target = pathFor(key);
                 moveAtomically(temporary, target);
                 temporary = null;
-                forceDirectoryBestEffort(this.directory);
+                rememberHot(key.hex(), artifact);
                 long size = HEADER_LENGTH + (long)payload.length;
                 synchronized (this.index) {
                     EntryMeta previous = this.index.put(
@@ -179,6 +192,11 @@ public final class ArtifactCacheStore {
                 invalidateLocked(key, metadata);
             }
         }
+    }
+
+    /** Disk payload loads. A same-JVM hot hit does not increment this. */
+    public int payloadFileReads() {
+        return this.payloadFileReads.get();
     }
 
     public ArtifactCacheMetrics.Snapshot snapshot() {
@@ -231,6 +249,11 @@ public final class ArtifactCacheStore {
     private void buildIndex() {
         try {
             Files.createDirectories(this.directory);
+            try (DirectoryStream<Path> temporaries = Files.newDirectoryStream(this.directory, "*.tmp")) {
+                for (Path temporary : temporaries) {
+                    Files.deleteIfExists(temporary);
+                }
+            }
             try (DirectoryStream<Path> entries = Files.newDirectoryStream(this.directory, "*" + SUFFIX)) {
                 for (Path path : entries) {
                     indexHeader(path);
@@ -310,6 +333,7 @@ public final class ArtifactCacheStore {
                 } catch (IOException | SecurityException ignored) {
                 }
                 this.metrics.invalidations.increment();
+                forgetHot(entry.getKey());
             }
         }
     }
@@ -323,6 +347,7 @@ public final class ArtifactCacheStore {
             this.index.remove(key.hex());
             this.indexedBytes -= current.size();
         }
+        forgetHot(key.hex());
         try {
             Files.deleteIfExists(expected.path());
         } catch (IOException | SecurityException ignored) {
@@ -366,12 +391,40 @@ public final class ArtifactCacheStore {
         }
     }
 
-    private static void forceDirectoryBestEffort(final Path directory) {
-        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
-            channel.force(true);
-        } catch (IOException | RuntimeException ignored) {
-            // The entry itself was forced and closed. Some platforms do not permit directory fsync.
+    private ShaderArtifact hotPayload(final String hex) {
+        synchronized (this.hotPayloads) {
+            return this.hotPayloads.get(hex);
         }
+    }
+
+    private void rememberHot(final String hex, final ShaderArtifact artifact) {
+        if (artifactChars(artifact) > HOT_CHAR_LIMIT) {
+            return;
+        }
+        synchronized (this.hotPayloads) {
+            this.hotPayloads.put(hex, artifact);
+            while (this.hotPayloads.size() > HOT_ENTRIES) {
+                String eldest = this.hotPayloads.keySet().iterator().next();
+                this.hotPayloads.remove(eldest);
+            }
+        }
+    }
+
+    private void forgetHot(final String hex) {
+        synchronized (this.hotPayloads) {
+            this.hotPayloads.remove(hex);
+        }
+    }
+
+    private static int artifactChars(final ShaderArtifact artifact) {
+        int chars = 0;
+        for (Map.Entry<String, String> entry : artifact.stages().entrySet()) {
+            chars += entry.getKey().length();
+            if (entry.getValue() != null) {
+                chars += entry.getValue().length();
+            }
+        }
+        return chars;
     }
 
     private static byte[] encodePayload(final Map<String, String> stages) throws IOException {
