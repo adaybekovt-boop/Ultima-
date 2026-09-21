@@ -7,9 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,11 +27,13 @@ public final class ArtifactCacheStoreTest {
         Path root = Files.createTempDirectory("ultima-artifact-cache-test-");
         try {
             coldMissThenWarmHit(root.resolve("warm"));
+            processRestartRetainsArtifact(root.resolve("restart"));
             keyMaterialChangesMiss(root.resolve("keys"));
             corruptedPayloadFallsBack(root.resolve("corrupt"));
             truncatedEntryFallsBack(root.resolve("truncated"));
             unknownSchemaFallsBack(root.resolve("schema"));
             writeFailureDoesNotEscape(root.resolve("write-failure"));
+            readOnlyDirectoryDoesNotEscape(root.resolve("read-only"));
             parallelSameKeyCannotCorrupt(root.resolve("parallel"));
             boundedCleanup(root.resolve("bounded"));
         } finally {
@@ -57,6 +61,14 @@ public final class ArtifactCacheStoreTest {
         require(store.read(key("source=A;settings=2;iris=1.11.4;schema=1")).isEmpty(), "settings change hit");
         require(store.read(key("source=A;settings=1;iris=1.11.5;schema=1")).isEmpty(), "Iris revision change hit");
         require(store.read(key("source=A;settings=1;iris=1.11.4;schema=2")).isEmpty(), "schema change hit");
+    }
+
+    private static void processRestartRetainsArtifact(final Path directory) {
+        ArtifactKey key = key("restart");
+        ShaderArtifact expected = artifact("persistent", 44L);
+        store(directory, 1_000_000L, 32).write(key, expected);
+        ShaderArtifact reopened = store(directory, 1_000_000L, 32).read(key).orElseThrow();
+        require(reopened.equals(expected), "reopened store lost or changed the persistent artifact");
     }
 
     private static void corruptedPayloadFallsBack(final Path directory) throws IOException {
@@ -101,6 +113,28 @@ public final class ArtifactCacheStoreTest {
         ArtifactCacheStore store = store(directory, 1_000_000L, 32);
         store.write(key("write-failure"), artifact("safe fallback", 1));
         require(store.snapshot().writeFailures() > 0L, "write failure was not recorded");
+    }
+
+    private static void readOnlyDirectoryDoesNotEscape(final Path directory) throws IOException {
+        Files.createDirectories(directory);
+        Set<PosixFilePermission> original;
+        try {
+            original = Files.getPosixFilePermissions(directory);
+            Files.setPosixFilePermissions(directory, Set.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_EXECUTE));
+        } catch (UnsupportedOperationException exception) {
+            return;
+        }
+        try {
+            ArtifactCacheStore store = store(directory, 1_000_000L, 32);
+            ArtifactKey key = key("read-only");
+            store.write(key, artifact("fallback", 1L));
+            // Privileged CI users may still write. Either outcome must remain a valid read/miss path.
+            store.read(key);
+        } finally {
+            Files.setPosixFilePermissions(directory, original);
+        }
     }
 
     private static void parallelSameKeyCannotCorrupt(final Path directory) throws Exception {
