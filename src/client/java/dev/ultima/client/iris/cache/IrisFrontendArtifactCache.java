@@ -1,5 +1,6 @@
 package dev.ultima.client.iris.cache;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import dev.ultima.cache.iris.ArtifactCacheMetrics;
@@ -19,7 +20,13 @@ import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Runtime bridge around Iris' private CPU transform boundary. */
+/**
+ * Persistent cache behind Iris 1.11.4's own process-local transform LRU.
+ *
+ * <p>Iris checks {@code TransformPatcher.cache} before calling {@code transformInternal}. This
+ * bridge runs only at that internal call, so a same-JVM repeat is served by Iris and does not
+ * touch Ultima or disk. Disk is the restart path. There is no second large Ultima shader cache.
+ */
 public final class IrisFrontendArtifactCache {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-iris-artifact-cache");
     private static final boolean VERIFY = Boolean.getBoolean("ultima.irisShaderFrontendArtifactCache.verify");
@@ -28,7 +35,6 @@ public final class IrisFrontendArtifactCache {
     private static final int MAX_ENTRIES = positiveIntegerProperty(
             "ultima.irisShaderFrontendArtifactCache.maxEntries", 2_048);
     private static final ArtifactCacheMetrics METRICS = new ArtifactCacheMetrics();
-    private static final ThreadLocal<Pending> PENDING = new ThreadLocal<>();
     private static final ThreadLocal<Long> RELOAD_STARTED = new ThreadLocal<>();
 
     private static volatile ArtifactCacheStore store;
@@ -37,89 +43,133 @@ public final class IrisFrontendArtifactCache {
     private static volatile Method getIrisConfig;
     private static volatile Method debugOptionsEnabled;
     private static volatile Class<? extends Enum<?>> patchShaderType;
+    private static volatile boolean contractProven;
+    private static volatile boolean contractRejected;
 
     private IrisFrontendArtifactCache() {
     }
 
-    public static @org.jspecify.annotations.Nullable Object beginGraphics(
+    /**
+     * @param original Iris {@code transformInternal}; called only on a persistent miss or in verify mode
+     */
+    public static Map<?, ?> aroundTransform(
             final String name,
-            final String vertex,
-            final String geometry,
-            final String tessControl,
-            final String tessEval,
-            final String fragment,
-            final Object parameters) {
-        return begin(
-                "graphics",
-                name,
-                List.of(
-                        new IrisTransformKeyEncoder.StageSource("VERTEX", vertex),
-                        new IrisTransformKeyEncoder.StageSource("GEOMETRY", geometry),
-                        new IrisTransformKeyEncoder.StageSource("TESS_CONTROL", tessControl),
-                        new IrisTransformKeyEncoder.StageSource("TESS_EVAL", tessEval),
-                        new IrisTransformKeyEncoder.StageSource("FRAGMENT", fragment)),
-                parameters);
-    }
-
-    public static @org.jspecify.annotations.Nullable Object beginCompute(
-            final String name, final String compute, final Object parameters) {
-        return begin(
-                "compute",
-                name,
-                List.of(new IrisTransformKeyEncoder.StageSource("COMPUTE", compute)),
-                parameters);
-    }
-
-    /** Called at the normal Iris return point. A cache hit marks the pending call as completed. */
-    public static void finish(final @org.jspecify.annotations.Nullable Object transformed) {
+            final Map<?, ?> sources,
+            final Object parameters,
+            final Operation<Map<?, ?>> original) {
+        if (failedOpen || contractRejected) {
+            return original.call(name, sources, parameters);
+        }
+        Map<?, ?> computed = null;
         try {
-            finishInternal(transformed);
-        } catch (Throwable throwable) {
-            disable("finish_failure:" + throwable.getClass().getSimpleName());
-        }
-    }
-
-    private static void finishInternal(final @org.jspecify.annotations.Nullable Object transformed) {
-        Pending pending = PENDING.get();
-        PENDING.remove();
-        if (pending == null || pending.servedHit()) {
-            return;
-        }
-
-        long transformNanos = Math.max(0L, System.nanoTime() - pending.startedNanos());
-        METRICS.recordFrontendTransform(transformNanos);
-        Map<String, String> stages = extractStages(transformed);
-        if (stages == null) {
-            return;
-        }
-
-        if (pending.verifyArtifact() != null) {
-            if (pending.verifyArtifact().stages().equals(stages)) {
-                METRICS.recordVerifyMatch();
-            } else {
-                METRICS.recordVerifyMismatch();
-                pending.store().invalidate(pending.key());
-                disable("verify_mismatch");
+            List<IrisTransformKeyEncoder.StageSource> stages = stageSources(sources);
+            if (stages == null || allSourcesNull(stages)) {
+                return original.call(name, sources, parameters);
             }
-            return;
-        }
+            KillerModuleCompatibility.AdapterState adapter =
+                    KillerModuleCompatibility.state(KillerModuleCompatibility.IRIS_MODULE);
+            if (!adapter.supported()) {
+                disable("adapter_inactive:" + adapter.state());
+                return original.call(name, sources, parameters);
+            }
+            if (!supportedBackend()) {
+                disable("unsupported_gpu_backend");
+                return original.call(name, sources, parameters);
+            }
+            if (!IrisTransformKeyEncoder.supportedStructure(parameters)) {
+                if (parameters != null
+                        && parameters.getClass().getName().startsWith(
+                                "net.irisshaders.iris.pipeline.transform.parameter.")) {
+                    contractRejected = true;
+                    disable("unsupported_parameter_schema");
+                }
+                return original.call(name, sources, parameters);
+            }
 
-        pending.store().write(pending.key(), new ShaderArtifact(stages, transformNanos));
+            String kind = stages.size() == 1 && "COMPUTE".equals(stages.get(0).stage()) ? "compute" : "graphics";
+            IrisTransformKeyEncoder.Environment environment = new IrisTransformKeyEncoder.Environment(
+                    adapter.state(),
+                    adapter.fingerprint(),
+                    adapter.version(),
+                    modVersion("minecraft"),
+                    irisDebugOptionsEnabled(),
+                    RenderSystem.getDevice().getDeviceInfo().isZZeroToOne());
+            ArtifactKey key = IrisTransformKeyEncoder.encode(kind, name, stages, parameters, environment);
+            if (key == null) {
+                METRICS.recordUnkeyableRequest();
+                return original.call(name, sources, parameters);
+            }
+            contractProven = true;
+
+            ArtifactCacheStore current = store();
+            Optional<ShaderArtifact> cached = current.read(key);
+            if (cached.isPresent() && !VERIFY) {
+                Object result = materialize(cached.get());
+                if (result instanceof Map<?, ?> map) {
+                    return map;
+                }
+                current.invalidate(key);
+            }
+
+            long started = System.nanoTime();
+            computed = original.call(name, sources, parameters);
+            long transformNanos = Math.max(0L, System.nanoTime() - started);
+            METRICS.recordFrontendTransform(transformNanos);
+            Map<String, String> produced = extractStages(computed);
+            if (produced == null) {
+                return computed;
+            }
+            if (VERIFY && cached.isPresent()) {
+                if (cached.get().stages().equals(produced)) {
+                    METRICS.recordVerifyMatch();
+                } else {
+                    METRICS.recordVerifyMismatch();
+                    current.invalidate(key);
+                    disable("verify_mismatch");
+                }
+                return computed;
+            }
+            if (cached.isEmpty()) {
+                current.write(key, new ShaderArtifact(produced, transformNanos));
+            }
+            return computed;
+        } catch (Throwable throwable) {
+            disable("runtime_failure:" + throwable.getClass().getSimpleName());
+            if (computed != null) {
+                return computed;
+            }
+            return original.call(name, sources, parameters);
+        }
     }
 
-    public static void clearThreadState() {
-        PENDING.remove();
+    public static boolean contractProven() {
+        return contractProven && !contractRejected && !failedOpen;
+    }
+
+    public static boolean contractRejected() {
+        return contractRejected;
+    }
+
+    public static String activationState() {
+        if (failedOpen) {
+            return "failed_open";
+        }
+        if (contractRejected) {
+            return "contract_rejected";
+        }
+        if (contractProven) {
+            return "active";
+        }
+        return "awaiting_successful_key";
     }
 
     public static void beginReload() {
-        PENDING.remove();
         RELOAD_STARTED.set(System.nanoTime());
     }
 
     public static void endReload() {
         Long started = RELOAD_STARTED.get();
         RELOAD_STARTED.remove();
-        PENDING.remove();
         if (started != null) {
             METRICS.recordReload(System.nanoTime() - started);
         }
@@ -142,64 +192,21 @@ public final class IrisFrontendArtifactCache {
         return failureReason;
     }
 
-    private static @org.jspecify.annotations.Nullable Object begin(
-            final String kind,
-            final String name,
-            final List<IrisTransformKeyEncoder.StageSource> sources,
-            final Object parameters) {
-        PENDING.remove();
-        if (failedOpen || allSourcesNull(sources)) {
+    private static @org.jspecify.annotations.Nullable List<IrisTransformKeyEncoder.StageSource> stageSources(
+            final Map<?, ?> sources) {
+        if (sources == null) {
             return null;
         }
-
-        try {
-            KillerModuleCompatibility.AdapterState adapter =
-                    KillerModuleCompatibility.state(KillerModuleCompatibility.IRIS_MODULE);
-            if (!adapter.supported()) {
-                disable("adapter_inactive:" + adapter.state());
+        List<IrisTransformKeyEncoder.StageSource> stages = new ArrayList<>(sources.size());
+        for (Map.Entry<?, ?> entry : sources.entrySet()) {
+            if (!(entry.getKey() instanceof Enum<?> stage)
+                    || (entry.getValue() != null && !(entry.getValue() instanceof String))) {
                 return null;
             }
-            if (!supportedBackend()) {
-                disable("unsupported_gpu_backend");
-                return null;
-            }
-
-            IrisTransformKeyEncoder.Environment environment = new IrisTransformKeyEncoder.Environment(
-                    adapter.state(),
-                    adapter.fingerprint(),
-                    adapter.version(),
-                    modVersion("minecraft"),
-                    irisDebugOptionsEnabled(),
-                    RenderSystem.getDevice().getDeviceInfo().isZZeroToOne());
-            ArtifactKey key = IrisTransformKeyEncoder.encode(kind, name, sources, parameters, environment);
-            if (key == null) {
-                METRICS.recordUnkeyableRequest();
-                return null;
-            }
-
-            ArtifactCacheStore current = store();
-            long started = System.nanoTime();
-            Optional<ShaderArtifact> cached = current.read(key);
-            if (cached.isPresent()) {
-                Object result = materialize(cached.get());
-                if (result == null) {
-                    current.invalidate(key);
-                    PENDING.set(new Pending(key, current, started, null, false));
-                    return null;
-                }
-                if (!VERIFY) {
-                    PENDING.set(new Pending(key, current, started, null, true));
-                    return result;
-                }
-                PENDING.set(new Pending(key, current, started, cached.get(), false));
-                return null;
-            }
-            PENDING.set(new Pending(key, current, started, null, false));
-            return null;
-        } catch (Throwable throwable) {
-            disable("runtime_failure:" + throwable.getClass().getSimpleName());
-            return null;
+            stages.add(new IrisTransformKeyEncoder.StageSource(stage.name(), (String)entry.getValue()));
         }
+        stages.sort(java.util.Comparator.comparing(IrisTransformKeyEncoder.StageSource::stage));
+        return stages;
     }
 
     private static ArtifactCacheStore store() {
@@ -321,7 +328,6 @@ public final class IrisFrontendArtifactCache {
             failedOpen = true;
             LOGGER.warn("Iris frontend artifact cache disabled for this process: {}", reason);
         }
-        PENDING.remove();
     }
 
     private static long positiveLongProperty(final String key, final long defaultValue) {
@@ -334,11 +340,4 @@ public final class IrisFrontendArtifactCache {
         return value > 0 ? value : defaultValue;
     }
 
-    private record Pending(
-            ArtifactKey key,
-            ArtifactCacheStore store,
-            long startedNanos,
-            @org.jspecify.annotations.Nullable ShaderArtifact verifyArtifact,
-            boolean servedHit) {
-    }
 }

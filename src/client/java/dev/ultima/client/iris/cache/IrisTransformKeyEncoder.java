@@ -20,9 +20,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Conservative encoder for the exact Iris 1.11.4 transformation parameter graph. */
+/**
+ * Conservative encoder for the Iris 1.11.4+mc26.2 parameter graph.
+ *
+ * <p>The field schema is the declared instance fields of the pinned class files. Iris 1.11.4
+ * {@code Parameters} has {@code patch}, {@code textureMap}, {@code type}, and {@code name}. It does
+ * not have {@code textureOverrides}. {@code type} and {@code name} are transformer scratch and are
+ * excluded. Any other declared field, superclass, or value shape fails closed with a null key.
+ */
 final class IrisTransformKeyEncoder {
-    static final int KEY_SCHEMA = 1;
+    static final int KEY_SCHEMA = 2;
     private static final int MAX_DEPTH = 12;
     private static final String PARAMETER_PREFIX = "net.irisshaders.iris.pipeline.transform.parameter.";
     private static final Set<String> PARAMETER_CLASSES = Set.of(
@@ -90,6 +97,13 @@ final class IrisTransformKeyEncoder {
         } catch (NoSuchAlgorithmException | IOException | IllegalAccessException | RuntimeException exception) {
             return null;
         }
+    }
+
+    static boolean supportedStructure(final Object parameters) {
+        if (parameters == null || !PARAMETER_CLASSES.contains(parameters.getClass().getName())) {
+            return false;
+        }
+        return PARAMETER_PLANS.get(parameters.getClass()).supported();
     }
 
     private static ParameterPlan buildPlan(final Class<?> concrete) {
@@ -320,7 +334,7 @@ final class IrisTransformKeyEncoder {
 
     private static Map<String, Set<String>> fieldSchema() {
         Map<String, Set<String>> schema = new LinkedHashMap<>();
-        schema.put(PARAMETER_PREFIX + "Parameters", Set.of("patch", "textureMap", "textureOverrides", "type", "name"));
+        schema.put(PARAMETER_PREFIX + "Parameters", Set.of("patch", "textureMap", "type", "name"));
         schema.put(PARAMETER_PREFIX + "GeometryInfoParameters", Set.of("hasGeometry", "hasTesselation"));
         schema.put(PARAMETER_PREFIX + "ComputeParameters", Set.of());
         schema.put(PARAMETER_PREFIX + "DHParameters", Set.of());
