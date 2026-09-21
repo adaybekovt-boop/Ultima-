@@ -56,7 +56,12 @@ public final class CrossPipelineBroker {
             METRICS.frames++;
             METRICS.frameWallNanos += wall;
             METRICS.frameCpuNanos += Math.max(0L, cpuFrameNanos);
-            if (gpuFrameNanos > 0L) {
+            if (gpuFrameNanos < 0L) {
+                METRICS.gpuSamplesNoData++;
+            } else if (gpuFrameNanos == 0L) {
+                METRICS.gpuSamplesZero++;
+            } else {
+                METRICS.gpuSamplesValid++;
                 METRICS.gpuFrameNanos += gpuFrameNanos;
             }
             sampleGc(now);
@@ -87,7 +92,19 @@ public final class CrossPipelineBroker {
         }
     }
 
-    /** Called at HEAD of Sodium's deferred method, before its first dequeue. */
+    /**
+     * Observer at the head of Sodium's deferred submit. Always returns without denying the call.
+     * Sodium 0.9.2 has no public partial-budget API; cancelling the method only postpones chunk work.
+     */
+    public static void observeDeferredAdmission(
+            final int queueDepth,
+            final int busyWorkers,
+            final int totalWorkers,
+            final long nextDeferredAgeNanos) {
+        permitDeferredAdmission(queueDepth, busyWorkers, totalWorkers, nextDeferredAgeNanos);
+    }
+
+    /** @return always {@code true}; retained so older call sites cannot deny admission */
     public static boolean permitDeferredAdmission(
             final int queueDepth,
             final int busyWorkers,
@@ -99,21 +116,11 @@ public final class CrossPipelineBroker {
         try {
             recordPressure(queueDepth, busyWorkers, totalWorkers);
             METRICS.admissionAttempts++;
-            boolean starvationEscape = nextDeferredAgeNanos >= STARVATION_AGE_NANOS;
-            boolean urgent = updateImmediately || starvationEscape;
-            boolean permit = CONTROLLER.permit(System.nanoTime(), urgent);
-            if (urgent) {
-                METRICS.urgentBypasses++;
-            }
-            if (starvationEscape) {
+            METRICS.admissions++;
+            if (nextDeferredAgeNanos >= STARVATION_AGE_NANOS) {
                 METRICS.starvationBypasses++;
             }
-            if (permit) {
-                METRICS.admissions++;
-            } else {
-                METRICS.deferrals++;
-            }
-            return permit;
+            return true;
         } catch (Throwable throwable) {
             disable("admission_decision", throwable);
             return true;
@@ -248,12 +255,23 @@ public final class CrossPipelineBroker {
         return METRICS.snapshot(view);
     }
 
+    /** Effective behavior. Control and static requests do not change Sodium scheduling. */
     public static String mode() {
+        return "observer";
+    }
+
+    public static String requestedMode() {
         return MODE.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     public static boolean changesScheduling() {
-        return MODE != AdmissionController.Mode.TRACE && !failedOpen;
+        return false;
+    }
+
+    public static String controlUnavailableReason() {
+        return MODE == AdmissionController.Mode.TRACE
+                ? "trace_requested"
+                : "no_safe_budget_boundary";
     }
 
     public static boolean c2mePresent() {

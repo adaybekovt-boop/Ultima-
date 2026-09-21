@@ -19,6 +19,12 @@ public final class AdmissionControllerTest {
         admittedWorkIsDequeuedExactlyOnce();
         resetDropsOldPressure();
         staticControlIsDeterministic();
+        singleSpikeExitsAfterHealthyFrames();
+        continuousOverloadStaysHigh();
+        oscillationAroundThresholdDoesNotFlap();
+        unknownGpuIsNotHealthy();
+        zeroGpuIsARealSample();
+        minimumIntervalDoesNotReleaseEarly();
     }
 
     private static AdmissionController controller() {
@@ -125,6 +131,89 @@ public final class AdmissionControllerTest {
         require(!controller.permit(102 * MS, false), "static frame one must defer");
         require(!controller.permit(103 * MS, false), "static frame two must defer");
         require(controller.permit(104 * MS, false), "static frame three must permit");
+    }
+
+    private static void singleSpikeExitsAfterHealthyFrames() {
+        AdmissionController controller = new AdmissionController(
+                AdmissionController.Mode.CONTROL, AdmissionController.Config.defaults());
+        long target = AdmissionController.Config.defaults().targetFrameNanos();
+        long now = 1_000_000_000L;
+        controller.onFrame(now, target * 3L, -1L, -1L);
+        controller.onPipelinePressure(4, 1, 4);
+        require(controller.snapshot().pressureHigh(), "one severe frame must enter pressure");
+        for (int frame = 1; frame <= 7; frame++) {
+            controller.onFrame(now + frame * target, target, -1L, -1L);
+        }
+        require(controller.snapshot().pressureHigh(), "pressure must not clear before eight healthy frames");
+        controller.onFrame(now + 8L * target, target, -1L, -1L);
+        require(!controller.snapshot().pressureHigh(), "eight healthy frames must exit pressure");
+    }
+
+    private static void continuousOverloadStaysHigh() {
+        AdmissionController controller = new AdmissionController(
+                AdmissionController.Mode.CONTROL, AdmissionController.Config.defaults());
+        long target = AdmissionController.Config.defaults().targetFrameNanos();
+        long now = 2_000_000_000L;
+        for (int frame = 0; frame < 32; frame++) {
+            controller.onFrame(now + frame * target, target * 2L + 1L, -1L, -1L);
+        }
+        require(controller.snapshot().pressureHigh(), "continuous overload must stay high");
+    }
+
+    private static void oscillationAroundThresholdDoesNotFlap() {
+        AdmissionController controller = new AdmissionController(
+                AdmissionController.Mode.CONTROL, AdmissionController.Config.defaults());
+        long target = AdmissionController.Config.defaults().targetFrameNanos();
+        long now = 3_000_000_000L;
+        boolean entered = false;
+        int transitions = 0;
+        boolean previous = false;
+        for (int frame = 0; frame < 40; frame++) {
+            long sample = frame % 2 == 0 ? target * 130L / 100L : target * 90L / 100L;
+            controller.onFrame(now + frame * target, sample, -1L, -1L);
+            boolean high = controller.snapshot().pressureHigh();
+            entered |= high;
+            if (high != previous) {
+                transitions++;
+                previous = high;
+            }
+        }
+        require(!entered, "alternating frames around the threshold must not enter pressure");
+        require(transitions == 0, "threshold oscillation flapped the pressure latch");
+    }
+
+    private static void unknownGpuIsNotHealthy() {
+        AdmissionController controller = new AdmissionController(
+                AdmissionController.Mode.CONTROL, AdmissionController.Config.defaults());
+        long target = AdmissionController.Config.defaults().targetFrameNanos();
+        controller.onFrame(10_000L, target, -1L, -1L);
+        require("NO_DATA".equals(controller.gpuSampleKind()), "negative GPU sample must be no data");
+        require(!controller.snapshot().pressureHigh(), "unknown GPU must not look overloaded");
+        controller.onFrame(20_000L, target, 0L, -1L);
+        require("ZERO".equals(controller.gpuSampleKind()), "zero GPU sample must stay distinct from no data");
+    }
+
+    private static void zeroGpuIsARealSample() {
+        AdmissionController controller = new AdmissionController(
+                AdmissionController.Mode.CONTROL, AdmissionController.Config.defaults());
+        long target = AdmissionController.Config.defaults().targetFrameNanos();
+        controller.onFrame(10_000L, target * 3L, target * 3L, -1L);
+        require(controller.snapshot().pressureHigh(), "a valid high GPU sample must enter pressure");
+        require("VALID".equals(controller.gpuSampleKind()), "positive GPU sample must be valid");
+        for (int frame = 0; frame < 8; frame++) {
+            controller.onFrame(20_000L + frame, target, 0L, -1L);
+        }
+        require(!controller.snapshot().pressureHigh(), "a real zero GPU sample may satisfy the GPU exit check");
+        require("ZERO".equals(controller.gpuSampleKind()), "exit must not rewrite a zero sample into no data");
+    }
+
+    private static void minimumIntervalDoesNotReleaseEarly() {
+        AdmissionController controller = controller();
+        makePressureHigh(controller, 1_000 * MS);
+        require(controller.permit(1_016 * MS, false), "baseline admission");
+        require(!controller.permit(1_016 * MS + 20 * MS, false),
+                "minimum permit interval must not release before maximum defer");
+        require(controller.permit(1_016 * MS + 50 * MS, false), "maximum defer must release");
     }
 
     private static void require(final boolean condition, final String message) {

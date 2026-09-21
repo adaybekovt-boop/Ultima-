@@ -85,6 +85,8 @@ public final class AdmissionController {
     private long lastPermitNanos = Long.MIN_VALUE;
     private long maximumObservedDeferredNanos;
     private long staticFrame;
+    private int consecutiveOverEnter;
+    private int consecutiveHealthy;
 
     public AdmissionController(final Mode mode, final Config config) {
         this.mode = mode == null ? Mode.TRACE : mode;
@@ -150,14 +152,12 @@ public final class AdmissionController {
             return true;
         }
 
-        long deferredFor = this.deferredSinceNanos == Long.MIN_VALUE ? 0L : nowNanos - this.deferredSinceNanos;
-        long sincePermit = this.lastPermitNanos == Long.MIN_VALUE ? Long.MAX_VALUE : nowNanos - this.lastPermitNanos;
-        if (deferredFor >= this.config.maximumDeferNanos()
-                || sincePermit >= this.config.maximumDeferNanos()) {
-            markPermit(nowNanos);
-            return true;
-        }
-        if (sincePermit >= this.config.minimumPermitIntervalNanos()) {
+        // Starvation bound is maximumDefer only. minimumPermitIntervalNanos is not a release path:
+        // releasing at the shorter interval made the configured maximum unreachable.
+        long sincePermit = this.lastPermitNanos == Long.MIN_VALUE
+                ? Long.MAX_VALUE
+                : nowNanos - this.lastPermitNanos;
+        if (sincePermit >= this.config.maximumDeferNanos()) {
             markPermit(nowNanos);
             return true;
         }
@@ -186,6 +186,8 @@ public final class AdmissionController {
         this.lastPermitNanos = Long.MIN_VALUE;
         this.maximumObservedDeferredNanos = 0L;
         this.staticFrame = 0L;
+        this.consecutiveOverEnter = 0;
+        this.consecutiveHealthy = 0;
     }
 
     public Snapshot snapshot() {
@@ -205,21 +207,57 @@ public final class AdmissionController {
                 this.maximumObservedDeferredNanos);
     }
 
+    /**
+     * GPU samples use {@code < 0} = no data, {@code 0} = a real zero, {@code > 0} = a real duration.
+     * No-data must not count as a healthy GPU. Exit uses the latest frame, not a sticky percentile.
+     */
     private void updateHysteresis() {
-        long high = this.config.targetFrameNanos() * 108L / 100L;
-        long low = this.config.targetFrameNanos() * 92L / 100L;
-        boolean gpuHigh = this.latestGpuNanos > 0L && this.latestGpuNanos > high;
-        boolean serverHigh = this.integratedServerTickNanos > 45_000_000L;
-        boolean severeLatest = this.latestFrameNanos > this.config.targetFrameNanos() * 3L / 2L;
+        long enter = this.config.targetFrameNanos() * 125L / 100L;
+        long severe = this.config.targetFrameNanos() * 2L;
+        long exit = this.config.targetFrameNanos() * 105L / 100L;
+        boolean gpuKnown = this.latestGpuNanos >= 0L;
+        boolean gpuHigh = gpuKnown && this.latestGpuNanos > enter;
+        boolean gpuAllowsExit = !gpuKnown || this.latestGpuNanos < exit;
+        boolean serverKnown = this.integratedServerTickNanos > 0L;
+        boolean serverHigh = serverKnown && this.integratedServerTickNanos > 45_000_000L;
+        boolean serverAllowsExit = !serverKnown || this.integratedServerTickNanos < 40_000_000L;
+        boolean frameSevere = this.latestFrameNanos > severe;
+        boolean frameOver = this.latestFrameNanos > enter;
+        boolean frameHealthy = this.latestFrameNanos > 0L && this.latestFrameNanos < exit;
+
         if (!this.pressureHigh) {
-            this.pressureHigh = this.p95FrameNanos > high || gpuHigh || severeLatest || serverHigh;
-        } else {
-            boolean gpuLow = this.latestGpuNanos <= 0L || this.latestGpuNanos < low;
-            boolean serverLow = this.integratedServerTickNanos <= 0L || this.integratedServerTickNanos < 40_000_000L;
-            if (this.p95FrameNanos < low && gpuLow && serverLow) {
-                this.pressureHigh = false;
+            this.consecutiveHealthy = 0;
+            if (frameSevere || gpuHigh || serverHigh) {
+                this.pressureHigh = true;
+                this.consecutiveOverEnter = 0;
+            } else if (frameOver) {
+                if (++this.consecutiveOverEnter >= 3) {
+                    this.pressureHigh = true;
+                    this.consecutiveOverEnter = 0;
+                }
+            } else {
+                this.consecutiveOverEnter = 0;
             }
+            return;
         }
+
+        this.consecutiveOverEnter = 0;
+        if (frameHealthy && gpuAllowsExit && serverAllowsExit) {
+            if (++this.consecutiveHealthy >= 8) {
+                this.pressureHigh = false;
+                this.consecutiveHealthy = 0;
+            }
+        } else {
+            this.consecutiveHealthy = 0;
+        }
+    }
+
+    /** {@code NO_DATA} when the sample is negative, {@code ZERO} at 0, otherwise {@code VALID}. */
+    public String gpuSampleKind() {
+        if (this.latestGpuNanos < 0L) {
+            return "NO_DATA";
+        }
+        return this.latestGpuNanos == 0L ? "ZERO" : "VALID";
     }
 
     private void recomputePercentiles() {

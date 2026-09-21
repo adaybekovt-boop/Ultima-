@@ -26,6 +26,9 @@ public final class BrokerMetrics {
     volatile long frameWallNanos;
     volatile long frameCpuNanos;
     volatile long gpuFrameNanos;
+    volatile long gpuSamplesNoData;
+    volatile long gpuSamplesZero;
+    volatile long gpuSamplesValid;
     volatile long admissionAttempts;
     volatile long admissions;
     volatile long deferrals;
@@ -140,7 +143,10 @@ public final class BrokerMetrics {
                 this.lastTotalWorkers,
                 workers,
                 this.resets,
-                controller);
+                controller,
+                this.gpuSamplesNoData,
+                this.gpuSamplesZero,
+                this.gpuSamplesValid);
     }
 
     private static long percentile(final long[] ring, final int count, final double quantile) {
@@ -216,6 +222,9 @@ public final class BrokerMetrics {
             int lastTotalWorkers,
             int observedWorkerThreads,
             long resets,
-            AdmissionControllerView controller) {
+            AdmissionControllerView controller,
+            long gpuSamplesNoData,
+            long gpuSamplesZero,
+            long gpuSamplesValid) {
     }
 }

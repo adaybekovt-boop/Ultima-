@@ -2,6 +2,7 @@ package dev.ultima.mixin.cross_pipeline_admission_broker;
 
 import com.mojang.blaze3d.systems.TimerQuery;
 import dev.ultima.client.broker.CrossPipelineBroker;
+import dev.ultima.client.broker.GpuQuerySample;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -24,8 +25,7 @@ public abstract class MinecraftMixin {
     @Inject(method = "renderFrame", at = @At("RETURN"))
     private void ultima$brokerFrameEnd(final boolean advanceGameTime, final CallbackInfo ci) {
         Minecraft minecraft = (Minecraft)(Object)this;
-        long gpuNanos = this.timerQuery.get();
-        CrossPipelineBroker.endFrame(minecraft.getFrameTimeNs(), gpuNanos > 0L ? gpuNanos : -1L);
+        CrossPipelineBroker.endFrame(minecraft.getFrameTimeNs(), GpuQuerySample.nanosForController(this.timerQuery));
     }
 
     @Inject(method = "setLevel", at = @At("HEAD"))

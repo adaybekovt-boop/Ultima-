@@ -26,7 +26,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Sodium 0.9.2 adapter. Active cancellation occurs only before deferred dequeue. */
+/**
+ * Sodium 0.9.2 observer. The deferred submit loop is never cancelled: Sodium already stops
+ * dequeuing when {@code hasBudgetRemaining} or {@code UploadResourceBudget.isAvailable} is false,
+ * and neither API exposes a safe partial budget.
+ */
 @Mixin(value = RenderSectionManager.class, remap = false)
 public abstract class RenderSectionManagerMixin {
     @Shadow @Final private ChunkBuilder builder;
@@ -48,18 +52,16 @@ public abstract class RenderSectionManagerMixin {
                 this.builder.getTotalThreadCount());
     }
 
-    @Inject(method = "submitDeferredSectionTasks", at = @At("HEAD"), cancellable = true, require = 0)
-    private void ultima$admitDeferredBeforeDequeue(
+    @Inject(method = "submitDeferredSectionTasks", at = @At("HEAD"), require = 0)
+    private void ultima$observeDeferredBeforeDequeue(
             final ChunkJobCollector collector,
             final UploadResourceBudget uploadBudget,
             final CallbackInfo ci) {
-        if (!CrossPipelineBroker.permitDeferredAdmission(
+        CrossPipelineBroker.observeDeferredAdmission(
                 this.ultima$deferredQueueDepth(),
                 this.builder.getBusyThreadCount(),
                 this.builder.getTotalThreadCount(),
-                this.ultima$nextDeferredAgeNanos())) {
-            ci.cancel();
-        }
+                this.ultima$nextDeferredAgeNanos());
     }
 
     @Inject(
