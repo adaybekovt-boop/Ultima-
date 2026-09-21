@@ -185,6 +185,9 @@ public final class ClientFrameBenchmark {
         if (state.sampling() && !samplingStarted) {
             samplingStarted = true;
             resetSampleCounters();
+            if ("artifact_shader_reload".equals(SCENE)) {
+                BenchmarkShaderReload.requestOnce();
+            }
         }
         applyCamera(currentRouteUnit);
 
@@ -743,7 +746,10 @@ public final class ClientFrameBenchmark {
                 .append("    \"reloads\": ").append(reload.reloads()).append(",\n")
                 .append("    \"totalNs\": ").append(reload.totalNanos()).append(",\n")
                 .append("    \"maximumNs\": ").append(reload.maximumNanos()).append(",\n")
-                .append("    \"lastNs\": ").append(reload.lastNanos()).append('\n')
+                .append("    \"lastNs\": ").append(reload.lastNanos()).append(",\n")
+                .append("    \"requested\": ").append(reload.requested()).append(",\n")
+                .append("    \"unavailableReason\": \"")
+                .append(reload.unavailableReason().replace("\\", "\\\\").replace("\"", "\\\"")).append("\"\n")
                 .append("  }");
     }
 
@@ -959,7 +965,10 @@ public final class ClientFrameBenchmark {
      * Default camera mode for a mesher hardware scene id.
      */
     public static String cameraModeForScene(final String scene) {
-        return "mesher_chunk_flight".equals(scene) ? "chunk_flight" : "stationary";
+        return switch (scene) {
+            case "mesher_chunk_flight", "broker_chunk_flight" -> "chunk_flight";
+            default -> "stationary";
+        };
     }
 
     private static int positiveIntegerProperty(final String key, final int defaultValue) {

@@ -1,5 +1,7 @@
 package dev.ultima.client.benchmark;
 
+import dev.ultima.benchmark.KillerBenchmarkGates;
+
 /** Pure contract checks for FPS-independent benchmark replay. */
 public final class ReplayTimelineTest {
     private ReplayTimelineTest() {
@@ -11,6 +13,8 @@ public final class ReplayTimelineTest {
         legacyFrameModeRemainsFrameIndexed();
         sampleBufferGrowsWithoutLosingSamples();
         shaderReloadMetricsAccumulateCompleteBoundary();
+        killerScenesUseTheMeasuredWorkload();
+        killerGatesRejectEmptyWork();
     }
 
     private static void tickRouteDoesNotDependOnFramesPerTick() {
@@ -66,6 +70,25 @@ public final class ReplayTimelineTest {
         require(after.totalNanos() == before.totalNanos() + 35L, "shader reload total");
         require(after.maximumNanos() >= 25L, "shader reload maximum");
         require(after.lastNanos() == 25L, "shader reload last boundary");
+    }
+
+    private static void killerScenesUseTheMeasuredWorkload() {
+        require("chunk_flight".equals(ClientFrameBenchmark.cameraModeForScene("broker_chunk_flight")),
+                "broker scene must cross chunk boundaries");
+        require("chunk_flight".equals(ClientFrameBenchmark.cameraModeForScene("mesher_chunk_flight")),
+                "mesher chunk flight camera changed");
+        require("stationary".equals(ClientFrameBenchmark.cameraModeForScene("artifact_shader_reload")),
+                "artifact scene measures reload, not camera motion");
+    }
+
+    private static void killerGatesRejectEmptyWork() {
+        require(KillerBenchmarkGates.artifact(0L, 1L) == KillerBenchmarkGates.Result.INVALID, "zero hits must not pass");
+        require(KillerBenchmarkGates.artifact(1L, 0L) == KillerBenchmarkGates.Result.INVALID, "zero reloads must not pass");
+        require(KillerBenchmarkGates.artifact(1L, 1L) == KillerBenchmarkGates.Result.PASS, "reload with a hit may pass the gate");
+        require(KillerBenchmarkGates.broker(false) == KillerBenchmarkGates.Result.NOT_APPLICABLE,
+                "observer broker must not be scored as control");
+        require(KillerBenchmarkGates.warmup(0L) == KillerBenchmarkGates.Result.NOT_APPLICABLE,
+                "profiler-only warmup must not pass");
     }
 
     private static void require(final boolean condition, final String message) {

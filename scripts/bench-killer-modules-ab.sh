@@ -14,7 +14,7 @@ set -euo pipefail
 PROFILE="${1:?usage: bench-killer-modules-ab.sh <profile> [pair-count]}"
 PAIRS="${2:-${PAIRS:-6}}"
 PREFIX="${PREFIX:-killer-${PROFILE}}"
-SCENE="${SCENE:-killer_route}"
+SCENE="${SCENE:-}"
 cd "$(dirname "$0")/.."
 GAME_ROOT="${GAME_DIR:-$PWD/run}"
 CACHE_ROOT="${GAME_ROOT%/}/cache/ultima/iris-frontend-v1"
@@ -34,25 +34,33 @@ case "$PROFILE" in
   artifact-cold|artifact-warm)
     ON_MODULES="iris_shader_frontend_artifact_cache=true,cross_pipeline_admission_broker=false,render_warmup_system=false"
     BROKER_MODE_VALUE="trace"
+    SCENE="${SCENE:-artifact_shader_reload}"
     ;;
   broker-trace)
     ON_MODULES="iris_shader_frontend_artifact_cache=false,cross_pipeline_admission_broker=true,render_warmup_system=false"
     BROKER_MODE_VALUE="trace"
+    SCENE="${SCENE:-broker_chunk_flight}"
+    CAMERA_MODE="chunk_flight"
     ;;
   broker-control)
     ON_MODULES="iris_shader_frontend_artifact_cache=false,cross_pipeline_admission_broker=true,render_warmup_system=false"
     OFF_MODULES="$ON_MODULES"
     BROKER_MODE_VALUE="control"
+    SCENE="${SCENE:-broker_chunk_flight}"
+    CAMERA_MODE="chunk_flight"
     ;;
   broker-static)
     ON_MODULES="iris_shader_frontend_artifact_cache=false,cross_pipeline_admission_broker=true,render_warmup_system=false"
     OFF_MODULES="$ON_MODULES"
     BROKER_MODE_VALUE="static"
+    SCENE="${SCENE:-broker_chunk_flight}"
+    CAMERA_MODE="chunk_flight"
     ;;
   warmup)
     ON_MODULES="iris_shader_frontend_artifact_cache=false,cross_pipeline_admission_broker=false,render_warmup_system=true"
     OFF_MODULES="$ON_MODULES"
     BROKER_MODE_VALUE="trace"
+    SCENE="${SCENE:-warmup_profile}"
     ;;
   all-trace)
     ON_MODULES="iris_shader_frontend_artifact_cache=true,cross_pipeline_admission_broker=true,render_warmup_system=true"
@@ -96,7 +104,6 @@ run_side() {
   if [[ "$side" == on ]]; then
     overrides="$ON_MODULES"
     broker_mode="$BROKER_MODE_VALUE"
-    warmup_mode="warm"
     move_ultima_cache_for_cold_run "$label"
   fi
   echo "===== ${label} (${PROFILE}) ====="
@@ -106,6 +113,7 @@ run_side() {
   AB_ROLE="$side" \
   PAIR_LABEL="${PREFIX}_pair${pair}" \
   SCENE="$SCENE" \
+  CAMERA_MODE="${CAMERA_MODE:-stationary}" \
   REPLAY_MODE="tick" \
   bash scripts/bench-client.sh "$label" disabled
 }

@@ -246,6 +246,9 @@ def killer_guardrails(off: dict, on: dict) -> list[str]:
 
     off_broker = off_killer.get("admissionBroker") or {}
     on_broker = on_killer.get("admissionBroker") or {}
+    gate = killer_scenario_gate(on_killer)
+    if gate not in ("PASS", "NOT_APPLICABLE"):
+        failures.append(f"killer scenario gate {gate}")
     if on_broker.get("changesScheduling") and off_broker.get("available"):
         off_latency = off_broker.get("p99RequestToFirstVisibleProxyNs")
         on_latency = on_broker.get("p99RequestToFirstVisibleProxyNs")
@@ -260,6 +263,26 @@ def killer_guardrails(off: dict, on: dict) -> list[str]:
         if negative_regression(off_throughput, on_throughput, 0.05):
             failures.append("broker Sodium task completion throughput fell by more than 5%")
     return failures
+
+
+def killer_scenario_gate(on_killer: dict) -> str:
+    """Mirror dev.ultima.benchmark.KillerBenchmarkGates. Empty work is not a pass."""
+    cache = on_killer.get("artifactCache") or {}
+    broker = on_killer.get("admissionBroker") or {}
+    warmup = on_killer.get("renderWarmup") or {}
+    if cache.get("available"):
+        hits = cache.get("hits") or 0
+        reloads = cache.get("reloads") or 0
+        if hits <= 0 or reloads <= 0:
+            return "INVALID"
+    if broker.get("available") and not broker.get("changesScheduling"):
+        if broker.get("requestedMode") in ("control", "static"):
+            return "NOT_APPLICABLE"
+    if warmup.get("available"):
+        warmed = warmup.get("warmupItems") or 0
+        if warmed <= 0 or warmup.get("activeWarmup") is False:
+            return "NOT_APPLICABLE"
+    return "PASS"
 
 
 def positive_regression(baseline, candidate, threshold: float) -> bool:
@@ -489,8 +512,8 @@ def test_module_classification() -> None:
         raise SystemExit("client_benchmark must remain opt-in instrumentation")
     if defaults.get("terrain_metrics") is not True:
         raise SystemExit("terrain_metrics must remain default-on instrumentation")
-    if defaults.get("server_metrics") is not True:
-        raise SystemExit("server_metrics must remain default-on instrumentation")
+    if defaults.get("server_metrics") is not False:
+        raise SystemExit("server_metrics must stay default-off instrumentation")
 
     default_on = {
         "modules": [

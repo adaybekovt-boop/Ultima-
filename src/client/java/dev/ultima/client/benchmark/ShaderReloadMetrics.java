@@ -6,6 +6,8 @@ public final class ShaderReloadMetrics {
     private static long totalNanos;
     private static long maximumNanos;
     private static long lastNanos;
+    private static long requested;
+    private static String unavailableReason = "";
 
     private ShaderReloadMetrics() {
     }
@@ -18,10 +20,24 @@ public final class ShaderReloadMetrics {
         lastNanos = duration;
     }
 
-    public static Snapshot snapshot() {
-        return new Snapshot(reloads, totalNanos, maximumNanos, lastNanos);
+    public static void markRequested() {
+        requested++;
     }
 
-    public record Snapshot(long reloads, long totalNanos, long maximumNanos, long lastNanos) {
+    public static void markUnavailable(final String reason) {
+        unavailableReason = reason == null ? "unknown" : reason;
+    }
+
+    public static Snapshot snapshot() {
+        return new Snapshot(reloads, totalNanos, maximumNanos, lastNanos, requested, unavailableReason);
+    }
+
+    public record Snapshot(
+            long reloads,
+            long totalNanos,
+            long maximumNanos,
+            long lastNanos,
+            long requested,
+            String unavailableReason) {
     }
 }
