@@ -3,6 +3,8 @@ package dev.ultima.client.benchmark;
 import com.mojang.blaze3d.systems.DeviceInfo;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.UltimaBuildInfo;
+import dev.ultima.client.diagnostics.KillerModuleDiagnostics;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedVisibilityDebug;
 import dev.ultima.client.renderer.retained.RetainedCompactionDebug;
@@ -11,6 +13,9 @@ import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import dev.ultima.meshing.MesherMetrics;
 import java.io.IOException;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,8 +93,14 @@ public final class ClientFrameBenchmark {
             REPLAY_MODE == ReplayTimeline.Mode.TICK ? WARMUP_TICKS : WARMUP_FRAMES,
             REPLAY_MODE == ReplayTimeline.Mode.TICK ? SAMPLE_TICKS : SAMPLE_FRAMES);
     private static final LongSampleBuffer FRAME_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer THREAD_CPU_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer GAME_RENDER_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer GPU_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final ThreadMXBean THREAD_MX = ManagementFactory.getThreadMXBean();
+    private static final List<GarbageCollectorMXBean> GC_BEANS = ManagementFactory.getGarbageCollectorMXBeans();
 
     private static long frameStart;
+    private static long threadCpuStart = -1L;
     private static long currentRouteUnit;
     private static boolean currentFrameSampling;
     private static boolean samplingStarted;
@@ -153,6 +164,8 @@ public final class ClientFrameBenchmark {
     private static long terrainVisibilityTogglesTotal;
     private static long terrainFailOpenFrames;
     private static long terrainPairingImbalanceFrames;
+    private static GcSnapshot gcAtSampleStart = new GcSnapshot(0L, 0L);
+    private static long memoryAtSampleStart;
 
     private ClientFrameBenchmark() {
     }
@@ -160,6 +173,7 @@ public final class ClientFrameBenchmark {
     public static void beginFrame(final boolean worldReady) {
         if (!ENABLED || complete || !worldReady) {
             frameStart = 0L;
+            threadCpuStart = -1L;
             currentFrameSampling = false;
             return;
         }
@@ -182,20 +196,34 @@ public final class ClientFrameBenchmark {
         currentFrameSampling = state.sampling();
         if (!currentFrameSampling) {
             frameStart = 0L;
+            threadCpuStart = -1L;
             return;
         }
         frameStart = System.nanoTime();
+        threadCpuStart = currentThreadCpuTime();
     }
 
-    public static void endFrame() {
+    public static void endFrame(final long gameRenderNanos, final long gpuNanos) {
         long start = frameStart;
+        long cpuStart = threadCpuStart;
         frameStart = 0L;
+        threadCpuStart = -1L;
         if (start == 0L || complete || !currentFrameSampling) {
             return;
         }
 
         long elapsed = System.nanoTime() - start;
         FRAME_TIMES.add(elapsed);
+        long cpuEnd = currentThreadCpuTime();
+        if (cpuStart >= 0L && cpuEnd >= cpuStart) {
+            THREAD_CPU_TIMES.add(cpuEnd - cpuStart);
+        }
+        if (gameRenderNanos > 0L) {
+            GAME_RENDER_TIMES.add(gameRenderNanos);
+        }
+        if (gpuNanos > 0L) {
+            GPU_TIMES.add(gpuNanos);
+        }
         TerrainFrameMetrics.markSampledFrame();
         TerrainFrameMetrics.Snapshot terrain = TerrainFrameMetrics.snapshot(elapsed, 0L);
         terrainPrepareNsTotal += terrain.prepareNsAccum();
@@ -262,6 +290,8 @@ public final class ClientFrameBenchmark {
         TerrainFrameMetrics.resetLifetime();
         RetainedVisibilityDebug.reset();
         RetainedCompactionDebug.reset();
+        gcAtSampleStart = gcSnapshot();
+        memoryAtSampleStart = usedMemory();
         if ("mesher_rebuild_storm".equals(SCENE) || "mesher_chunk_flight".equals(SCENE)) {
             MesherMetrics.reset();
         }
@@ -344,7 +374,7 @@ public final class ClientFrameBenchmark {
         double pointOnePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.001);
         StringBuilder json = new StringBuilder(32_768);
         json.append("{\n");
-        BenchmarkJson.field(json, "schemaVersion", 4);
+        BenchmarkJson.field(json, "schemaVersion", 5);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "warmupFrames", WARMUP_FRAMES);
         BenchmarkJson.comma(json);
@@ -370,7 +400,7 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "p999FrameTimeMs", p999Ns / 1_000_000.0);
         BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "cpuFrameTimeAvailable", false);
+        BenchmarkJson.field(json, "cpuFrameTimeAvailable", THREAD_CPU_TIMES.size() > 0);
         BenchmarkJson.comma(json);
         appendProtocol(json);
         BenchmarkJson.comma(json);
@@ -383,6 +413,10 @@ public final class ClientFrameBenchmark {
         appendTemporalMetrics(json);
         BenchmarkJson.comma(json);
         MesherMetrics.snapshot().appendJson(json);
+        BenchmarkJson.comma(json);
+        appendTimingAndJvmMetrics(json);
+        BenchmarkJson.comma(json);
+        json.append("  \"killerModules\": ").append(KillerModuleDiagnostics.toJson(UltimaConfig.get()).trim());
         BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
         for (int i = 0; i < frameTimes.length; i++) {
@@ -451,6 +485,7 @@ public final class ClientFrameBenchmark {
                 .append("    \"fabricLoader\": ").append(BenchmarkJson.quote(modVersion("fabricloader"))).append(",\n")
                 .append("    \"fabricApi\": ").append(BenchmarkJson.quote(modVersion("fabric-api"))).append(",\n")
                 .append("    \"ultima\": ").append(BenchmarkJson.quote(modVersion("ultima"))).append(",\n")
+                .append("    \"ultimaGitSha\": ").append(BenchmarkJson.quote(UltimaBuildInfo.gitSha())).append(",\n")
                 .append("    \"java\": ").append(BenchmarkJson.quote(System.getProperty("java.runtime.version", ""))).append(",\n")
                 .append("    \"javaVm\": ").append(BenchmarkJson.quote(System.getProperty("java.vm.name", ""))).append(",\n")
                 .append("    \"os\": ").append(BenchmarkJson.quote(System.getProperty("os.name", "") + " " + System.getProperty("os.arch", ""))).append(",\n")
@@ -483,6 +518,8 @@ public final class ClientFrameBenchmark {
                 .append("    \"worldIdRequested\": ").append(BenchmarkJson.quote(worldId)).append(",\n")
                 .append("    \"levelName\": ").append(BenchmarkJson.quote(levelName)).append(",\n")
                 .append("    \"dimension\": ").append(BenchmarkJson.quote(dimension)).append(",\n")
+                .append("    \"integratedServerMspt\": ")
+                .append(integrated == null ? "null" : integrated.getAverageTickTimeNanos() / 1_000_000.0).append(",\n")
                 .append("    \"sodiumLoaded\": ").append(sodiumLoaded).append(",\n")
                 .append("    \"irisLoaded\": ").append(irisLoaded).append(",\n")
                 .append("    \"sodiumIrisRuntimeGateTested\": false,\n")
@@ -677,6 +714,81 @@ public final class ClientFrameBenchmark {
                 .append("  }");
     }
 
+    private static void appendTimingAndJvmMetrics(final StringBuilder json) {
+        GcSnapshot gcEnd = gcSnapshot();
+        json.append("  \"frameTiming\": {\n");
+        appendDistribution(json, "threadCpuFrameNs", THREAD_CPU_TIMES);
+        json.append(",\n");
+        appendDistribution(json, "minecraftRenderFrameNs", GAME_RENDER_TIMES);
+        json.append(",\n");
+        appendDistribution(json, "gpuFrameNs", GPU_TIMES);
+        json.append("\n  },\n")
+                .append("  \"jvmGc\": {\n")
+                .append("    \"collectorCountDelta\": ")
+                .append(Math.max(0L, gcEnd.collections() - gcAtSampleStart.collections())).append(",\n")
+                .append("    \"collectorTimeMsDelta\": ")
+                .append(Math.max(0L, gcEnd.timeMillis() - gcAtSampleStart.timeMillis())).append(",\n")
+                .append("    \"usedMemoryBytesAtStart\": ").append(memoryAtSampleStart).append(",\n")
+                .append("    \"usedMemoryBytesAtEnd\": ").append(usedMemory()).append(",\n")
+                .append("    \"maxMemoryBytes\": ").append(Runtime.getRuntime().maxMemory()).append('\n')
+                .append("  }");
+    }
+
+    private static void appendDistribution(
+            final StringBuilder json, final String name, final LongSampleBuffer samples) {
+        long[] sorted = samples.toArray();
+        Arrays.sort(sorted);
+        long total = 0L;
+        for (long sample : sorted) {
+            total += sample;
+        }
+        json.append("    ").append(BenchmarkJson.quote(name)).append(": {\n")
+                .append("      \"available\": ").append(sorted.length > 0).append(",\n")
+                .append("      \"samples\": ").append(sorted.length).append(",\n")
+                .append("      \"average\": ")
+                .append(sorted.length == 0 ? 0.0 : (double)total / sorted.length).append(",\n")
+                .append("      \"median\": ").append(percentileOrZero(sorted, 0.5)).append(",\n")
+                .append("      \"p95\": ").append(percentileOrZero(sorted, 0.95)).append(",\n")
+                .append("      \"p99\": ").append(percentileOrZero(sorted, 0.99)).append(",\n")
+                .append("      \"p999\": ").append(percentileOrZero(sorted, 0.999)).append('\n')
+                .append("    }");
+    }
+
+    private static long currentThreadCpuTime() {
+        try {
+            if (!THREAD_MX.isCurrentThreadCpuTimeSupported()) {
+                return -1L;
+            }
+            if (!THREAD_MX.isThreadCpuTimeEnabled()) {
+                THREAD_MX.setThreadCpuTimeEnabled(true);
+            }
+            return THREAD_MX.getCurrentThreadCpuTime();
+        } catch (SecurityException | UnsupportedOperationException ignored) {
+            return -1L;
+        }
+    }
+
+    private static GcSnapshot gcSnapshot() {
+        long collections = 0L;
+        long timeMillis = 0L;
+        for (GarbageCollectorMXBean bean : GC_BEANS) {
+            long count = bean.getCollectionCount();
+            long time = bean.getCollectionTime();
+            if (count > 0L) {
+                collections += count;
+            }
+            if (time > 0L) {
+                timeMillis += time;
+            }
+        }
+        return new GcSnapshot(collections, timeMillis);
+    }
+
+    private static long usedMemory() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
     private static void appendQuotedArrayInline(final StringBuilder json, final Iterable<String> values) {
         json.append('[');
         boolean first = true;
@@ -773,6 +885,10 @@ public final class ClientFrameBenchmark {
     private static double percentile(final long[] sorted, final double percentile) {
         int index = Math.max(0, (int)Math.ceil(percentile * sorted.length) - 1);
         return sorted[index];
+    }
+
+    private static long percentileOrZero(final long[] sorted, final double percentile) {
+        return sorted.length == 0 ? 0L : (long)percentile(sorted, percentile);
     }
 
     private static double slowestAverage(final long[] sorted, final double fraction) {
@@ -884,5 +1000,8 @@ public final class ClientFrameBenchmark {
         public String toString() {
             return String.format(Locale.ROOT, "%.4f,%.4f,%.4f yaw=%.3f pitch=%.3f", x, y, z, yaw, pitch);
         }
+    }
+
+    private record GcSnapshot(long collections, long timeMillis) {
     }
 }
