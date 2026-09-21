@@ -23,6 +23,11 @@ METRICS = (
     ("averageFrameTimeMs", "Average frame time ms", False),
     ("p95FrameTimeMs", "P95 frame time ms", False),
     ("p99FrameTimeMs", "P99 frame time ms", False),
+    ("p999FrameTimeMs", "P99.9 frame time ms", False),
+    ("shaderReloadLastMs", "Shader reload wall ms", False),
+    ("brokerP99FirstVisibleProxyMs", "P99 request-to-renderable proxy ms", False),
+    ("brokerTaskThroughput", "Sodium task completions/s", True),
+    ("warmupP99FirstUseFrameMs", "P99 first-use frame ms", False),
 )
 
 T_CRIT_95 = {
@@ -72,7 +77,22 @@ def pct_delta(off: float, on: float, higher_is_better: bool) -> float:
 
 def load_json(path: Path) -> dict:
     with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    reload = data.get("shaderReload") or {}
+    if reload.get("lastNs") is not None and reload.get("reloads", 0) > 0:
+        data["shaderReloadLastMs"] = reload["lastNs"] / 1_000_000.0
+    killer = data.get("killerModules") or {}
+    broker = killer.get("admissionBroker") or {}
+    if broker.get("firstVisibleProxySampleCount", 0) > 0:
+        data["brokerP99FirstVisibleProxyMs"] = (
+            broker["p99RequestToFirstVisibleProxyNs"] / 1_000_000.0
+        )
+    if broker.get("taskCompletions", 0) > 0:
+        data["brokerTaskThroughput"] = broker["taskCompletionThroughputPerSecond"]
+    warmup = killer.get("renderWarmup") or {}
+    if warmup.get("p99FirstUseFrameNs", 0) > 0:
+        data["warmupP99FirstUseFrameMs"] = warmup["p99FirstUseFrameNs"] / 1_000_000.0
+    return data
 
 
 PAIR_RE = re.compile(r"(?P<prefix>.*pair)(?P<pair>\d+)_(?P<side>off|on)\.json$", re.I)
@@ -135,6 +155,10 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
                 "chunkLayerArraysAvoided": on.get("chunkLayerArraysAvoided"),
                 "sectionDirtyWritesAvoided": on.get("sectionDirtyWritesAvoided"),
             },
+            "killerModules": {
+                "off": off.get("killerModules") or {},
+                "on": on.get("killerModules") or {},
+            },
         }
         deltas = {}
         for metric, _, higher in METRICS:
@@ -165,6 +189,9 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
                 "firstSampleLiveCommands": on_terrain.get("firstSampleLiveCommands"),
                 "lastSampleLiveCommands": on_terrain.get("lastSampleLiveCommands"),
             }
+        guardrails = killer_guardrails(off, on)
+        if guardrails:
+            entry["guardrails"] = guardrails
         report["pairs"].append(entry)
 
     for metric, label, higher in METRICS:
@@ -208,6 +235,51 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
     return report
 
 
+def killer_guardrails(off: dict, on: dict) -> list[str]:
+    failures: list[str] = []
+    off_killer = off.get("killerModules") or {}
+    on_killer = on.get("killerModules") or {}
+    for name in ("artifactCache", "admissionBroker", "renderWarmup"):
+        state = on_killer.get(name) or {}
+        if state.get("failedOpen"):
+            failures.append(f"{name} failed open: {state.get('failureReason', 'unknown')}")
+
+    off_broker = off_killer.get("admissionBroker") or {}
+    on_broker = on_killer.get("admissionBroker") or {}
+    if on_broker.get("changesScheduling") and off_broker.get("available"):
+        off_latency = off_broker.get("p99RequestToFirstVisibleProxyNs")
+        on_latency = on_broker.get("p99RequestToFirstVisibleProxyNs")
+        if positive_regression(off_latency, on_latency, 0.10):
+            failures.append("broker p99 request-to-renderable proxy regressed by more than 10%")
+        off_holes = off_broker.get("visibleHoleProxyMaximum")
+        on_holes = on_broker.get("visibleHoleProxyMaximum")
+        if positive_regression(off_holes, on_holes, 0.10):
+            failures.append("broker maximum initial-build backlog proxy regressed by more than 10%")
+        off_throughput = off_broker.get("taskCompletionThroughputPerSecond")
+        on_throughput = on_broker.get("taskCompletionThroughputPerSecond")
+        if negative_regression(off_throughput, on_throughput, 0.05):
+            failures.append("broker Sodium task completion throughput fell by more than 5%")
+    return failures
+
+
+def positive_regression(baseline, candidate, threshold: float) -> bool:
+    return (
+        isinstance(baseline, (int, float))
+        and isinstance(candidate, (int, float))
+        and baseline > 0
+        and candidate > baseline * (1.0 + threshold)
+    )
+
+
+def negative_regression(baseline, candidate, threshold: float) -> bool:
+    return (
+        isinstance(baseline, (int, float))
+        and isinstance(candidate, (int, float))
+        and baseline > 0
+        and candidate < baseline * (1.0 - threshold)
+    )
+
+
 def format_report(report: dict) -> str:
     lines = ["Ultima client A/B summary", "Primary comparison: disabled vs default", ""]
     for warning in report["warnings"]:
@@ -225,6 +297,40 @@ def format_report(report: dict) -> str:
             lines.append(f"  {label}: {off:.4f} -> {on:.4f} ({delta:+.2f}%)")
         if pair.get("outlier"):
             lines.append(f"  OUTLIER: {pair['outlier']}")
+        killer = pair.get("killerModules") or {}
+        off_killer = killer.get("off") or {}
+        on_killer = killer.get("on") or {}
+        on_cache = on_killer.get("artifactCache") or {}
+        if on_cache.get("available"):
+            lines.append(
+                "  Artifact cache: "
+                f"hits={_fmt(on_cache.get('hits'))} misses={_fmt(on_cache.get('misses'))} "
+                f"verifyMismatch={_fmt(on_cache.get('verifyMismatches'))} "
+                f"reloadWallNs={_fmt(on_cache.get('reloadWallNs'))}"
+            )
+        off_broker = off_killer.get("admissionBroker") or {}
+        on_broker = on_killer.get("admissionBroker") or {}
+        if on_broker.get("available"):
+            lines.append(
+                "  Broker trace/control: "
+                f"{off_broker.get('mode', 'off')} -> {on_broker.get('mode', 'off')}; "
+                f"p99 visibility proxy ns={_fmt(off_broker.get('p99RequestToFirstVisibleProxyNs'))}"
+                f" -> {_fmt(on_broker.get('p99RequestToFirstVisibleProxyNs'))}; "
+                f"throughput/s={_fmt(off_broker.get('taskCompletionThroughputPerSecond'))}"
+                f" -> {_fmt(on_broker.get('taskCompletionThroughputPerSecond'))}"
+            )
+        off_warmup = off_killer.get("renderWarmup") or {}
+        on_warmup = on_killer.get("renderWarmup") or {}
+        if on_warmup.get("available"):
+            lines.append(
+                "  Warmup profile/warm: "
+                f"{off_warmup.get('mode', 'off')} -> {on_warmup.get('mode', 'off')}; "
+                f"hitches={_fmt(off_warmup.get('firstUseHitchesBefore'))}"
+                f" -> {_fmt(on_warmup.get('firstUseHitchesAfter'))}; "
+                f"items={_fmt(on_warmup.get('warmupItems'))}"
+            )
+        for failure in pair.get("guardrails", []):
+            lines.append(f"  GUARDRAIL FAILED: {failure}")
         terrain = pair.get("terrain")
         if terrain:
             lines.append(

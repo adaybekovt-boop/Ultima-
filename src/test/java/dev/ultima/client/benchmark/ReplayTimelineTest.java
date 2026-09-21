@@ -10,6 +10,7 @@ public final class ReplayTimelineTest {
         tickDurationHasStableBoundary();
         legacyFrameModeRemainsFrameIndexed();
         sampleBufferGrowsWithoutLosingSamples();
+        shaderReloadMetricsAccumulateCompleteBoundary();
     }
 
     private static void tickRouteDoesNotDependOnFramesPerTick() {
@@ -54,6 +55,17 @@ public final class ReplayTimelineTest {
         for (int index = 0; index < copy.length; index++) {
             require(copy[index] == index, "sample order");
         }
+    }
+
+    private static void shaderReloadMetricsAccumulateCompleteBoundary() {
+        ShaderReloadMetrics.Snapshot before = ShaderReloadMetrics.snapshot();
+        ShaderReloadMetrics.record(10L);
+        ShaderReloadMetrics.record(25L);
+        ShaderReloadMetrics.Snapshot after = ShaderReloadMetrics.snapshot();
+        require(after.reloads() == before.reloads() + 2L, "shader reload count");
+        require(after.totalNanos() == before.totalNanos() + 35L, "shader reload total");
+        require(after.maximumNanos() >= 25L, "shader reload maximum");
+        require(after.lastNanos() == 25L, "shader reload last boundary");
     }
 
     private static void require(final boolean condition, final String message) {

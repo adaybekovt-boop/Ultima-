@@ -15,6 +15,8 @@ public final class WarmupCoordinator {
             "ultima.renderWarmupSystem.totalBudgetNanos", 100_000_000L);
     private static final long FRAME_BUDGET_NANOS = positiveLong(
             "ultima.renderWarmupSystem.frameBudgetNanos", 2_000_000L);
+    private static final Mode MODE = Mode.parse(
+            System.getProperty("ultima.renderWarmupSystem.mode", "warm"));
     private static final List<WarmupAdapter> ADAPTERS = List.of(new VanillaRenderTypeWarmupAdapter());
     private static final BudgetedWarmupPlan PLAN =
             new BudgetedWarmupPlan(ADAPTERS, TOTAL_BUDGET_NANOS, System::nanoTime);
@@ -35,7 +37,6 @@ public final class WarmupCoordinator {
             return;
         }
         try {
-            PLAN.request();
             planStarted = false;
             completionPublished = false;
             memoryBefore = 0L;
@@ -56,6 +57,15 @@ public final class WarmupCoordinator {
                     false,
                     LoadedModCache.isLoaded("modernfix") ? "disabled_no_versioned_selective_api" : "mod_absent",
                     "Ultima does not preload all models or erase ModernFix's memory/startup benefit."));
+            if (MODE == Mode.PROFILE) {
+                PASSIVE_STATUSES.add(new AdapterStatus(
+                        "vanilla_static_render_types",
+                        false,
+                        "profile_only",
+                        "First-use instrumentation is active; warmup execution is intentionally disabled."));
+                return;
+            }
+            PLAN.request();
         } catch (Throwable throwable) {
             disable("resource_reload_schedule", throwable);
         }
@@ -98,6 +108,14 @@ public final class WarmupCoordinator {
         return failedOpen;
     }
 
+    public static String mode() {
+        return MODE.key;
+    }
+
+    public static boolean changesRenderInitialization() {
+        return MODE == Mode.WARM && !failedOpen;
+    }
+
     public static String failureReason() {
         return failureReason;
     }
@@ -109,7 +127,7 @@ public final class WarmupCoordinator {
             statuses.add(new AdapterStatus(result.id(), result.active(), result.state(), result.detail()));
         }
         return new Snapshot(
-                plan.state(),
+                MODE == Mode.PROFILE ? "profile_only" : plan.state(),
                 plan.completedAdapters(),
                 plan.totalAdapters(),
                 plan.discoveredItems(),
@@ -154,5 +172,20 @@ public final class WarmupCoordinator {
             long memoryDeltaBytes,
             long gpuResourceDelta,
             List<AdapterStatus> adapters) {
+    }
+
+    private enum Mode {
+        PROFILE("profile"),
+        WARM("warm");
+
+        private final String key;
+
+        Mode(final String key) {
+            this.key = key;
+        }
+
+        static Mode parse(final String value) {
+            return "warm".equalsIgnoreCase(value) ? WARM : PROFILE;
+        }
     }
 }

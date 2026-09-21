@@ -241,6 +241,9 @@ public final class KillerModuleDiagnostics {
                 .append("    \"available\": ").append(applied);
         if (warmup != null && profiler != null) {
             json.append(",\n")
+                    .append("    \"mode\": ").append(quote(WarmupCoordinator.mode())).append(",\n")
+                    .append("    \"changesRenderInitialization\": ")
+                    .append(WarmupCoordinator.changesRenderInitialization()).append(",\n")
                     .append("    \"state\": ").append(quote(warmup.state())).append(",\n")
                     .append("    \"completedAdapters\": ").append(warmup.completedAdapters()).append(",\n")
                     .append("    \"totalAdapters\": ").append(warmup.totalAdapters()).append(",\n")

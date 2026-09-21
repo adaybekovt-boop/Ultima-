@@ -9,6 +9,7 @@
   },
   "client": [
     "client_benchmark.MinecraftMixin",
+    "client_benchmark.ShaderManagerMixin",
     "terrain_metrics.MinecraftMixin",
     "terrain_metrics.LevelRendererMixin",
     "terrain_metrics.ChunkSectionsToRenderMixin",

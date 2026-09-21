@@ -416,6 +416,8 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         appendTimingAndJvmMetrics(json);
         BenchmarkJson.comma(json);
+        appendShaderReloadMetrics(json);
+        BenchmarkJson.comma(json);
         json.append("  \"killerModules\": ").append(KillerModuleDiagnostics.toJson(UltimaConfig.get()).trim());
         BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
@@ -731,6 +733,17 @@ public final class ClientFrameBenchmark {
                 .append("    \"usedMemoryBytesAtStart\": ").append(memoryAtSampleStart).append(",\n")
                 .append("    \"usedMemoryBytesAtEnd\": ").append(usedMemory()).append(",\n")
                 .append("    \"maxMemoryBytes\": ").append(Runtime.getRuntime().maxMemory()).append('\n')
+                .append("  }");
+    }
+
+    private static void appendShaderReloadMetrics(final StringBuilder json) {
+        ShaderReloadMetrics.Snapshot reload = ShaderReloadMetrics.snapshot();
+        json.append("  \"shaderReload\": {\n")
+                .append("    \"boundary\": \"ShaderManager.apply\",\n")
+                .append("    \"reloads\": ").append(reload.reloads()).append(",\n")
+                .append("    \"totalNs\": ").append(reload.totalNanos()).append(",\n")
+                .append("    \"maximumNs\": ").append(reload.maximumNanos()).append(",\n")
+                .append("    \"lastNs\": ").append(reload.lastNanos()).append('\n')
                 .append("  }");
     }
 
