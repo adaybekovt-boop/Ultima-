@@ -143,6 +143,7 @@ public final class ArtifactCacheStore {
                 Path target = pathFor(key);
                 moveAtomically(temporary, target);
                 temporary = null;
+                forceDirectoryBestEffort(this.directory);
                 long size = HEADER_LENGTH + (long)payload.length;
                 synchronized (this.index) {
                     EntryMeta previous = this.index.put(
@@ -362,6 +363,14 @@ public final class ArtifactCacheStore {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException exception) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static void forceDirectoryBestEffort(final Path directory) {
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (IOException | RuntimeException ignored) {
+            // The entry itself was forced and closed. Some platforms do not permit directory fsync.
         }
     }
 

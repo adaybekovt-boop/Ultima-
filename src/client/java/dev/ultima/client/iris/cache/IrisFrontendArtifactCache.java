@@ -28,6 +28,7 @@ public final class IrisFrontendArtifactCache {
             "ultima.irisShaderFrontendArtifactCache.maxEntries", 2_048);
     private static final ArtifactCacheMetrics METRICS = new ArtifactCacheMetrics();
     private static final ThreadLocal<Pending> PENDING = new ThreadLocal<>();
+    private static final ThreadLocal<Long> RELOAD_STARTED = new ThreadLocal<>();
 
     private static volatile ArtifactCacheStore store;
     private static volatile boolean failedOpen;
@@ -70,6 +71,14 @@ public final class IrisFrontendArtifactCache {
 
     /** Called at the normal Iris return point. A cache hit marks the pending call as completed. */
     public static void finish(final @org.jspecify.annotations.Nullable Object transformed) {
+        try {
+            finishInternal(transformed);
+        } catch (Throwable throwable) {
+            disable("finish_failure:" + throwable.getClass().getSimpleName());
+        }
+    }
+
+    private static void finishInternal(final @org.jspecify.annotations.Nullable Object transformed) {
         Pending pending = PENDING.get();
         PENDING.remove();
         if (pending == null || pending.servedHit()) {
@@ -99,6 +108,20 @@ public final class IrisFrontendArtifactCache {
 
     public static void clearThreadState() {
         PENDING.remove();
+    }
+
+    public static void beginReload() {
+        PENDING.remove();
+        RELOAD_STARTED.set(System.nanoTime());
+    }
+
+    public static void endReload() {
+        Long started = RELOAD_STARTED.get();
+        RELOAD_STARTED.remove();
+        PENDING.remove();
+        if (started != null) {
+            METRICS.recordReload(System.nanoTime() - started);
+        }
     }
 
     public static ArtifactCacheMetrics.Snapshot snapshot() {

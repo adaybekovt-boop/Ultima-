@@ -19,6 +19,8 @@ public final class ArtifactCacheMetrics {
     final LongAdder frontendTransformNanos = new LongAdder();
     final LongAdder verifyMatches = new LongAdder();
     final LongAdder verifyMismatches = new LongAdder();
+    final LongAdder reloads = new LongAdder();
+    final LongAdder reloadNanos = new LongAdder();
 
     public void recordUnkeyableRequest() {
         this.requests.increment();
@@ -35,6 +37,11 @@ public final class ArtifactCacheMetrics {
 
     public void recordVerifyMismatch() {
         this.verifyMismatches.increment();
+    }
+
+    public void recordReload(final long nanos) {
+        this.reloads.increment();
+        this.reloadNanos.add(Math.max(0L, nanos));
     }
 
     public Snapshot snapshot(final long cacheSizeBytes, final int entries) {
@@ -54,6 +61,8 @@ public final class ArtifactCacheMetrics {
                 this.frontendTransformNanos.sum(),
                 this.verifyMatches.sum(),
                 this.verifyMismatches.sum(),
+                this.reloads.sum(),
+                this.reloadNanos.sum(),
                 cacheSizeBytes,
                 entries);
     }
@@ -74,6 +83,8 @@ public final class ArtifactCacheMetrics {
             long frontendTransformNanos,
             long verifyMatches,
             long verifyMismatches,
+            long reloads,
+            long reloadNanos,
             long cacheSizeBytes,
             int entries) {
     }
