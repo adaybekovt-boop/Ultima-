@@ -1,6 +1,5 @@
 package dev.ultima.client.warmup;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import dev.ultima.config.LoadedModCache;
 import dev.ultima.warmup.BudgetedWarmupPlan;
 import java.util.ArrayList;
@@ -8,24 +7,20 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Budgeted render-thread warmup plan. Unsupported mod adapters are explicit diagnostics. */
+/**
+ * Profiler-only coordinator. No safe warmup adapter is active: reading already-initialized
+ * {@code RenderTypes} getters does not prepare pipelines. Iris, GeckoLib, and ModernFix stay off.
+ */
 public final class WarmupCoordinator {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-render-warmup");
     private static final long TOTAL_BUDGET_NANOS = positiveLong(
             "ultima.renderWarmupSystem.totalBudgetNanos", 100_000_000L);
-    private static final long FRAME_BUDGET_NANOS = positiveLong(
-            "ultima.renderWarmupSystem.frameBudgetNanos", 2_000_000L);
-    private static final Mode MODE = Mode.parse(
-            System.getProperty("ultima.renderWarmupSystem.mode", "warm"));
-    private static final List<WarmupAdapter> ADAPTERS = List.of(new VanillaRenderTypeWarmupAdapter());
+    private static final String REQUESTED_MODE = System.getProperty("ultima.renderWarmupSystem.mode", "profile");
+    private static final List<WarmupAdapter> ADAPTERS = List.of();
     private static final BudgetedWarmupPlan PLAN =
             new BudgetedWarmupPlan(ADAPTERS, TOTAL_BUDGET_NANOS, System::nanoTime);
     private static final List<AdapterStatus> PASSIVE_STATUSES = new ArrayList<>();
 
-    private static boolean planStarted;
-    private static boolean completionPublished;
-    private static long memoryBefore;
-    private static long memoryAfter;
     private static volatile boolean failedOpen;
     private static volatile String failureReason = "";
 
@@ -37,10 +32,6 @@ public final class WarmupCoordinator {
             return;
         }
         try {
-            planStarted = false;
-            completionPublished = false;
-            memoryBefore = 0L;
-            memoryAfter = 0L;
             PASSIVE_STATUSES.clear();
             PASSIVE_STATUSES.add(new AdapterStatus(
                     "iris_programs",
@@ -57,46 +48,25 @@ public final class WarmupCoordinator {
                     false,
                     LoadedModCache.isLoaded("modernfix") ? "disabled_no_versioned_selective_api" : "mod_absent",
                     "Ultima does not preload all models or erase ModernFix's memory/startup benefit."));
-            if (MODE == Mode.PROFILE) {
-                PASSIVE_STATUSES.add(new AdapterStatus(
-                        "vanilla_static_render_types",
-                        false,
-                        "profile_only",
-                        "First-use instrumentation is active; warmup execution is intentionally disabled."));
-                return;
-            }
-            PLAN.request();
+            PASSIVE_STATUSES.add(new AdapterStatus(
+                    "vanilla_static_render_types",
+                    false,
+                    "removed_noop",
+                    "Static RenderType getter reads do not perform a useful first-use prepare."));
+            PASSIVE_STATUSES.add(new AdapterStatus(
+                    "active_warmup",
+                    false,
+                    "profiler_only",
+                    "No safe warmup adapters are active."));
         } catch (Throwable throwable) {
             disable("resource_reload_schedule", throwable);
         }
     }
 
-    /** Runs on the render thread at frame start. */
+    /** Render-thread hook. There is no warmup work to pump. */
     public static void pump() {
         if (failedOpen || !PLAN.isPendingWork()) {
             return;
-        }
-        try {
-            if (!RenderSystem.isOnRenderThread()) {
-                return;
-            }
-            if (!planStarted) {
-                planStarted = true;
-                memoryBefore = usedMemory();
-            }
-            FirstUseProfiler.beginWarmup();
-            try {
-                PLAN.pump(FRAME_BUDGET_NANOS);
-            } finally {
-                FirstUseProfiler.endWarmup();
-            }
-            if (PLAN.isComplete() && !completionPublished) {
-                completionPublished = true;
-                memoryAfter = usedMemory();
-                FirstUseProfiler.markWarmupCompleted();
-            }
-        } catch (Throwable throwable) {
-            disable("render_thread_pump", throwable);
         }
     }
 
@@ -109,11 +79,19 @@ public final class WarmupCoordinator {
     }
 
     public static String mode() {
-        return MODE.key;
+        return "profiler_only";
+    }
+
+    public static String requestedMode() {
+        return REQUESTED_MODE == null ? "profile" : REQUESTED_MODE;
+    }
+
+    public static String failClosedReason() {
+        return "no_safe_warmup_adapters";
     }
 
     public static boolean changesRenderInitialization() {
-        return MODE == Mode.WARM && !failedOpen;
+        return false;
     }
 
     public static String failureReason() {
@@ -127,21 +105,16 @@ public final class WarmupCoordinator {
             statuses.add(new AdapterStatus(result.id(), result.active(), result.state(), result.detail()));
         }
         return new Snapshot(
-                MODE == Mode.PROFILE ? "profile_only" : plan.state(),
+                "profiler_only",
                 plan.completedAdapters(),
                 plan.totalAdapters(),
                 plan.discoveredItems(),
                 plan.warmedItems(),
                 plan.failures(),
                 plan.warmupNanos(),
-                memoryAfter == 0L ? 0L : memoryAfter - memoryBefore,
+                0L,
                 -1L,
                 List.copyOf(statuses));
-    }
-
-    private static long usedMemory() {
-        Runtime runtime = Runtime.getRuntime();
-        return runtime.totalMemory() - runtime.freeMemory();
     }
 
     private static long positiveLong(final String key, final long fallback) {
@@ -174,18 +147,4 @@ public final class WarmupCoordinator {
             List<AdapterStatus> adapters) {
     }
 
-    private enum Mode {
-        PROFILE("profile"),
-        WARM("warm");
-
-        private final String key;
-
-        Mode(final String key) {
-            this.key = key;
-        }
-
-        static Mode parse(final String value) {
-            return "warm".equalsIgnoreCase(value) ? WARM : PROFILE;
-        }
-    }
 }
