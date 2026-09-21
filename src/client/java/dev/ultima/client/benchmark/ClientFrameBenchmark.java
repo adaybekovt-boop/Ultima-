@@ -3,6 +3,8 @@ package dev.ultima.client.benchmark;
 import com.mojang.blaze3d.systems.DeviceInfo;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.ultima.UltimaBuildInfo;
+import dev.ultima.client.diagnostics.KillerModuleDiagnostics;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedVisibilityDebug;
 import dev.ultima.client.renderer.retained.RetainedCompactionDebug;
@@ -11,6 +13,9 @@ import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import dev.ultima.meshing.MesherMetrics;
 import java.io.IOException;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,6 +55,12 @@ public final class ClientFrameBenchmark {
             "ultima.clientBenchmark.warmupFrames", defaultWarmupFrames(SCENE));
     private static final int SAMPLE_FRAMES = positiveIntegerProperty(
             "ultima.clientBenchmark.sampleFrames", defaultSampleFrames(SCENE));
+    private static final ReplayTimeline.Mode REPLAY_MODE = ReplayTimeline.Mode.parse(
+            System.getProperty("ultima.clientBenchmark.replayMode", "tick"));
+    private static final int WARMUP_TICKS = nonNegativeIntegerProperty(
+            "ultima.clientBenchmark.warmupTicks", defaultWarmupTicks(SCENE));
+    private static final int SAMPLE_TICKS = positiveIntegerProperty(
+            "ultima.clientBenchmark.sampleTicks", defaultSampleTicks(SCENE));
     private static final Path OUTPUT = Path.of(
             System.getProperty("ultima.clientBenchmark.output", "run/ultima-client-benchmark.json"));
     private static final String SCREENSHOT_PREFIX = System.getProperty(
@@ -68,14 +79,31 @@ public final class ClientFrameBenchmark {
     private static final double CAMERA_Z_PER_FRAME = doubleProperty(
             "ultima.clientBenchmark.cameraZPerFrame",
             "chunk_flight".equals(CAMERA_MODE) ? 0.8 : 0.0);
+    private static final double CAMERA_YAW_PER_TICK = doubleProperty(
+            "ultima.clientBenchmark.cameraYawDegreesPerTick",
+            "yaw_sweep".equals(CAMERA_MODE) || "chunk_flight".equals(CAMERA_MODE) ? 1.5 : 0.0);
+    private static final double CAMERA_Z_PER_TICK = doubleProperty(
+            "ultima.clientBenchmark.cameraZPerTick",
+            "chunk_flight".equals(CAMERA_MODE) ? 4.8 : 0.0);
     private static final boolean HOLD_POSITION = booleanProperty(
             "ultima.clientBenchmark.holdPosition",
             "yaw_sweep".equals(CAMERA_MODE) || hasFixedPosition());
-    private static final long[] FRAME_TIMES = new long[SAMPLE_FRAMES];
+    private static final ReplayTimeline TIMELINE = new ReplayTimeline(
+            REPLAY_MODE,
+            REPLAY_MODE == ReplayTimeline.Mode.TICK ? WARMUP_TICKS : WARMUP_FRAMES,
+            REPLAY_MODE == ReplayTimeline.Mode.TICK ? SAMPLE_TICKS : SAMPLE_FRAMES);
+    private static final LongSampleBuffer FRAME_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer THREAD_CPU_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer GAME_RENDER_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final LongSampleBuffer GPU_TIMES = new LongSampleBuffer(SAMPLE_FRAMES);
+    private static final ThreadMXBean THREAD_MX = ManagementFactory.getThreadMXBean();
+    private static final List<GarbageCollectorMXBean> GC_BEANS = ManagementFactory.getGarbageCollectorMXBeans();
 
-    private static int readyFrames;
-    private static int samples;
     private static long frameStart;
+    private static long threadCpuStart = -1L;
+    private static long currentRouteUnit;
+    private static boolean currentFrameSampling;
+    private static boolean samplingStarted;
     private static boolean complete;
     private static boolean cameraInitialized;
     private static double startX;
@@ -136,6 +164,8 @@ public final class ClientFrameBenchmark {
     private static long terrainVisibilityTogglesTotal;
     private static long terrainFailOpenFrames;
     private static long terrainPairingImbalanceFrames;
+    private static GcSnapshot gcAtSampleStart = new GcSnapshot(0L, 0L);
+    private static long memoryAtSampleStart;
 
     private ClientFrameBenchmark() {
     }
@@ -143,34 +173,57 @@ public final class ClientFrameBenchmark {
     public static void beginFrame(final boolean worldReady) {
         if (!ENABLED || complete || !worldReady) {
             frameStart = 0L;
+            threadCpuStart = -1L;
+            currentFrameSampling = false;
             return;
         }
-        applyCamera();
+
+        Minecraft minecraft = Minecraft.getInstance();
+        long gameTick = minecraft.level == null ? 0L : minecraft.level.getGameTime();
+        ReplayTimeline.State state = TIMELINE.advance(gameTick);
+        currentRouteUnit = state.routeUnit();
+        if (state.sampling() && !samplingStarted) {
+            samplingStarted = true;
+            resetSampleCounters();
+        }
+        applyCamera(currentRouteUnit);
+
+        if (state.complete()) {
+            finishBenchmark();
+            return;
+        }
+
+        currentFrameSampling = state.sampling();
+        if (!currentFrameSampling) {
+            frameStart = 0L;
+            threadCpuStart = -1L;
+            return;
+        }
         frameStart = System.nanoTime();
+        threadCpuStart = currentThreadCpuTime();
     }
 
-    public static void endFrame() {
+    public static void endFrame(final long gameRenderNanos, final long gpuNanos) {
         long start = frameStart;
+        long cpuStart = threadCpuStart;
         frameStart = 0L;
-        if (start == 0L || complete) {
+        threadCpuStart = -1L;
+        if (start == 0L || complete || !currentFrameSampling) {
             return;
         }
 
         long elapsed = System.nanoTime() - start;
-        if (readyFrames++ < WARMUP_FRAMES) {
-            if (readyFrames == WARMUP_FRAMES) {
-                ClientOptimizationCounters.reset();
-                TerrainFrameMetrics.resetLifetime();
-                RetainedVisibilityDebug.reset();
-                RetainedCompactionDebug.reset();
-                if ("mesher_rebuild_storm".equals(SCENE) || "mesher_chunk_flight".equals(SCENE)) {
-                    MesherMetrics.reset();
-                }
-            }
-            return;
+        FRAME_TIMES.add(elapsed);
+        long cpuEnd = currentThreadCpuTime();
+        if (cpuStart >= 0L && cpuEnd >= cpuStart) {
+            THREAD_CPU_TIMES.add(cpuEnd - cpuStart);
         }
-
-        FRAME_TIMES[samples++] = elapsed;
+        if (gameRenderNanos > 0L) {
+            GAME_RENDER_TIMES.add(gameRenderNanos);
+        }
+        if (gpuNanos > 0L) {
+            GPU_TIMES.add(gpuNanos);
+        }
         TerrainFrameMetrics.markSampledFrame();
         TerrainFrameMetrics.Snapshot terrain = TerrainFrameMetrics.snapshot(elapsed, 0L);
         terrainPrepareNsTotal += terrain.prepareNsAccum();
@@ -226,25 +279,43 @@ public final class ClientFrameBenchmark {
         if (!terrain.timingPairingBalanced()) {
             terrainPairingImbalanceFrames++;
         }
-        if (samples == 1) {
+        if (FRAME_TIMES.size() == 1) {
             sampleStartPose = capturePose();
             sampleStartScreenshot = captureScreenshot("sample_start", false);
         }
-        if (samples == FRAME_TIMES.length) {
-            complete = true;
-            sampleEndPose = capturePose();
-            sampleEndScreenshot = captureScreenshot("sample_end", true);
-            boolean written = writeResults();
-            if (written && EXIT_AFTER_WRITE) {
-                LOGGER.info("Client benchmark JSON written; requesting Minecraft shutdown.");
-                Minecraft.getInstance().stop();
-            } else if (!written) {
-                LOGGER.error("Client benchmark JSON was not written; leaving the client running.");
-            }
+    }
+
+    private static void resetSampleCounters() {
+        ClientOptimizationCounters.reset();
+        TerrainFrameMetrics.resetLifetime();
+        RetainedVisibilityDebug.reset();
+        RetainedCompactionDebug.reset();
+        gcAtSampleStart = gcSnapshot();
+        memoryAtSampleStart = usedMemory();
+        if ("mesher_rebuild_storm".equals(SCENE) || "mesher_chunk_flight".equals(SCENE)) {
+            MesherMetrics.reset();
         }
     }
 
-    private static void applyCamera() {
+    private static void finishBenchmark() {
+        if (complete || FRAME_TIMES.size() == 0) {
+            return;
+        }
+        complete = true;
+        currentFrameSampling = false;
+        frameStart = 0L;
+        sampleEndPose = capturePose();
+        sampleEndScreenshot = captureScreenshot("sample_end", true);
+        boolean written = writeResults();
+        if (written && EXIT_AFTER_WRITE) {
+            LOGGER.info("Client benchmark JSON written; requesting Minecraft shutdown.");
+            Minecraft.getInstance().stop();
+        } else if (!written) {
+            LOGGER.error("Client benchmark JSON was not written; leaving the client running.");
+        }
+    }
+
+    private static void applyCamera(final long routeUnit) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         if (player == null) {
@@ -266,10 +337,12 @@ public final class ClientFrameBenchmark {
             return;
         }
 
-        float yaw = startYaw + (float)(CAMERA_YAW_PER_FRAME * readyFrames);
+        double yawRate = REPLAY_MODE == ReplayTimeline.Mode.TICK ? CAMERA_YAW_PER_TICK : CAMERA_YAW_PER_FRAME;
+        double zRate = REPLAY_MODE == ReplayTimeline.Mode.TICK ? CAMERA_Z_PER_TICK : CAMERA_Z_PER_FRAME;
+        float yaw = startYaw + (float)(yawRate * routeUnit);
         float pitch = startPitch;
         if (chunkFlight) {
-            player.snapTo(startX, startY, startZ + CAMERA_Z_PER_FRAME * readyFrames, yaw, pitch);
+            player.snapTo(startX, startY, startZ + zRate * routeUnit, yaw, pitch);
             player.setDeltaMovement(Vec3.ZERO);
         } else if (HOLD_POSITION || hasFixedPosition()) {
             player.snapTo(startX, startY, startZ, yaw, pitch);
@@ -282,27 +355,32 @@ public final class ClientFrameBenchmark {
     }
 
     private static boolean writeResults() {
-        long[] sorted = FRAME_TIMES.clone();
+        long[] frameTimes = FRAME_TIMES.toArray();
+        long[] sorted = frameTimes.clone();
         Arrays.sort(sorted);
         long total = 0L;
-        for (long frameTime : FRAME_TIMES) {
+        for (long frameTime : frameTimes) {
             total += frameTime;
         }
 
-        double averageNs = (double)total / SAMPLE_FRAMES;
+        int sampleCount = frameTimes.length;
+        double averageNs = (double)total / sampleCount;
         double averageFps = 1_000_000_000.0 / averageNs;
         double medianNs = percentile(sorted, 0.5);
         double p95Ns = percentile(sorted, 0.95);
         double p99Ns = percentile(sorted, 0.99);
+        double p999Ns = percentile(sorted, 0.999);
         double onePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.01);
         double pointOnePercentLowFps = 1_000_000_000.0 / slowestAverage(sorted, 0.001);
         StringBuilder json = new StringBuilder(32_768);
         json.append("{\n");
-        BenchmarkJson.field(json, "schemaVersion", 3);
+        BenchmarkJson.field(json, "schemaVersion", 5);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "warmupFrames", WARMUP_FRAMES);
         BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "sampleFrames", SAMPLE_FRAMES);
+        BenchmarkJson.field(json, "sampleFrames", sampleCount);
+        BenchmarkJson.comma(json);
+        BenchmarkJson.field(json, "requestedSampleFrames", SAMPLE_FRAMES);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "averageFps", averageFps);
         BenchmarkJson.comma(json);
@@ -314,11 +392,15 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "averageFrameTimeMs", averageNs / 1_000_000.0);
         BenchmarkJson.comma(json);
+        BenchmarkJson.field(json, "medianFrameTimeMs", medianNs / 1_000_000.0);
+        BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "p95FrameTimeMs", p95Ns / 1_000_000.0);
         BenchmarkJson.comma(json);
         BenchmarkJson.field(json, "p99FrameTimeMs", p99Ns / 1_000_000.0);
         BenchmarkJson.comma(json);
-        BenchmarkJson.field(json, "cpuFrameTimeAvailable", false);
+        BenchmarkJson.field(json, "p999FrameTimeMs", p999Ns / 1_000_000.0);
+        BenchmarkJson.comma(json);
+        BenchmarkJson.field(json, "cpuFrameTimeAvailable", THREAD_CPU_TIMES.size() > 0);
         BenchmarkJson.comma(json);
         appendProtocol(json);
         BenchmarkJson.comma(json);
@@ -332,12 +414,18 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         MesherMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
+        appendTimingAndJvmMetrics(json);
+        BenchmarkJson.comma(json);
+        appendShaderReloadMetrics(json);
+        BenchmarkJson.comma(json);
+        json.append("  \"killerModules\": ").append(KillerModuleDiagnostics.toJson(UltimaConfig.get()).trim());
+        BenchmarkJson.comma(json);
         json.append("  \"frameTimesNs\": [");
-        for (int i = 0; i < FRAME_TIMES.length; i++) {
+        for (int i = 0; i < frameTimes.length; i++) {
             if (i != 0) {
                 json.append(',');
             }
-            json.append(FRAME_TIMES[i]);
+            json.append(frameTimes[i]);
         }
         json.append("]\n}\n");
 
@@ -349,7 +437,7 @@ public final class ClientFrameBenchmark {
             Files.writeString(OUTPUT, json, StandardCharsets.UTF_8);
             LOGGER.info(
                     "Client benchmark complete: {} frames, average {} FPS, 1% low {} FPS, 0.1% low {} FPS, output {}",
-                    SAMPLE_FRAMES,
+                    sampleCount,
                     averageFps,
                     onePercentLowFps,
                     pointOnePercentLowFps,
@@ -367,6 +455,10 @@ public final class ClientFrameBenchmark {
                 .append("    \"primaryComparison\": \"disabled_vs_default\",\n")
                 .append("    \"experimentalEnabledIsNotPrimary\": true,\n")
                 .append("    \"minimumBalancedPairs\": 6,\n")
+                .append("    \"replayMode\": ").append(BenchmarkJson.quote(REPLAY_MODE.key())).append(",\n")
+                .append("    \"fpsIndependentRoute\": ").append(REPLAY_MODE == ReplayTimeline.Mode.TICK).append(",\n")
+                .append("    \"warmupTicks\": ").append(WARMUP_TICKS).append(",\n")
+                .append("    \"sampleTicks\": ").append(SAMPLE_TICKS).append(",\n")
                 .append("    \"requestedRole\": ").append(BenchmarkJson.quote(abRole)).append(",\n")
                 .append("    \"scene\": ").append(BenchmarkJson.quote(System.getProperty("ultima.clientBenchmark.scene", "unspecified"))).append(",\n")
                 .append("    \"pairLabel\": ").append(BenchmarkJson.quote(System.getProperty("ultima.clientBenchmark.pairLabel", ""))).append("\n")
@@ -395,6 +487,7 @@ public final class ClientFrameBenchmark {
                 .append("    \"fabricLoader\": ").append(BenchmarkJson.quote(modVersion("fabricloader"))).append(",\n")
                 .append("    \"fabricApi\": ").append(BenchmarkJson.quote(modVersion("fabric-api"))).append(",\n")
                 .append("    \"ultima\": ").append(BenchmarkJson.quote(modVersion("ultima"))).append(",\n")
+                .append("    \"ultimaGitSha\": ").append(BenchmarkJson.quote(UltimaBuildInfo.gitSha())).append(",\n")
                 .append("    \"java\": ").append(BenchmarkJson.quote(System.getProperty("java.runtime.version", ""))).append(",\n")
                 .append("    \"javaVm\": ").append(BenchmarkJson.quote(System.getProperty("java.vm.name", ""))).append(",\n")
                 .append("    \"os\": ").append(BenchmarkJson.quote(System.getProperty("os.name", "") + " " + System.getProperty("os.arch", ""))).append(",\n")
@@ -427,6 +520,8 @@ public final class ClientFrameBenchmark {
                 .append("    \"worldIdRequested\": ").append(BenchmarkJson.quote(worldId)).append(",\n")
                 .append("    \"levelName\": ").append(BenchmarkJson.quote(levelName)).append(",\n")
                 .append("    \"dimension\": ").append(BenchmarkJson.quote(dimension)).append(",\n")
+                .append("    \"integratedServerMspt\": ")
+                .append(integrated == null ? "null" : integrated.getAverageTickTimeNanos() / 1_000_000.0).append(",\n")
                 .append("    \"sodiumLoaded\": ").append(sodiumLoaded).append(",\n")
                 .append("    \"irisLoaded\": ").append(irisLoaded).append(",\n")
                 .append("    \"sodiumIrisRuntimeGateTested\": false,\n")
@@ -437,7 +532,11 @@ public final class ClientFrameBenchmark {
         appendQuotedArrayInline(json, resourcePacks);
         json.append(",\n    \"camera\": {\n")
                 .append("      \"mode\": ").append(BenchmarkJson.quote(CAMERA_MODE)).append(",\n")
+                .append("      \"replayClock\": ").append(BenchmarkJson.quote(REPLAY_MODE.key())).append(",\n")
+                .append("      \"routeUnitAtEnd\": ").append(currentRouteUnit).append(",\n")
                 .append("      \"holdPosition\": ").append(HOLD_POSITION).append(",\n")
+                .append("      \"yawDegreesPerTick\": ").append(CAMERA_YAW_PER_TICK).append(",\n")
+                .append("      \"zPerTick\": ").append(CAMERA_Z_PER_TICK).append(",\n")
                 .append("      \"yawDegreesPerFrame\": ").append(CAMERA_YAW_PER_FRAME).append(",\n")
                 .append("      \"zPerFrame\": ").append(CAMERA_Z_PER_FRAME).append(",\n")
                 .append("      \"requested\": ");
@@ -488,7 +587,7 @@ public final class ClientFrameBenchmark {
     }
 
     private static void appendTerrainMetrics(final StringBuilder json) {
-        int n = Math.max(1, SAMPLE_FRAMES);
+        int n = Math.max(1, FRAME_TIMES.size());
         TerrainFrameMetrics.Snapshot last = TerrainFrameMetrics.snapshot(0L, 0L);
         json.append("  \"terrainMetrics\": {\n")
                 .append("    \"timingModel\": \"ultima_stage1_symmetric_v1\",\n")
@@ -512,7 +611,8 @@ public final class ClientFrameBenchmark {
                 .append("    \"retainedActive\": ").append(terrainRetainedActive).append(",\n")
                 .append("    \"commandBatchesReused\": ").append(last.commandBatchesReused()).append(",\n")
                 .append("    \"submitMode\": ").append(BenchmarkJson.quote(terrainSubmitMode)).append(",\n")
-                .append("    \"timingPairingBalancedFrames\": ").append(SAMPLE_FRAMES - terrainPairingImbalanceFrames).append(",\n")
+                .append("    \"timingPairingBalancedFrames\": ")
+                .append(Math.max(0L, FRAME_TIMES.size() - terrainPairingImbalanceFrames)).append(",\n")
                 .append("    \"failOpenFrames\": ").append(terrainFailOpenFrames).append(",\n")
                 .append("    \"syncCountersScope\": \"ultima_issued_only\",\n")
                 .append("    \"driverImplicitSyncObserved\": false,\n")
@@ -567,7 +667,7 @@ public final class ClientFrameBenchmark {
     }
 
     private static double terrainSectionTableSlotsWrittenAvg() {
-        return (double)terrainSectionTableSlotsWrittenTotal / Math.max(1, SAMPLE_FRAMES);
+        return (double)terrainSectionTableSlotsWrittenTotal / Math.max(1, FRAME_TIMES.size());
     }
 
     private static double liveToTotalAvg() {
@@ -614,6 +714,92 @@ public final class ClientFrameBenchmark {
                 .append("    \"evaluatedThisFrame\": ").append(frame.evaluatedThisFrame).append(",\n")
                 .append("    \"failedOpen\": ").append(pipeline.isFailedOpen()).append("\n")
                 .append("  }");
+    }
+
+    private static void appendTimingAndJvmMetrics(final StringBuilder json) {
+        GcSnapshot gcEnd = gcSnapshot();
+        json.append("  \"frameTiming\": {\n");
+        appendDistribution(json, "threadCpuFrameNs", THREAD_CPU_TIMES);
+        json.append(",\n");
+        appendDistribution(json, "minecraftRenderFrameNs", GAME_RENDER_TIMES);
+        json.append(",\n");
+        appendDistribution(json, "gpuFrameNs", GPU_TIMES);
+        json.append("\n  },\n")
+                .append("  \"jvmGc\": {\n")
+                .append("    \"collectorCountDelta\": ")
+                .append(Math.max(0L, gcEnd.collections() - gcAtSampleStart.collections())).append(",\n")
+                .append("    \"collectorTimeMsDelta\": ")
+                .append(Math.max(0L, gcEnd.timeMillis() - gcAtSampleStart.timeMillis())).append(",\n")
+                .append("    \"usedMemoryBytesAtStart\": ").append(memoryAtSampleStart).append(",\n")
+                .append("    \"usedMemoryBytesAtEnd\": ").append(usedMemory()).append(",\n")
+                .append("    \"maxMemoryBytes\": ").append(Runtime.getRuntime().maxMemory()).append('\n')
+                .append("  }");
+    }
+
+    private static void appendShaderReloadMetrics(final StringBuilder json) {
+        ShaderReloadMetrics.Snapshot reload = ShaderReloadMetrics.snapshot();
+        json.append("  \"shaderReload\": {\n")
+                .append("    \"boundary\": \"ShaderManager.apply\",\n")
+                .append("    \"reloads\": ").append(reload.reloads()).append(",\n")
+                .append("    \"totalNs\": ").append(reload.totalNanos()).append(",\n")
+                .append("    \"maximumNs\": ").append(reload.maximumNanos()).append(",\n")
+                .append("    \"lastNs\": ").append(reload.lastNanos()).append('\n')
+                .append("  }");
+    }
+
+    private static void appendDistribution(
+            final StringBuilder json, final String name, final LongSampleBuffer samples) {
+        long[] sorted = samples.toArray();
+        Arrays.sort(sorted);
+        long total = 0L;
+        for (long sample : sorted) {
+            total += sample;
+        }
+        json.append("    ").append(BenchmarkJson.quote(name)).append(": {\n")
+                .append("      \"available\": ").append(sorted.length > 0).append(",\n")
+                .append("      \"samples\": ").append(sorted.length).append(",\n")
+                .append("      \"average\": ")
+                .append(sorted.length == 0 ? 0.0 : (double)total / sorted.length).append(",\n")
+                .append("      \"median\": ").append(percentileOrZero(sorted, 0.5)).append(",\n")
+                .append("      \"p95\": ").append(percentileOrZero(sorted, 0.95)).append(",\n")
+                .append("      \"p99\": ").append(percentileOrZero(sorted, 0.99)).append(",\n")
+                .append("      \"p999\": ").append(percentileOrZero(sorted, 0.999)).append('\n')
+                .append("    }");
+    }
+
+    private static long currentThreadCpuTime() {
+        try {
+            if (!THREAD_MX.isCurrentThreadCpuTimeSupported()) {
+                return -1L;
+            }
+            if (!THREAD_MX.isThreadCpuTimeEnabled()) {
+                THREAD_MX.setThreadCpuTimeEnabled(true);
+            }
+            return THREAD_MX.getCurrentThreadCpuTime();
+        } catch (SecurityException | UnsupportedOperationException ignored) {
+            return -1L;
+        }
+    }
+
+    private static GcSnapshot gcSnapshot() {
+        long collections = 0L;
+        long timeMillis = 0L;
+        for (GarbageCollectorMXBean bean : GC_BEANS) {
+            long count = bean.getCollectionCount();
+            long time = bean.getCollectionTime();
+            if (count > 0L) {
+                collections += count;
+            }
+            if (time > 0L) {
+                timeMillis += time;
+            }
+        }
+        return new GcSnapshot(collections, timeMillis);
+    }
+
+    private static long usedMemory() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
     }
 
     private static void appendQuotedArrayInline(final StringBuilder json, final Iterable<String> values) {
@@ -714,6 +900,10 @@ public final class ClientFrameBenchmark {
         return sorted[index];
     }
 
+    private static long percentileOrZero(final long[] sorted, final double percentile) {
+        return sorted.length == 0 ? 0L : (long)percentile(sorted, percentile);
+    }
+
     private static double slowestAverage(final long[] sorted, final double fraction) {
         int count = Math.max(1, (int)Math.ceil(sorted.length * fraction));
         long total = 0L;
@@ -729,6 +919,18 @@ public final class ClientFrameBenchmark {
 
     private static int defaultSampleFrames(final String scene) {
         return sampleFramesForScene(scene);
+    }
+
+    private static int defaultWarmupTicks(final String scene) {
+        return switch (scene) {
+            case "mesher_cold_load" -> 20;
+            case "mesher_rebuild_storm" -> 100;
+            default -> 200;
+        };
+    }
+
+    private static int defaultSampleTicks(final String scene) {
+        return "mesher_cold_load".equals(scene) ? 400 : 1_200;
     }
 
     /**
@@ -763,6 +965,11 @@ public final class ClientFrameBenchmark {
     private static int positiveIntegerProperty(final String key, final int defaultValue) {
         int value = Integer.getInteger(key, defaultValue);
         return value > 0 ? value : defaultValue;
+    }
+
+    private static int nonNegativeIntegerProperty(final String key, final int defaultValue) {
+        int value = Integer.getInteger(key, defaultValue);
+        return value >= 0 ? value : defaultValue;
     }
 
     private static boolean booleanProperty(final String key, final boolean defaultValue) {
@@ -806,5 +1013,8 @@ public final class ClientFrameBenchmark {
         public String toString() {
             return String.format(Locale.ROOT, "%.4f,%.4f,%.4f yaw=%.3f pitch=%.3f", x, y, z, yaw, pitch);
         }
+    }
+
+    private record GcSnapshot(long collections, long timeMillis) {
     }
 }

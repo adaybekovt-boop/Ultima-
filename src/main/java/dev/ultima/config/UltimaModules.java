@@ -198,6 +198,21 @@ public final class UltimaModules {
                             + "Iris (with or without Sodium) is disabled with a specific capability reason: no "
                             + "official post-final hook and no external control of Iris internal resolution.",
                     FSR_UNCONDITIONAL_INCOMPATIBLE),
+            Module.client("iris_shader_frontend_artifact_cache", false,
+                    "Persistent L2 cache for deterministic Iris CPU shader-transform artifacts. Keeps Iris' normal "
+                            + "driver compile/link path and fails closed on an unknown Iris build. Experimental and "
+                            + "disabled by default until warm-cache A/B validation is complete.",
+                    List.of()),
+            Module.client("cross_pipeline_admission_broker", false,
+                    "Trace cross-pipeline pressure and, only in explicit control mode, defer admission of new low-"
+                            + "priority Sodium section work before dequeue. Urgent work bypasses the broker. Exact "
+                            + "Sodium adapter required; experimental and disabled by default.",
+                    List.of()),
+            Module.client("render_warmup_system", false,
+                    "Profile measurable render-path first touches and run only state-safe, budgeted warmup adapters. "
+                            + "No fake entities/worlds and no automatic shader-pack or full-model preload. "
+                            + "Experimental and disabled by default.",
+                    List.of()),
             Module.client("settings_ui", true,
                     "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
                             + "does not change networking or world simulation. Disable to hide the button; "
