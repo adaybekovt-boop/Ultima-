@@ -10,6 +10,7 @@ import dev.ultima.config.KillerModuleCompatibility;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -285,14 +286,17 @@ public final class IrisFrontendArtifactCache {
         }
         Map<String, String> stages = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (!(entry.getKey() instanceof Enum<?> stage) || !(entry.getValue() instanceof String source)) {
+            if (!(entry.getKey() instanceof Enum<?> stage)
+                    || (entry.getValue() != null && !(entry.getValue() instanceof String))) {
                 return null;
             }
-            if (stages.put(stage.name(), source) != null) {
+            String source = (String)entry.getValue();
+            if (stages.containsKey(stage.name())) {
                 return null;
             }
+            stages.put(stage.name(), source);
         }
-        return Map.copyOf(stages);
+        return Collections.unmodifiableMap(stages);
     }
 
     private static boolean allSourcesNull(final List<IrisTransformKeyEncoder.StageSource> sources) {

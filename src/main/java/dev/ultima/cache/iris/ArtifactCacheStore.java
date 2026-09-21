@@ -36,7 +36,7 @@ import java.util.Optional;
  */
 public final class ArtifactCacheStore {
     static final int MAGIC = 0x55494641; // UIFA
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private static final int CHECKSUM_LENGTH = 32;
     private static final int HEADER_LENGTH = 4 + 4 + ArtifactKey.LENGTH + 8 + 8 + 4 + CHECKSUM_LENGTH;
     private static final int MAX_STAGE_COUNT = 8;
@@ -386,7 +386,7 @@ public final class ArtifactCacheStore {
             output.writeInt(ordered.size());
             for (Map.Entry<String, String> entry : ordered) {
                 writeString(output, entry.getKey(), MAX_STAGE_NAME_BYTES);
-                writeString(output, entry.getValue(), MAX_PAYLOAD_BYTES);
+                writeNullableString(output, entry.getValue(), MAX_PAYLOAD_BYTES);
             }
         }
         return bytes.toByteArray();
@@ -402,10 +402,11 @@ public final class ArtifactCacheStore {
             Map<String, String> stages = new LinkedHashMap<>();
             for (int index = 0; index < count; index++) {
                 String stage = readString(input, MAX_STAGE_NAME_BYTES);
-                String source = readString(input, MAX_PAYLOAD_BYTES);
-                if (stages.put(stage, source) != null) {
+                String source = readNullableString(input, MAX_PAYLOAD_BYTES);
+                if (stages.containsKey(stage)) {
                     throw new CorruptEntryException();
                 }
+                stages.put(stage, source);
             }
             if (input.available() != 0) {
                 throw new CorruptEntryException();
@@ -429,6 +430,14 @@ public final class ArtifactCacheStore {
         output.write(bytes);
     }
 
+    private static void writeNullableString(
+            final DataOutputStream output, final String value, final int maxBytes) throws IOException {
+        output.writeBoolean(value != null);
+        if (value != null) {
+            writeString(output, value, maxBytes);
+        }
+    }
+
     private static String readString(final DataInputStream input, final int maxBytes)
             throws IOException, CorruptEntryException {
         int length = input.readInt();
@@ -440,6 +449,11 @@ public final class ArtifactCacheStore {
             throw new CorruptEntryException();
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static @org.jspecify.annotations.Nullable String readNullableString(
+            final DataInputStream input, final int maxBytes) throws IOException, CorruptEntryException {
+        return input.readBoolean() ? readString(input, maxBytes) : null;
     }
 
     private static byte[] sha256(final byte[] bytes) throws IOException {

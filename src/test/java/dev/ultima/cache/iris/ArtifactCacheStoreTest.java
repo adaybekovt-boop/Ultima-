@@ -45,6 +45,8 @@ public final class ArtifactCacheStoreTest {
         store.write(key, expected);
         ShaderArtifact actual = store.read(key).orElseThrow();
         require(actual.stages().equals(expected.stages()), "warm payload changed");
+        require(actual.stages().containsKey("GEOMETRY") && actual.stages().get("GEOMETRY") == null,
+                "absent shader stage marker changed");
         require(actual.transformNanos() == expected.transformNanos(), "transform estimate changed");
     }
 
@@ -144,7 +146,13 @@ public final class ArtifactCacheStoreTest {
     }
 
     private static ShaderArtifact artifact(final String source, final long nanos) {
-        return new ShaderArtifact(Map.of("VERTEX", source, "FRAGMENT", source + "//fragment"), nanos);
+        Map<String, String> stages = new java.util.LinkedHashMap<>();
+        stages.put("VERTEX", source);
+        stages.put("GEOMETRY", null);
+        stages.put("TESS_CONTROL", null);
+        stages.put("TESS_EVAL", null);
+        stages.put("FRAGMENT", source + "//fragment");
+        return new ShaderArtifact(stages, nanos);
     }
 
     private static ArtifactKey key(final String material) {
