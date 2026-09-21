@@ -15,6 +15,10 @@ repositories {
         name = "Terraformers"
         url = "https://maven.terraformersmc.com/"
     }
+    maven {
+        name = "CaffeineMC"
+        url = "https://maven.caffeinemc.net/releases"
+    }
 }
 
 loom {
@@ -49,12 +53,20 @@ dependencies {
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     // Soft dependency: compile against the API, do not require Mod Menu at runtime.
     compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    // Exact, optional adapter surface. Runtime activation also verifies the official jar fingerprint.
+    compileOnly "net.caffeinemc:sodium-fabric:${project.sodium_version}"
 }
+
+def ultimaGitSha = providers.exec {
+    workingDir rootDir
+    commandLine "git", "rev-parse", "HEAD"
+}.standardOutput.asText.map { it.trim() }
 
 processResources {
     inputs.property "version", project.version
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
+    inputs.property "git_sha", ultimaGitSha
+    filesMatching(["fabric.mod.json", "ultima-build.properties"]) {
+        expand "version": project.version, "git_sha": ultimaGitSha.get()
     }
 }
 
@@ -147,6 +159,54 @@ tasks.register("slotMaskEntityQueryTest", JavaExec) {
     mainClass = "dev.ultima.review.SlotMaskEntityQueryTest"
 }
 
+tasks.register("benchmarkReplayTest", JavaExec) {
+    group = "verification"
+    description = "Runs deterministic tick-based benchmark replay contract checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.client.benchmark.ReplayTimelineTest"
+}
+
+tasks.register("irisArtifactCacheTest", JavaExec) {
+    group = "verification"
+    description = "Runs Iris frontend artifact cache disk-format and fail-open contract checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.cache.iris.ArtifactCacheStoreTest"
+}
+
+tasks.register("irisTransformKeyTest", JavaExec) {
+    group = "verification"
+    description = "Runs exact Iris transformation-key completeness and fail-closed checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.client.iris.cache.IrisTransformKeyEncoderTest"
+}
+
+tasks.register("admissionBrokerTest", JavaExec) {
+    group = "verification"
+    description = "Runs cross-pipeline admission safety and starvation contract checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.broker.AdmissionControllerTest"
+}
+
+tasks.register("renderWarmupTest", JavaExec) {
+    group = "verification"
+    description = "Runs budget, continuation, cancellation, and fail-open warmup contract checks."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.warmup.BudgetedWarmupPlanTest"
+}
+
+tasks.register("killerDiagnosticsTest", JavaExec) {
+    group = "verification"
+    description = "Validates killer-module UI/export diagnostics and JSON schema."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.client.diagnostics.KillerModuleDiagnosticsTest"
+}
+
 test {
     failOnNoDiscoveredTests = false
     dependsOn forensicRegressionTest
@@ -159,6 +219,12 @@ check.dependsOn tagBitsetsTest
 check.dependsOn statePropertyCacheTest
 check.dependsOn slotMaskEntityQueryTest
 check.dependsOn wave2FailOpenTest
+check.dependsOn benchmarkReplayTest
+check.dependsOn irisArtifactCacheTest
+check.dependsOn irisTransformKeyTest
+check.dependsOn admissionBrokerTest
+check.dependsOn renderWarmupTest
+check.dependsOn killerDiagnosticsTest
 
 java {
     withSourcesJar()

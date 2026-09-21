@@ -35,6 +35,20 @@
     "fsr_upscaling.LevelRendererAccessor",
     "fsr_upscaling.LevelExtractorAccessor",
     "fsr_upscaling.ShaderManagerMixin",
+    "iris_shader_frontend_artifact_cache.TransformPatcherMixin",
+    "iris_shader_frontend_artifact_cache.ShaderManagerMixin",
+    "cross_pipeline_admission_broker.MinecraftMixin",
+    "cross_pipeline_admission_broker.ShaderManagerMixin",
+    "cross_pipeline_admission_broker.RenderSectionManagerMixin",
+    "cross_pipeline_admission_broker.ChunkJobTypedMixin",
+    "cross_pipeline_admission_broker.DeferredTaskListAccessor",
+    "render_warmup_system.RenderTypeMixin",
+    "render_warmup_system.GpuDeviceMixin",
+    "render_warmup_system.EntityRenderersMixin",
+    "render_warmup_system.ParticleResourcesMixin",
+    "render_warmup_system.FluidRendererMixin",
+    "render_warmup_system.MinecraftMixin",
+    "render_warmup_system.ShaderManagerMixin",
     "settings_ui.TitleScreenMixin"
   ]
 }

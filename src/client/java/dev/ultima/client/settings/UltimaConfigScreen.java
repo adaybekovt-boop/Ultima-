@@ -4,6 +4,8 @@ import dev.ultima.config.settings.FsrPresetRowView;
 import dev.ultima.config.settings.SettingsCategory;
 import dev.ultima.config.settings.SettingsRowView;
 import dev.ultima.config.settings.UltimaSettingsController;
+import dev.ultima.client.diagnostics.KillerModuleDiagnostics;
+import dev.ultima.config.KillerModuleCompatibility;
 import dev.ultima.fsr.FsrQualityPreset;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -25,7 +27,8 @@ import org.jspecify.annotations.Nullable;
  * +----------------------------------------------------------+
  * |                     Ultima Settings                      |
  * |----------------------------------------------------------|
- * | [Rendering] [Simulation] | [Advanced]                    |
+ * | [Rendering] [Simulation]                                 |
+ * | [Experimental Killer Modules] [Advanced]                 |
  * | Rendering                                                |
  * | Retained terrain renderer                     [ OFF ]    |
  * |   tooltip: description + restart warning + lock reason   |
@@ -102,7 +105,9 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
         this.settingsList.addSmall(
                 this.categoryButton(SettingsCategory.RENDERING),
                 this.categoryButton(SettingsCategory.SIMULATION));
-        this.settingsList.addSmall(this.categoryButton(SettingsCategory.ADVANCED), null);
+        this.settingsList.addSmall(
+                this.categoryButton(SettingsCategory.KILLER_MODULES),
+                this.categoryButton(SettingsCategory.ADVANCED));
 
         if (this.controller.hasPendingRestart()) {
             this.settingsList.addHeader(Component.translatableWithFallback(
@@ -140,8 +145,13 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
     }
 
     private CycleButton<Boolean> moduleButton(final SettingsRowView row) {
+        String tooltipText = row.fullTooltip();
+        if (KillerModuleCompatibility.isKillerModule(row.key())) {
+            tooltipText += "\n" + KillerModuleDiagnostics.uiStatus(row, this.controller.config());
+        }
+        final String tooltip = tooltipText;
         CycleButton<Boolean> button = CycleButton.onOffBuilder(row.displayOn())
-                .withTooltip(value -> Tooltip.create(Component.literal(row.fullTooltip())))
+                .withTooltip(value -> Tooltip.create(Component.literal(tooltip)))
                 .create(
                         0,
                         0,
