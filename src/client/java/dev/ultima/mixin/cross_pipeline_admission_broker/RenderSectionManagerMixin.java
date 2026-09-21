@@ -15,7 +15,9 @@ import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkJobC
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.estimation.UploadResourceBudget;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.DeferredTaskList;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.storage.SectionStorage;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
+import net.minecraft.core.SectionPos;
 import org.joml.Vector3dc;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,6 +32,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = RenderSectionManager.class, remap = false)
 public abstract class RenderSectionManagerMixin {
     @Shadow @Final private ChunkBuilder builder;
+    @Shadow @Final private SectionStorage renderSections;
     @Shadow private DeferredTaskList taskLists;
 
     @Unique private boolean ultima$wasBuilt;
@@ -58,7 +61,8 @@ public abstract class RenderSectionManagerMixin {
         if (!CrossPipelineBroker.permitDeferredAdmission(
                 this.ultima$deferredQueueDepth(),
                 this.builder.getBusyThreadCount(),
-                this.builder.getTotalThreadCount())) {
+                this.builder.getTotalThreadCount(),
+                this.ultima$nextDeferredAgeNanos())) {
             ci.cancel();
         }
     }
@@ -130,5 +134,27 @@ public abstract class RenderSectionManagerMixin {
     @Unique
     private int ultima$deferredQueueDepth() {
         return this.taskLists == null ? 0 : this.taskLists.size();
+    }
+
+    @Unique
+    private long ultima$nextDeferredAgeNanos() {
+        DeferredTaskList tasks = this.taskLists;
+        if (tasks == null || tasks.isEmpty()) {
+            return 0L;
+        }
+        long encoded = tasks.firstLong();
+        DeferredTaskListAccessor offsets = (DeferredTaskListAccessor)(Object)tasks;
+        int localX = (int)(encoded >>> 20) & 0x3ff;
+        int localY = (int)(encoded >>> 10) & 0x3ff;
+        int localZ = (int)encoded & 0x3ff;
+        long sectionPos = SectionPos.asLong(
+                localX + offsets.ultima$getBaseOffsetX(),
+                localY + net.caffeinemc.mods.sodium.client.render.chunk.lists.TaskCollectingTree.SECTION_Y_MIN,
+                localZ + offsets.ultima$getBaseOffsetZ());
+        RenderSection section = this.renderSections.getConsistent(sectionPos);
+        if (section == null || section.getPendingUpdateSince() <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, System.nanoTime() - section.getPendingUpdateSince());
     }
 }

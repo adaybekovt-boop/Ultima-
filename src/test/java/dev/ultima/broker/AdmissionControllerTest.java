@@ -1,5 +1,9 @@
 package dev.ultima.broker;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
+
 /** Controller safety contracts: urgent bypass, starvation escape, stale fallback, and reset. */
 public final class AdmissionControllerTest {
     private static final long MS = 1_000_000L;
@@ -11,6 +15,8 @@ public final class AdmissionControllerTest {
         staleTelemetryRestoresOwnerBehavior();
         overloadedQueueCannotStarve();
         queueNeverDrainsWithoutPermits();
+        gateNeverDequeuesOrLosesWork();
+        admittedWorkIsDequeuedExactlyOnce();
         resetDropsOldPressure();
         staticControlIsDeterministic();
     }
@@ -60,6 +66,44 @@ public final class AdmissionControllerTest {
             }
         }
         require(permits > 0, "queue received no admission permits");
+    }
+
+    private static void gateNeverDequeuesOrLosesWork() {
+        AdmissionController controller = controller();
+        makePressureHigh(controller, 1_000 * MS);
+        ArrayDeque<Integer> ownerQueue = new ArrayDeque<>();
+        ownerQueue.add(1);
+        ownerQueue.add(2);
+        controller.onPipelinePressure(ownerQueue.size(), 4, 4);
+        require(controller.permit(1_016 * MS, false), "baseline admission missing");
+        require(ownerQueue.removeFirst() == 1, "owner dequeue order changed");
+        controller.onPipelinePressure(ownerQueue.size(), 4, 4);
+        int before = ownerQueue.size();
+        require(!controller.permit(1_017 * MS, false), "high pressure did not close gate");
+        require(ownerQueue.size() == before && ownerQueue.peekFirst() == 2,
+                "a denied admission transferred ownership or dequeued work");
+        require(controller.permit(1_018 * MS, true), "urgent owner path was denied");
+        require(ownerQueue.removeFirst() == 2, "urgent owner dequeue changed");
+    }
+
+    private static void admittedWorkIsDequeuedExactlyOnce() {
+        AdmissionController controller = controller();
+        makePressureHigh(controller, 5_000 * MS);
+        ArrayDeque<Integer> ownerQueue = new ArrayDeque<>();
+        for (int value = 0; value < 32; value++) {
+            ownerQueue.add(value);
+        }
+        Set<Integer> completed = new HashSet<>();
+        for (long now = 5_016 * MS; now < 7_000 * MS && !ownerQueue.isEmpty(); now += 5 * MS) {
+            controller.onFrame(now, 30 * MS, -1L, -1L);
+            controller.onPipelinePressure(ownerQueue.size(), 4, 4);
+            if (controller.permit(now, false)) {
+                Integer work = ownerQueue.removeFirst();
+                require(completed.add(work), "owner work dequeued twice");
+            }
+        }
+        require(ownerQueue.isEmpty(), "starvation escape did not eventually drain owner queue");
+        require(completed.size() == 32, "owner work was lost");
     }
 
     private static void resetDropsOldPressure() {

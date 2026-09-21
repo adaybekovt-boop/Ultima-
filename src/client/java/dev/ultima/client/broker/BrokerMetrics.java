@@ -19,6 +19,7 @@ public final class BrokerMetrics {
     volatile long admissions;
     volatile long deferrals;
     volatile long urgentBypasses;
+    volatile long starvationBypasses;
     volatile long sodiumTaskSubmissions;
     volatile long pendingAgeNanosTotal;
     volatile long maximumPendingAgeNanos;
@@ -63,6 +64,7 @@ public final class BrokerMetrics {
                 this.admissions,
                 this.deferrals,
                 this.urgentBypasses,
+                this.starvationBypasses,
                 this.sodiumTaskSubmissions,
                 starts,
                 completions,
@@ -116,6 +118,7 @@ public final class BrokerMetrics {
             long admissions,
             long deferrals,
             long urgentBypasses,
+            long starvationBypasses,
             long sodiumTaskSubmissions,
             long workerTaskStarts,
             long workerTaskCompletions,
