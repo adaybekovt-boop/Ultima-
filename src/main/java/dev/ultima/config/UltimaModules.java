@@ -178,8 +178,8 @@ public final class UltimaModules {
                             + "when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("section_task_queue", false,
-                    "Compact cancelled section compile tasks in one pass and park workers on upload backpressure "
-                            + "instead of spinning. Preserves vanilla nearest-task and recompile-quota policy. "
+                    "Compact cancelled section compile tasks in one pass. Preserves vanilla nearest-task, "
+                            + "recompile-quota, synchronization, and upload-backpressure policy. "
                             + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("rgss_endpoint", false,

@@ -51,16 +51,17 @@ Shared conflict points were manually consolidated instead of accepting one branc
   slot/entity, mesher, and final module-contract suites are all invoked by the merged checkpoint;
   recipe/tag/state/slot suites also have standalone Gradle tasks.
 
-Compatibility policy after integration:
+Compatibility policy at the time of that integration (the FSR line below was superseded later
+the same day by the capability-gate entry above):
 
 - Lithium / Canary / Radium disable overlapping collision/entity modules plus
   `blockentity_sleeping`, `tag_bitsets`, `state_property_cache`, `container_slot_mask`, and
   `entity_query_early_out`.
 - `recipe_match_cache` deliberately remains compatible with Lithium-family mods because those mods
   do not provide the same first-match recipe lookup cache.
-- Sodium / Iris / Canvas disable Ultima's renderer integrations, including `retained_terrain`,
-  `mesher_fast_path`, and `fsr_upscaling`. The branch-local Sodium-only FSR exception was removed so
-  the merged module registry, UI, and runtime compatibility gate agree.
+- Sodium / Iris / Canvas disable Ultima's geometry renderer integrations, including
+  `retained_terrain` and `mesher_fast_path`. Current FSR policy is the newer entry above:
+  Canvas blocks it, Sodium-only is allowed, and Iris blocks it for the documented capability reason.
 
 All newly merged optimization experiments remain default **OFF**. Existing proven/default modules
 remain unchanged except `server_metrics`, which is default-on instrumentation. This integration
@@ -103,8 +104,8 @@ sand, …). Pick the alternative with `BlockState.getSeed(pos)` + vanilla
 grass overlay, fluids, and true non-cubes stay fallback. Cache was
 already keyed by `BlockState` identity (furnace/log variants were already
 distinct SingleVariant entries). Default remains **OFF**. **No FPS/GPU
-claim.** See `MESHER_FAST_PATH.md`. Retained-terrain GPU-time hypothesis
-is in `RETAINED_GPU_TIME_HYPOTHESIS.md` (no retained code change).
+claim.** See `MESHER_FAST_PATH.md`. The old retained-terrain GPU-time hypothesis was an
+agent report and is intentionally not part of the current working tree.
 
 ## mesher_fast_path Phase 3.1 (hardware-ready prep)
 
@@ -112,14 +113,15 @@ Section-level fail-open + BlockState circuit breaker, unified
 `FastPathCriteria` (glass/translucent always vanilla), lean production
 snapshot flags, expanded equivalence + realistic CPU datasets, coverage
 JSON, and a three-scene hardware runbook. Default remains **OFF**.
-**No FPS/GPU claim.** See `MESHER_FAST_PATH.md` and `MESHER_HARDWARE_AB.md`.
+**No FPS/GPU claim.** See `MESHER_FAST_PATH.md`; the old agent-only hardware runbook is not
+part of the current working tree.
 
 ## mesher_fast_path (draft, isolated from main / PR #3)
 
 Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,
 cached vanilla cube quads, vanilla occlusion/lighting, vanilla fallback.
 Equivalence tests PASS. CPU meshing-time microbench only. **No FPS/GPU claim.**
-See `MESHER_FAST_PATH.md`. `gradlew test` / `gradlew build` PASS on this branch.
+See `MESHER_FAST_PATH.md`. The named JavaExec regression task and `gradlew build` passed on that branch.
 
 ## Prompt #2.6.1 — retained foundation closed out: KEEP
 

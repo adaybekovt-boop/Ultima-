@@ -35,12 +35,12 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
 
     @Inject(method = "forEachAccessibleNonEmptySection", at = @At("HEAD"), cancellable = true)
     private void ultimaLookupSectionsDirectly(final AABB bb, final AbortableIterationConsumer<EntitySection<T>> output, final CallbackInfo ci) {
-        int xMin = SectionPos.posToSectionCoord(bb.minX - 2.0);
-        int yMin = SectionPos.posToSectionCoord(bb.minY - 4.0);
-        int zMin = SectionPos.posToSectionCoord(bb.minZ - 2.0);
-        int xMax = SectionPos.posToSectionCoord(bb.maxX + 2.0);
+        int xMin = SectionPos.posToSectionCoord(bb.minX - EntitySectionStorage.CHONKY_ENTITY_SEARCH_GRACE);
+        int yMin = SectionPos.posToSectionCoord(bb.minY - EntitySectionStorage.MAX_NON_CHONKY_ENTITY_SIZE);
+        int zMin = SectionPos.posToSectionCoord(bb.minZ - EntitySectionStorage.CHONKY_ENTITY_SEARCH_GRACE);
+        int xMax = SectionPos.posToSectionCoord(bb.maxX + EntitySectionStorage.CHONKY_ENTITY_SEARCH_GRACE);
         int yMax = SectionPos.posToSectionCoord(bb.maxY + 0.0);
-        int zMax = SectionPos.posToSectionCoord(bb.maxZ + 2.0);
+        int zMax = SectionPos.posToSectionCoord(bb.maxZ + EntitySectionStorage.CHONKY_ENTITY_SEARCH_GRACE);
         if (xMax < xMin || yMax < yMin || zMax < zMin) {
             ci.cancel();
             return;

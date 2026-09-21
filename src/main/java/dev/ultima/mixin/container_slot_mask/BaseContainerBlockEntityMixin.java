@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.ultima.inventory.SlotMaskHooks;
 import dev.ultima.inventory.SlotMaskQueries;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
@@ -33,11 +32,6 @@ public abstract class BaseContainerBlockEntityMixin implements Container {
     @WrapMethod(method = "clearContent")
     private void ultimaClear(final Operation<Void> original) {
         SlotMaskHooks.runClear(this, original::call);
-    }
-
-    @WrapMethod(method = "setItems")
-    private void ultimaSetItems(final NonNullList<ItemStack> items, final Operation<Void> original) {
-        SlotMaskHooks.runInvalidate(this, () -> original.call(items));
     }
 
     @Inject(method = "isEmpty", at = @At("HEAD"), cancellable = true)

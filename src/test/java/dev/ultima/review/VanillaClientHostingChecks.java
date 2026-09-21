@@ -237,6 +237,10 @@ final class VanillaClientHostingChecks {
             String className = element.getAsString();
             int firstDot = className.indexOf('.');
             if (firstDot <= 0) {
+                if ("CompoundContainerAccessor".equals(className)) {
+                    // Shared, behavior-free infrastructure for two independently gated modules.
+                    continue;
+                }
                 throw new AssertionError("mixin class is not packaged by module: " + className);
             }
             modules.add(className.substring(0, firstDot));

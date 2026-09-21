@@ -3,6 +3,7 @@ package dev.ultima;
 import dev.ultima.cache.RegistryCacheLifecycle;
 import dev.ultima.command.UltimaCommands;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.MixinSmokeLoader;
 import dev.ultima.server.metrics.ServerMetrics;
 import dev.ultima.sleeping.BlockEntitySleepRuntime;
 import net.fabricmc.api.ModInitializer;
@@ -25,5 +26,10 @@ public final class Ultima implements ModInitializer {
         UltimaCommands.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> BlockEntitySleepRuntime.clearAll());
         ServerLevelEvents.UNLOAD.register((server, world) -> BlockEntitySleepRuntime.clearLevel(world));
+        int smokeTargets = MixinSmokeLoader.forceLoadCommonTargets();
+        if (smokeTargets > 0) {
+            LOGGER.info("ULTIMA_MIXIN_SMOKE_OK: force-loaded {} common Mixin target classes", smokeTargets);
+            ServerLifecycleEvents.SERVER_STARTED.register(server -> server.halt(false));
+        }
     }
 }

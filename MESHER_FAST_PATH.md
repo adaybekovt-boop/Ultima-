@@ -5,8 +5,8 @@ Independent of `retained_terrain` and of PR #3. When both `java_mesher` and
 `mesher_fast_path` are requested, `mesher_fast_path` owns `SectionCompiler.compile`.
 
 This document is **not** a performance claim. CPU meshing-time numbers in tests
-are wall-clock of the synthetic cube kernel only. Real FPS/GPU A/B is a later
-hardware stage. See `MESHER_HARDWARE_AB.md`.
+are wall-clock of the synthetic cube kernel only. Real FPS/GPU A/B remains a later
+manual hardware stage; the old agent-only runbook is intentionally not shipped as project documentation.
 
 ## Architecture
 

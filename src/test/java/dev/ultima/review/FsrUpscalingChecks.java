@@ -52,7 +52,6 @@ final class FsrUpscalingChecks {
         testPipelineGate();
         testModuleRegistryAndDefaults();
         testSettingsParsing();
-        testResizeMixinPriority();
         testIrisModPresenceIsCachedAndShared();
         testIrisProtectionIsMixinPlugin();
         System.out.println("FSR upscaling checks passed.");
@@ -569,29 +568,6 @@ final class FsrUpscalingChecks {
         assertEqualsFloat(0.35F, settings.sharpnessStops(), "parsed sharpness");
         assertTrue(FsrSettings.parseFloat("nope") == null, "invalid sharpness");
         assertEqualsFloat(0.2F, FsrSettings.fromProperties(new Properties()).sharpnessStops(), "missing sharpness");
-    }
-
-    /**
-     * Mixin-wiring: {@code @Mixin} is CLASS retention, so reflection cannot read priority.
-     * This reads the two GameRenderer mixin sources. Resize apply order is not proven live.
-     */
-    private static void testResizeMixinPriority() {
-        String temporal = readSource("src/client/java/dev/ultima/mixin/temporal/GameRendererMixin.java");
-        String fsr = readSource("src/client/java/dev/ultima/mixin/fsr_upscaling/GameRendererMixin.java");
-        assertTrue(temporal.contains("priority = 900"), "temporal GameRenderer mixin is 900");
-        assertTrue(
-                fsr.contains("priority = 1100"),
-                "FSR GameRenderer mixin is 1100 so resize sees native size after temporal");
-        assertTrue(temporal.contains("method = \"resize\""), "temporal still injects GameRenderer.resize");
-        assertTrue(fsr.contains("method = \"resize\""), "FSR still injects GameRenderer.resize");
-    }
-
-    private static String readSource(final String path) {
-        try {
-            return java.nio.file.Files.readString(java.nio.file.Path.of(path));
-        } catch (java.io.IOException e) {
-            throw new AssertionError("could not read " + path, e);
-        }
     }
 
     private static UltimaModules.Module module(final String key) {

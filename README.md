@@ -31,9 +31,10 @@ See [`SERVER_HOSTING.md`](SERVER_HOSTING.md) for the handshake audit and hosting
 
 ```bash
 bash scripts/bootstrap.sh
-./gradlew test
 ./gradlew build
+./gradlew forensicRegressionTest
 bash scripts/check.sh
+bash scripts/mixin-smoke.sh
 ```
 
 Built mod JARs appear in `build/libs/`.
@@ -97,17 +98,27 @@ not the old blanket `incompatible_mod`.
 The settings screen exposes all 24 registered modules under Rendering, Simulation, or
 Advanced. Every toggle that changes Mixins uses the restart-required apply policy.
 
-## Validation status
+## Current validation status
 
-The retained-terrain foundation has an earlier real RTX 3090 A/B result:
+`scripts/check.sh` builds the current source and runs the named JavaExec regression suites,
+including compiled-annotation/vanilla-bytecode checks for constructor `HEAD` legality, Mixin
+priorities, duplicate accessors, current `@At` targets, and per-method redirect contracts.
+These suites are not JUnit and do not pretend to be a live game launch. A dedicated-server smoke
+and client/LAN/shader/hardware checks are reported separately whenever they are actually run.
+
+## Historical benchmark provenance
+
+The opt-in `retained_terrain` foundation has a historical RTX 3090 A/B result from the
+`ultima-foundation-final-2.6.1` release (roughly 150 commits before the current source):
 
 - average FPS: 301.36 → 394.14, **+30.8%**
 - 1% low: 77.79 → 84.26, **+8.3%**
 - terrain CPU total: **−42.9%**
 
-Those measurements belong to the retained-foundation provenance chain documented in the
+Those measurements belong only to the retained-foundation provenance chain documented in the
 [`ultima-foundation-final-2.6.1` release](https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1).
-They are **not** a hardware-performance claim for the newly integrated modules in this merge.
+They are **not** a current-whole-mod performance or stability claim. `retained_terrain` is default
+off and is disabled with Sodium, Iris, or Canvas.
 The new modules remain default off until their separate runtime/hardware validation is done.
 
 `mesher_fast_path` Phase 3.2 includes weighted vanilla unit cubes while preserving vanilla

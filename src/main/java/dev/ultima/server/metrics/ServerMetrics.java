@@ -43,6 +43,8 @@ public final class ServerMetrics {
     private static volatile long lagTickThresholdNs = lagThresholdFromProperty();
 
     private static int jsonFilesWritten;
+    private static boolean entityPhaseHookSeen;
+    private static boolean entityPhaseHookWarningLogged;
 
     private static final java.util.concurrent.atomic.AtomicLong[] ACCUM = new java.util.concurrent.atomic.AtomicLong[METRIC_COUNT];
     private static final long[] LAST = new long[METRIC_COUNT];
@@ -120,6 +122,8 @@ public final class ServerMetrics {
         clock = testClock == null ? System::nanoTime : testClock;
         PHASE_CLOCKS_CREATED.set(0);
         jsonFilesWritten = 0;
+        entityPhaseHookSeen = false;
+        entityPhaseHookWarningLogged = false;
         tickNumber = 0L;
         playerCount = 0;
         eventCount = 0;
@@ -139,6 +143,18 @@ public final class ServerMetrics {
         tickNumber = tick;
         playerCount = players;
         CLOCKS.get().reset();
+        if (tick >= 200L && !entityPhaseHookSeen && !entityPhaseHookWarningLogged) {
+            entityPhaseHookWarningLogged = true;
+            org.slf4j.LoggerFactory.getLogger("ultima-server-metrics")
+                    .warn("The optional tick.entities Mixin hook has not fired in 200 ticks; "
+                            + "that metric is unavailable and must not be interpreted as a measured zero.");
+        }
+    }
+
+    public static void markEntityPhaseHookSeen() {
+        if (enabled) {
+            entityPhaseHookSeen = true;
+        }
     }
 
     public static void endTick() {

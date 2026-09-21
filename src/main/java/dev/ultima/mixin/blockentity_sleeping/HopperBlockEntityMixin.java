@@ -7,6 +7,7 @@ import dev.ultima.sleeping.HopperSleepFailOpen;
 import dev.ultima.sleeping.VanillaContainerClassifier;
 import dev.ultima.sleeping.WakeChannel;
 import dev.ultima.sleeping.hopper.HopperWorldInspector;
+import dev.ultima.mixin.CompoundContainerAccessor;
 import java.util.function.BooleanSupplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.CompoundContainer;
@@ -20,6 +21,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Skips {@code tryMoveItems} only while a hopper is proven idle and sleeping. Vanilla still
@@ -107,7 +109,10 @@ public abstract class HopperBlockEntityMixin {
     }
 
     @Inject(method = "removeItem", at = @At("RETURN"))
-    private void ultimaWakeOnRemoveItem(final int slot, final int count, final CallbackInfo ci) {
+    private void ultimaWakeOnRemoveItem(
+            final int slot,
+            final int count,
+            final CallbackInfoReturnable<ItemStack> cir) {
         try {
             BlockEntitySleepRuntime.onContainerMutated((HopperBlockEntity)(Object)this);
         } catch (Throwable error) {

@@ -1,6 +1,7 @@
 package dev.ultima.mixin.container_slot_mask;
 
 import dev.ultima.inventory.CompoundContainerViews;
+import dev.ultima.mixin.CompoundContainerAccessor;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 import org.spongepowered.asm.mixin.Mixin;

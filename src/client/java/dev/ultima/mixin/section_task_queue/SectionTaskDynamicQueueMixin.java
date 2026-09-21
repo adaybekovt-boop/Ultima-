@@ -34,35 +34,35 @@ public abstract class SectionTaskDynamicQueueMixin {
 
     @Inject(method = "poll", at = @At("HEAD"), cancellable = true)
     private void ultimaCompactPoll(final Vec3 cameraPos, final CallbackInfoReturnable<SectionRenderDispatcher.RenderSection.SectionTask> cir) {
-        synchronized (this) {
-            this.ultima$compactCancelled();
-            int bestInitialCompileTaskIndex = -1;
-            int bestRecompileTaskIndex = -1;
-            double bestInitialCompileDistance = Double.MAX_VALUE;
-            double bestRecompileDistance = Double.MAX_VALUE;
-            int size = this.tasks.size();
-            for (int taskIndex = 0; taskIndex < size; taskIndex++) {
-                SectionRenderDispatcher.RenderSection.SectionTask task = this.tasks.get(taskIndex);
-                double distance = task.getRenderOrigin().distToCenterSqr(cameraPos);
-                if (!task.isRecompile() && distance < bestInitialCompileDistance) {
-                    bestInitialCompileDistance = distance;
-                    bestInitialCompileTaskIndex = taskIndex;
-                }
-                if (task.isRecompile() && distance < bestRecompileDistance) {
-                    bestRecompileDistance = distance;
-                    bestRecompileTaskIndex = taskIndex;
-                }
+        // Vanilla poll() is synchronized; an injected HEAD handler already runs while that
+        // method monitor is held, so a second synchronized(this) is redundant.
+        this.ultima$compactCancelled();
+        int bestInitialCompileTaskIndex = -1;
+        int bestRecompileTaskIndex = -1;
+        double bestInitialCompileDistance = Double.MAX_VALUE;
+        double bestRecompileDistance = Double.MAX_VALUE;
+        int size = this.tasks.size();
+        for (int taskIndex = 0; taskIndex < size; taskIndex++) {
+            SectionRenderDispatcher.RenderSection.SectionTask task = this.tasks.get(taskIndex);
+            double distance = task.getRenderOrigin().distToCenterSqr(cameraPos);
+            if (!task.isRecompile() && distance < bestInitialCompileDistance) {
+                bestInitialCompileDistance = distance;
+                bestInitialCompileTaskIndex = taskIndex;
             }
+            if (task.isRecompile() && distance < bestRecompileDistance) {
+                bestRecompileDistance = distance;
+                bestRecompileTaskIndex = taskIndex;
+            }
+        }
 
-            boolean hasRecompileTask = bestRecompileTaskIndex >= 0;
-            boolean hasInitialCompileTask = bestInitialCompileTaskIndex >= 0;
-            if (!hasRecompileTask || hasInitialCompileTask && (this.recompileQuota <= 0 || !(bestRecompileDistance < bestInitialCompileDistance))) {
-                this.recompileQuota = 2;
-                cir.setReturnValue(this.removeTaskByIndex(bestInitialCompileTaskIndex));
-            } else {
-                this.recompileQuota--;
-                cir.setReturnValue(this.removeTaskByIndex(bestRecompileTaskIndex));
-            }
+        boolean hasRecompileTask = bestRecompileTaskIndex >= 0;
+        boolean hasInitialCompileTask = bestInitialCompileTaskIndex >= 0;
+        if (!hasRecompileTask || hasInitialCompileTask && (this.recompileQuota <= 0 || !(bestRecompileDistance < bestInitialCompileDistance))) {
+            this.recompileQuota = 2;
+            cir.setReturnValue(this.removeTaskByIndex(bestInitialCompileTaskIndex));
+        } else {
+            this.recompileQuota--;
+            cir.setReturnValue(this.removeTaskByIndex(bestRecompileTaskIndex));
         }
     }
 

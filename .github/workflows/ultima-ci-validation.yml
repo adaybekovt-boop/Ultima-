@@ -107,10 +107,10 @@ jobs:
         shell: bash
         run: bash scripts/ensure-wrapper.sh
 
-      - name: Gradle test (Linux)
+      - name: JavaExec regression harness (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: ./gradlew --no-daemon test --console=plain
+        run: ./gradlew --no-daemon forensicRegressionTest --console=plain
 
       - name: Gradle build (Linux)
         if: runner.os == 'Linux'
@@ -122,10 +122,15 @@ jobs:
         shell: bash
         run: bash scripts/check.sh
 
-      - name: Gradle test (Windows)
+      - name: Common Mixin apply smoke (Linux)
+        if: matrix.repeat == 1
+        shell: bash
+        run: bash scripts/mixin-smoke.sh
+
+      - name: JavaExec regression harness (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\gradlew.bat --no-daemon test --console=plain
+        run: .\gradlew.bat --no-daemon forensicRegressionTest --console=plain
 
       - name: Gradle build (Windows)
         if: runner.os == 'Windows'

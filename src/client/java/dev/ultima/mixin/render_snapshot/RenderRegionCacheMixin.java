@@ -1,5 +1,7 @@
 package dev.ultima.mixin.render_snapshot;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.ultima.client.renderer.snapshot.RenderSnapshotIntern;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -10,9 +12,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(RenderRegionCache.class)
 public abstract class RenderRegionCacheMixin {
@@ -20,13 +19,16 @@ public abstract class RenderRegionCacheMixin {
     private final IdentityHashMap<Map<BlockPos, BlockEntity>, Map<BlockPos, BlockEntity>> ultima$blockEntitySnapshots =
             new IdentityHashMap<>();
 
-    @Inject(method = "createRegion", at = @At("HEAD"))
-    private void ultimaBindSnapshotIntern(final ClientLevel level, final long sectionNode, final CallbackInfoReturnable<RenderSectionRegion> cir) {
+    @WrapMethod(method = "createRegion")
+    private RenderSectionRegion ultimaInternSnapshotsForRegion(
+            final ClientLevel level,
+            final long sectionNode,
+            final Operation<RenderSectionRegion> original) {
         RenderSnapshotIntern.bind(this.ultima$blockEntitySnapshots);
-    }
-
-    @Inject(method = "createRegion", at = @At("RETURN"))
-    private void ultimaUnbindSnapshotIntern(final ClientLevel level, final long sectionNode, final CallbackInfoReturnable<RenderSectionRegion> cir) {
-        RenderSnapshotIntern.unbind();
+        try {
+            return original.call(level, sectionNode);
+        } finally {
+            RenderSnapshotIntern.unbind();
+        }
     }
 }

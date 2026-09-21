@@ -15,6 +15,7 @@ import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -48,12 +49,24 @@ public abstract class GameRendererMixin {
     abstract void ultima$tryTakeScreenshotIfNeeded();
 
     @Redirect(
-            method = {"render", "renderLevel"},
+            method = "render",
             at = @At(
                     value = "FIELD",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;mainRenderTarget:Lcom/mojang/blaze3d/pipeline/RenderTarget;",
-                    opcode = Opcodes.GETFIELD))
-    private RenderTarget ultimaFsrRedirectMainTarget(final GameRenderer self) {
+                    opcode = Opcodes.GETFIELD),
+            require = 1)
+    private RenderTarget ultimaFsrRedirectMainTargetInRender(final GameRenderer self) {
+        return FsrUpscaling.get().resolveWorldTarget(this.mainRenderTarget);
+    }
+
+    @Redirect(
+            method = "renderLevel",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lnet/minecraft/client/renderer/GameRenderer;mainRenderTarget:Lcom/mojang/blaze3d/pipeline/RenderTarget;",
+                    opcode = Opcodes.GETFIELD),
+            require = 1)
+    private RenderTarget ultimaFsrRedirectMainTargetInRenderLevel(final GameRenderer self) {
         return FsrUpscaling.get().resolveWorldTarget(this.mainRenderTarget);
     }
 
@@ -139,6 +152,7 @@ public abstract class GameRendererMixin {
         FsrUpscaling.get().shutdown();
     }
 
+    @Unique
     private void ultimaFsrApplySkyReset() {
         if (!FsrUpscaling.get().consumeSkyRendererReset()) {
             return;
@@ -147,6 +161,7 @@ public abstract class GameRendererMixin {
         ((LevelExtractorAccessor)this.minecraft.levelExtractor).ultima$setShouldResetSkyRenderer(true);
     }
 
+    @Unique
     private void ultimaFsrSyncOutline(final int nativeWidth, final int nativeHeight) {
         LevelRenderer levelRenderer = this.minecraft.levelRenderer;
         if (levelRenderer == null) {
@@ -158,6 +173,7 @@ public abstract class GameRendererMixin {
                 nativeHeight);
     }
 
+    @Unique
     private void ultimaFsrRefreshGlobals(final int width, final int height, final DeltaTracker deltaTracker) {
         this.globalSettingsUniform.update(
                 width,

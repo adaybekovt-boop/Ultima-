@@ -38,7 +38,7 @@ public enum EntityQueryKind {
                 || "net.minecraft.world.entity.AgeableMob".equals(name)
                 || "net.minecraft.world.entity.animal.Animal".equals(name)
                 || "net.minecraft.world.entity.monster.Monster".equals(name)
-                || "net.minecraft.world.entity.npc.villager.AbstractVillager".equals(name)) {
+                || "net.minecraft.world.entity.npc.AbstractVillager".equals(name)) {
             return LIVING;
         }
         if ("net.minecraft.world.entity.Entity".equals(name)

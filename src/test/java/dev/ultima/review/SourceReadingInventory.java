@@ -45,14 +45,6 @@ public final class SourceReadingInventory {
                             + "separate behavioral tests on SlotMaskHooks. Live Inventory.replaceWith / "
                             + "LootTable.fill / Mixin apply are not invoked in JavaExec."),
             new Entry(
-                    "dev.ultima.review.FsrUpscalingChecks",
-                    "temporal/FSR GameRendererMixin sources for @Mixin priority and resize inject",
-                    Kind.WIRING,
-                    "Dropped CHANGELOG/javadoc greps. Remaining source read is a Mixin apply-order "
-                            + "contract (@Mixin is CLASS retention, so reflection cannot see priority). "
-                            + "Iris skip is UltimaMixinPlugin.shouldApplyMixin + FsrCompatibility.blocks. "
-                            + "Not a live GameRenderer.resize."),
-            new Entry(
                     "dev.ultima.review.MesherFastPathChecks",
                     "no Files.readString remaining; benchmark scene warmup/sample/camera via "
                             + "ClientFrameBenchmark public helpers",

@@ -24,6 +24,7 @@ public abstract class ServerLevelMixin {
                     target = "Lnet/minecraft/world/level/entity/EntityTickList;forEach(Ljava/util/function/Consumer;)V"),
             require = 0)
     private void ultimaBeginEntities(final BooleanSupplier haveTime, final CallbackInfo ci) {
+        ServerMetrics.markEntityPhaseHookSeen();
         ServerMetrics.begin(MetricId.TICK_ENTITIES);
     }
 

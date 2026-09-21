@@ -16,7 +16,7 @@ public abstract class ClientboundLevelChunkWithLightPacketMixin {
     @Inject(
             method = "<init>(Lnet/minecraft/world/level/chunk/LevelChunk;Lnet/minecraft/world/level/lighting/LevelLightEngine;Ljava/util/BitSet;Ljava/util/BitSet;)V",
             at = @At("HEAD"))
-    private void ultimaBeginSendPrepare(
+    private static void ultimaBeginSendPrepare(
             final LevelChunk levelChunk,
             final LevelLightEngine lightEngine,
             final BitSet skyChangedLightSectionFilter,

@@ -13,7 +13,7 @@ public final class MergedRegressionTest {
     private MergedRegressionTest() {
     }
 
-    public static void main(final String[] args) {
+    public static void main(final String[] args) throws Exception {
         dev.ultima.failopen.Wave2FailOpenTest.run();
         ForensicRegressionTest.main(args);
         VanillaClientHostingChecks.run();
@@ -26,6 +26,7 @@ public final class MergedRegressionTest {
         StatePropertyCacheEquivalenceTest.run();
         SlotMaskEntityQueryTest.run();
         MergedModuleContractTest.run();
+        MixinBytecodeChecks.run();
         System.out.println("Merged integration regression checks passed.");
     }
 }

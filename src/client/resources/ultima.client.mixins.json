@@ -2,7 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "dev.ultima.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "plugin": "dev.ultima.config.UltimaMixinPlugin",
   "injectors": {
     "defaultRequire": 1
@@ -24,8 +24,6 @@
     "mesher_fast_path.WeightedVariantsAccessor",
     "section_task_queue.SectionTaskAccessor",
     "section_task_queue.SectionTaskDynamicQueueMixin",
-    "section_task_queue.CompileTaskMixin",
-    "section_task_queue.ResortTransparencyTaskMixin",
     "rgss_endpoint.CompilationCacheMixin",
     "temporal.GameRendererMixin",
     "temporal.MinecraftMixin",

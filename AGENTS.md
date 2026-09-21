@@ -69,7 +69,9 @@ After every meaningful implementation:
 
 1. Run `bash scripts/check.sh`.
 2. Fix all compilation/build failures caused by the change.
-3. If practical, run the relevant dev task (`runServer` for server-safe logic, `runClient` only where a graphical environment exists).
+3. For changes to common/server Mixins, run the headless `runServer` smoke and force-load the
+   affected target classes; a build-only JavaExec harness is not sufficient evidence that Mixins
+   apply. Run `runClient` for client Mixins whenever a graphical environment exists.
 4. Never claim runtime testing happened if only compilation/build was performed.
 5. For performance work, record what hotspot/path was optimized, why behavior is equivalent, compatibility risks, and how to benchmark it in-game.
 

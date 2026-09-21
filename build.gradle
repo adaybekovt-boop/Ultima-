@@ -33,6 +33,11 @@ loom {
                 runDir = project.property("ultima.gameDir") as String
             }
         }
+        server {
+            if (project.hasProperty("ultima.mixinSmoke")) {
+                vmArg "-Dultima.mixinSmoke=true"
+            }
+        }
     }
 
     mods {
@@ -148,11 +153,20 @@ tasks.register("slotMaskEntityQueryTest", JavaExec) {
 }
 
 test {
-    failOnNoDiscoveredTests = false
-    dependsOn forensicRegressionTest
+    enabled = false
+    description = "Disabled: Ultima uses named JavaExec regression tasks, not a JUnit suite."
+}
+
+tasks.register("mixinBytecodeTest", JavaExec) {
+    group = "verification"
+    description = "Checks compiled Mixin annotations and current vanilla bytecode targets with ASM."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.review.MixinBytecodeChecks"
 }
 
 check.dependsOn forensicRegressionTest
+check.dependsOn mixinBytecodeTest
 check.dependsOn commandCompactionRecoveryTest
 check.dependsOn recipeMatchCacheTest
 check.dependsOn tagBitsetsTest

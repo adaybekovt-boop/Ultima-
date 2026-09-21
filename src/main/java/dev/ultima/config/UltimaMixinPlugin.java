@@ -34,6 +34,9 @@ public final class UltimaMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(final String targetClassName, final String mixinClassName) {
+        if (Boolean.getBoolean(MixinSmokeLoader.PROPERTY)) {
+            return true;
+        }
         String module = moduleOf(mixinClassName);
         if (module == null) {
             return true;
