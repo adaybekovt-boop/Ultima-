@@ -76,6 +76,9 @@ Client renderer / mesher experiments:
 - `section_task_queue`
 - `rgss_endpoint`
 - `fsr_upscaling`
+- `iris_shader_frontend_artifact_cache`
+- `cross_pipeline_admission_broker`
+- `render_warmup_system`
 
 Instrumentation:
 - `client_benchmark`
@@ -94,8 +97,9 @@ Iris (with or without Sodium) stays off for a specific capability reason — no
 official post-final hook and no external control of Iris internal resolution —
 not the old blanket `incompatible_mod`.
 
-The settings screen exposes all 24 registered modules under Rendering, Simulation, or
-Advanced. Every toggle that changes Mixins uses the restart-required apply policy.
+The settings screen exposes all 27 registered modules under Rendering, Simulation,
+Experimental Killer Modules, or Advanced. Every toggle that changes Mixins uses the
+restart-required apply policy.
 
 ## Validation status
 
@@ -113,6 +117,11 @@ The new modules remain default off until their separate runtime/hardware validat
 `mesher_fast_path` Phase 3.2 includes weighted vanilla unit cubes while preserving vanilla
 seed-based variant selection; see `MESHER_FAST_PATH.md`. FSR1 details are in
 `FSR_UPSCALING.md`, server telemetry in `SERVER_TELEMETRY.md`.
+
+The three default-off Sodium/Iris/Lithium companion prototypes are documented in
+[`docs/KILLER_MODULES_IMPLEMENTATION.md`](docs/KILLER_MODULES_IMPLEMENTATION.md). Their balanced,
+tick-replayed A/B procedure and claim boundaries are in
+[`docs/KILLER_MODULES_BENCHMARK.md`](docs/KILLER_MODULES_BENCHMARK.md).
 
 The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
 

@@ -281,7 +281,12 @@ def negative_regression(baseline, candidate, threshold: float) -> bool:
 
 
 def format_report(report: dict) -> str:
-    lines = ["Ultima client A/B summary", "Primary comparison: disabled vs default", ""]
+    lines = [
+        "Ultima client A/B summary",
+        "Paired comparison: recorded OFF versus ON roles",
+        "Release-default baseline remains disabled versus default",
+        "",
+    ]
     for warning in report["warnings"]:
         lines.append(f"WARNING: {warning}")
     if report["warnings"]:
