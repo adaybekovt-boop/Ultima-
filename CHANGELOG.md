@@ -64,7 +64,7 @@ the same day by the capability-gate entry above):
   Canvas blocks it, Sodium-only is allowed, and Iris blocks it for the documented capability reason.
 
 All newly merged optimization experiments remain default **OFF**. Existing proven/default modules
-remain unchanged except `server_metrics`, which is default-on instrumentation. This integration
+remain unchanged. `server_metrics` is default-off instrumentation. This integration
 runs code-only Gradle/static validation; no `runClient`, `runServer`, LAN join, or hardware A/B is
 part of this pass, so it makes no new FPS or runtime-performance claim.
 

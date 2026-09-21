@@ -2,11 +2,10 @@
 
 ## Rule zero
 
-The three modules are experimental and default off. Do not enable them in a release default, quote
-a speedup, or call a synthetic/unit result a player-visible win until this protocol passes on an
-actual client with Sodium + Iris + Lithium. The primary cache metric is loading/reload wall time;
-the primary broker and warmup metrics are tail latency and visibility/first-use guardrails, not
-average FPS.
+The three modules are experimental and default off. Do not quote a speedup. Static checks do not
+make a player-visible win. Artifact samples are invalid when reload count or cache hits are zero.
+Broker control/static samples are `NOT_APPLICABLE` while active control is unavailable. Warmup
+samples are `NOT_APPLICABLE` while warmed operations stay zero.
 
 ## Required environment record
 
@@ -102,7 +101,7 @@ Available profiles:
 | `broker-trace` | broker off | broker trace-only; measures observer overhead |
 | `broker-control` | broker trace-only | same instrumentation, adaptive control |
 | `broker-static` | broker trace-only | same instrumentation, static admission budget |
-| `warmup` | warmup module in `profile` mode | same profiler in `warm` mode |
+| `warmup` | warmup module, profiler only | same profiler; this row cannot PASS while no adapter is active |
 | `all-trace` | all three off | all three on, broker trace-only |
 | `all-control` | all three off | all three on, broker adaptive control |
 

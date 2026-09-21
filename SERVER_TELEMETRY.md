@@ -10,7 +10,7 @@ saves, or tick order.
 
 ## What is measured
 
-Always-on cheap counters (module `server_metrics`, default on):
+Opt-in counters (module `server_metrics`, default off; Mixins are not applied until it is enabled):
 
 | Id | Meaning |
 | --- | --- |

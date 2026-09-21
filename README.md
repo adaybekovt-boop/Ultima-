@@ -54,7 +54,6 @@ Simulation:
 - `full_cube_move`
 
 Instrumentation / client contract:
-- `server_metrics`
 - `terrain_metrics`
 - `temporal`
 - `settings_ui`
@@ -82,6 +81,7 @@ Client renderer / mesher experiments:
 - `render_warmup_system`
 
 Instrumentation:
+- `server_metrics`
 - `client_benchmark`
 
 ### Auto-disable policy

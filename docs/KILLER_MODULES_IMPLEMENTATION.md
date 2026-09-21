@@ -2,6 +2,11 @@
 
 ## Scope and safety status
 
+Hardening status: these modules are experimental, default-off, and statically checked. They are not
+a measured performance win. The artifact cache can build a key for real Iris 1.11.4 parameters and
+sits behind Iris's process-local LRU. The broker is observer-only. Warmup is profiler-only. None of
+that has been runtime-validated in Minecraft.
+
 This branch adds three independent, client-only, default-off modules:
 
 - `iris_shader_frontend_artifact_cache`
@@ -59,25 +64,27 @@ client benchmark embeds the same object as `killerModules`.
 Iris 1.11.4 routes graphics transforms through the private
 `TransformPatcher.transform(name, vertex, geometry, tessControl, tessEval, fragment, parameters)`
 method and compute transforms through `TransformPatcher.transformCompute(name, compute,
-parameters)`. The adapter intercepts the method at HEAD and RETURN:
+parameters)`. Iris checks its own LRU before `transformInternal`. Ultima wraps only that internal
+call, so a same-JVM repeat is served by Iris and does not touch disk. On an Iris L1 miss the
+adapter:
 
-1. build a complete key before Iris mutates its parameter scratch fields;
-2. on hit, return the transformed `Map<PatchShaderType, String>` to the normal caller;
-3. on miss, let the original Iris method execute and store only its returned stage/source map;
-4. leave driver compilation and program linking unchanged.
+1. builds a key from the real `Parameters` fields (`patch`, `textureMap`, and subclass fields; there is no `textureOverrides`);
+2. on a persistent hit, returns the transformed stage map;
+3. on a miss, lets Iris transform and stores the returned stage/source map with an atomic rename and no per-write fsync;
+4. leaves driver compilation and program linking unchanged.
 
 The payload is transformed source text, including explicit null values for absent shader stages.
 It never contains a GL handle, program binary, live AST, or driver cache data.
 
 ### Key completeness
 
-Key schema 1 hashes, with typed and length-delimited encoding:
+Key schema 2 hashes, with typed and length-delimited encoding:
 
 - transform kind and program name;
 - every relevant stage name and its nullable raw source;
 - exact supported `Parameters` implementation name;
-- every validated field in the Iris parameter inheritance graph: patch, texture map, texture
-  overrides, geometry/tessellation flags, texture stage, alpha/shadow context, and vanilla
+- every validated field in the Iris parameter inheritance graph: patch, texture map,
+  geometry/tessellation flags, texture stage, alpha/shadow context, and vanilla
   attribute/line/cloud/chunk-offset inputs as applicable;
 - canonicalized map and set contents, independent of iteration order;
 - Iris debug-transform option and the active depth convention (`zZeroToOne`);
@@ -163,13 +170,13 @@ aggregated only for diagnostics. No string lookup, config lookup, log formatting
 corresponding upload can be proven visible on screen. `visibleHoleProxy` is the number of requested
 initial-build sections not yet completed or cancelled; it is not a pixel-occlusion measurement.
 
-### Phase 2: one-sided Sodium control
+### Phase 2: observer only
 
-The exact integration point is the HEAD of Sodium 0.9.2
-`RenderSectionManager.submitDeferredSectionTasks`, before its loop calls
-`DeferredTaskList.dequeueNextSectionPos`. Sodium has already submitted zero-frame, one-frame, and
-important tasks before this method. Cancelling at this boundary therefore does not dequeue, transfer
-ownership, cancel, duplicate, or reschedule a job.
+Sodium 0.9.2 `submitDeferredSectionTasks` checks `ChunkJobCollector.hasBudgetRemaining` and
+`UploadResourceBudget.isAvailable` before `dequeueNextSectionPos`. Those are boolean gates. There is
+no public API that reduces the budget without skipping the rest of the pass. Cancelling the method
+would improve a frame-time graph by postponing chunk work, so control and static modes are
+fail-closed. The mixin only observes. `changesScheduling` is false.
 
 Runtime modes are selected with:
 
@@ -177,10 +184,10 @@ Runtime modes are selected with:
 -Dultima.crossPipelineAdmissionBroker.mode=trace|control|static
 ```
 
-`control` uses a 128-frame window, recalculates percentiles every eight frames, and applies simple
-hysteresis around the configured frame target. Inputs are p95/latest CPU frame time, an available
-GPU result, integrated-server pressure, queue depth, and worker utilization. It admits normally
-under low pressure and temporarily skips only the deferred dequeue loop under high pressure.
+The controller state machine is still tested, but it is not wired to Sodium. Pressure enters on a
+frame above 2x target, a valid high GPU sample, server pressure, or three frames above 1.25x target,
+and exits after eight healthy frames. A negative GPU sample is no data, not 0 ms. The starvation
+bound, if control is ever reattached, is `maximumDefer` only.
 
 Safety exits are structural or explicit:
 
@@ -204,10 +211,9 @@ Defaults can be changed only for controlled experiments:
 -Dultima.crossPipelineAdmissionBroker.staticPermitEveryFrames=2
 ```
 
-`static` admits one deferred batch every configured number of calls and exists only as the required
-static-tuning control. C2ME is not actively regulated. Iris scheduling, Lithium simulation, and
-shader quality/resolution are never changed. If the exact Sodium artifact is absent or different,
-the module does not apply.
+`static` is not applied to Sodium. It remains a unit-tested schedule inside `AdmissionController`
+and uses the same non-wired boundary as `control`, so it is not a separate mechanism. C2ME is not
+actively regulated. If the exact Sodium artifact is absent or different, the module does not apply.
 
 ## C. Render warmup system
 
@@ -232,11 +238,12 @@ construction. Therefore v1 has no fake Iris `warmupEverything` adapter.
 
 ### Warmup plan and adapters
 
-Two modes allow symmetric measurement:
+The module is profiler-only. `mode=warm` does not enable an adapter. The old static `RenderTypes`
+getter reads were removed because vanilla has already initialized those objects by the hook, and
+they are not a pipeline prepare. Iris, GeckoLib, and ModernFix adapters stay unwired.
 
 ```text
--Dultima.renderWarmupSystem.mode=profile  # instrument, execute no warmup
--Dultima.renderWarmupSystem.mode=warm     # instrument and run supported adapters (default)
+-Dultima.renderWarmupSystem.mode=profile  # the only effective mode
 ```
 
 An adapter must implement `supports`, `discover`, `warm(deadline)`, timeout behavior, and fail-open
