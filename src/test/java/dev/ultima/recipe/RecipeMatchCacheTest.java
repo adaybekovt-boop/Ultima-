@@ -28,6 +28,7 @@ public final class RecipeMatchCacheTest {
     public static void main(final String[] args) {
         dev.ultima.failopen.Wave2FailOpenTest.run();
         testVanillaClassPolicy();
+        testExactClassPrefixDoesNotDisableTheType();
         testShapelessOrderIndependence();
         testShapedGeometrySensitivity();
         testOverlappingFirstMatch();
@@ -96,6 +97,26 @@ public final class RecipeMatchCacheTest {
                 "net.minecraft.world.item.crafting.AbstractCookingRecipe",
                 recipeClass("SmokingRecipe").getSuperclass().getName(),
                 "smoking is a cooking recipe");
+    }
+
+    private static void testExactClassPrefixDoesNotDisableTheType() {
+        assertTrue(RecipeCachePolicy.isExactPureClass(recipeClass("SmeltingRecipe")), "smelting leaf is exact-pure");
+        assertTrue(RecipeCachePolicy.isExactPureClass(recipeClass("ShapedRecipe")), "shaped leaf is exact-pure");
+        assertFalse(
+                RecipeCachePolicy.isExactPureClass(recipeClass("AbstractCookingRecipe")),
+                "the cooking base class is not itself a cacheable implementation");
+        assertFalse(
+                RecipeCachePolicy.isExactPureClass(recipeClass("MapExtendingRecipe")),
+                "map extending stays impure");
+        List<Class<?>> mixed = List.of(
+                recipeClass("ShapedRecipe"),
+                recipeClass("MapExtendingRecipe"),
+                recipeClass("ShapelessRecipe"));
+        assertEquals(1, RecipeCachePolicy.cacheablePrefixLength(mixed), "only holders before the unsafe recipe are cacheable");
+        assertFalse(RecipeCachePolicy.fullyPure(mixed), "one unsafe recipe must not mark the prefix pure");
+        List<Class<?>> cooking = List.of(recipeClass("SmeltingRecipe"), recipeClass("BlastingRecipe"));
+        assertTrue(RecipeCachePolicy.fullyPure(cooking), "known cooking leaves stay cacheable together");
+        assertEquals(2, RecipeCachePolicy.cacheablePrefixLength(cooking), "both cooking leaves stay in the prefix");
     }
 
     private static Class<?> recipeClass(final String simpleName) {
