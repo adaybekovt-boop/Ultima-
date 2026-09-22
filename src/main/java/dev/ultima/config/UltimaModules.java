@@ -93,12 +93,17 @@ public final class UltimaModules {
                     false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
-                            + "index by the volume's width and height at every position."),
-            new Module("server_metrics", true,
-                    "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
-                            + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "
-                            + "Expected cost: two nanoTime calls and one atomic add per instrumented phase, no "
-                            + "allocations on the always-on path."),
+                            + "index by the volume's width and height at every position. Automatically disabled "
+                            + "when Lithium or a Lithium fork is loaded: their default collision mixins replace "
+                            + "the entity-movement, noCollision, supporting-block, and free-position iterators "
+                            + "with a chunk-aware sweeper that does not call Cursor3D.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("server_metrics", false,
+                    "Opt-in server subsystem timers and counters, plus /ultima profile tracing. "
+                            + "Instrumentation, not an optimization. Mixins are skipped when this module is off. "
+                            + "Enable it only while measuring."),
             new Module("blockentity_sleeping", false,
                     "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla mutation "
                             + "has a synchronous wake channel. Proof-of-correctness prototype, default off. "
@@ -110,9 +115,13 @@ public final class UltimaModules {
             new Module("recipe_match_cache", false,
                     "Opt-in first-match cache for crafting, furnace/blast/smoker, and brewing lookups. "
                             + "Stores the RecipeHolder (or brewing mix) vanilla's ordered scan would return first "
-                            + "for an identical input. Full invalidation on recipe reload. Special/impure recipes "
-                            + "fall back to vanilla. Lithium is not auto-disabled: it has no recipe-lookup cache "
-                            + "(only furnace/brewing block-entity sleeping). Default off."),
+                            + "for an identical input, and only for an exact allowlisted class whose instance fields "
+                            + "still match pinned 26.2 and that has no mixin-merged method. A hit is stored only "
+                            + "for holders before the first unsafe recipe. A miss is stored only when the whole "
+                            + "type is exact-pure. Lookups are dropped again at RecipeManager.finalizeRecipeLoading, "
+                            + "which vanilla calls after static tag publication. Unknown recipes bypass. "
+                            + "Lithium is not auto-disabled: it has no recipe-lookup cache "
+                            + "(only furnace/brewing block-entity sleeping). Default off. Not a measured speedup."),
             new Module("tag_bitsets", false,
                     "After tag bind/reload, answer Holder.is(TagKey) with a compact raw-id bitset. Unknown "
                             + "tags and out-of-range ids fall back to vanilla contains(). Default off. "
@@ -198,6 +207,20 @@ public final class UltimaModules {
                             + "Iris (with or without Sodium) is disabled with a specific capability reason: no "
                             + "official post-final hook and no external control of Iris internal resolution.",
                     FSR_UNCONDITIONAL_INCOMPATIBLE),
+            Module.client("iris_shader_frontend_artifact_cache", false,
+                    "Persistent L2 cache for deterministic Iris CPU shader-transform artifacts. Keeps Iris' normal "
+                            + "driver compile/link path and fails closed on an unknown Iris build. Experimental and "
+                            + "disabled by default until warm-cache A/B validation is complete.",
+                    List.of()),
+            Module.client("cross_pipeline_admission_broker", false,
+                    "Observer for frame, Sodium queue, upload, server, and GC pressure. Does not defer or cancel "
+                            + "Sodium section tasks: 0.9.2 has no safe partial-budget API. Experimental, default off, "
+                            + "and pending runtime validation.",
+                    List.of()),
+            Module.client("render_warmup_system", false,
+                    "Profiler-only first-use instrumentation. No warmup adapter is active. Iris, GeckoLib, and "
+                            + "ModernFix are not warmed. Experimental, default off, and pending runtime validation.",
+                    List.of()),
             Module.client("settings_ui", true,
                     "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
                             + "does not change networking or world simulation. Disable to hide the button; "

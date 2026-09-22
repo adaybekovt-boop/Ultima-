@@ -222,7 +222,7 @@ final class ServerTelemetryChecks {
         assertTrue(
                 UltimaModules.kind(UltimaModules.byKey("server_metrics")) == UltimaModules.Kind.INSTRUMENTATION,
                 "server_metrics kind is instrumentation");
-        assertTrue(UltimaModules.byKey("server_metrics").enabledByDefault(), "server_metrics is default-on");
+        assertTrue(!UltimaModules.byKey("server_metrics").enabledByDefault(), "server_metrics is default-off");
         assertTrue(!UltimaModules.byKey("server_metrics").clientOnly(), "server_metrics runs on dedicated servers");
     }
 
