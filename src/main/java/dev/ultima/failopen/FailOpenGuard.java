@@ -38,6 +38,7 @@ public final class FailOpenGuard {
         private final AtomicLong failOpens = new AtomicLong();
         private final ConcurrentHashMap<Object, Integer> consecutive = new ConcurrentHashMap<>();
         private final Set<Object> tripped = ConcurrentHashMap.newKeySet();
+        private volatile boolean overflow;
 
         Module(final String key, final String loggerName) {
             this.key = key;
@@ -56,6 +57,7 @@ public final class FailOpenGuard {
             this.failOpens.set(0L);
             this.consecutive.clear();
             this.tripped.clear();
+            this.overflow = false;
         }
     }
 
@@ -101,7 +103,14 @@ public final class FailOpenGuard {
     }
 
     public static boolean isTripped(final Module module, final Object caseId) {
-        return caseId != null && module.tripped.contains(caseId);
+        if (caseId == null) {
+            return false;
+        }
+        if (module.tripped.contains(caseId)) {
+            return true;
+        }
+        // overflow is false on the healthy path, so the consecutive map is not touched.
+        return module.overflow && !module.consecutive.containsKey(caseId);
     }
 
     /**
@@ -207,12 +216,19 @@ public final class FailOpenGuard {
         if (!module.consecutive.containsKey(caseId) && module.consecutive.size() >= MAX_CONSECUTIVE_CASES) {
             if (module.tripped.size() < MAX_TRIPPED_CASES) {
                 module.tripped.add(caseId);
+            } else {
+                module.overflow = true;
             }
             return;
         }
         int consecutive = module.consecutive.merge(caseId, 1, FailOpenGuard::saturate);
-        if (consecutive >= CIRCUIT_BREAKER_THRESHOLD && module.tripped.size() < MAX_TRIPPED_CASES) {
-            module.tripped.add(caseId);
+        if (consecutive >= CIRCUIT_BREAKER_THRESHOLD) {
+            if (module.tripped.size() < MAX_TRIPPED_CASES) {
+                module.tripped.add(caseId);
+            } else {
+                module.consecutive.remove(caseId);
+                module.overflow = true;
+            }
         }
     }
 
