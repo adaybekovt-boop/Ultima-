@@ -93,7 +93,13 @@ public final class UltimaModules {
                     false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
-                            + "index by the volume's width and height at every position."),
+                            + "index by the volume's width and height at every position. Automatically disabled "
+                            + "when Lithium or a Lithium fork is loaded: their default collision mixins replace "
+                            + "the entity-movement, noCollision, supporting-block, and free-position iterators "
+                            + "with a chunk-aware sweeper that does not call Cursor3D.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
             new Module("server_metrics", false,
                     "Opt-in server subsystem timers and counters, plus /ultima profile tracing. "
                             + "Instrumentation, not an optimization. Mixins are skipped when this module is off. "
@@ -112,7 +118,8 @@ public final class UltimaModules {
                             + "for an identical input, and only for an exact allowlisted class whose instance fields "
                             + "still match pinned 26.2 and that has no mixin-merged method. A hit is stored only "
                             + "for holders before the first unsafe recipe. A miss is stored only when the whole "
-                            + "type is exact-pure. Full invalidation on recipe reload. Unknown recipes bypass. "
+                            + "type is exact-pure. Lookups are dropped again at RecipeManager.finalizeRecipeLoading, "
+                            + "which vanilla calls after static tag publication. Unknown recipes bypass. "
                             + "Lithium is not auto-disabled: it has no recipe-lookup cache "
                             + "(only furnace/brewing block-entity sleeping). Default off. Not a measured speedup."),
             new Module("tag_bitsets", false,

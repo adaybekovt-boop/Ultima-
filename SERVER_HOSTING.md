@@ -85,8 +85,9 @@ from the cloud agent environment.
 3. Start the server. Confirm the log contains `Ultima initialized` and that
    simulation modules resolve `enabled` (`cursor_step`,
    `entity_section_lookup`, `block_collision_shape`, `collision_shell_skip`,
-   `supporting_block_shape_skip`, `full_cube_move`). Client modules must
-   report `not_client_environment` on the dedicated server.
+   `supporting_block_shape_skip`, `full_cube_move`) when Lithium is not installed.
+   With Lithium, Canary, or Radium those modules, including `cursor_step`, resolve
+   inactive. Client modules must report `not_client_environment` on the dedicated server.
 4. **Client with Ultima:** Fabric 26.2 profile, same Fabric API, Ultima in
    `mods/`. Connect to `localhost` (or the LAN IP). Play normally. Optional:
    enable `retained_terrain` in `config/ultima.properties` on **this**

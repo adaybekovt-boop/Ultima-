@@ -100,7 +100,8 @@ public final class UltimaSettingsCatalog {
                 "cursor_step",
                 "Optimized block iteration",
                 "Steps the block iteration cursor by carrying an increment instead of dividing a running index at "
-                        + "every position. Required by Collision shell skip.",
+                        + "every position. Required by Collision shell skip. Auto-disabled when Lithium, Canary, "
+                        + "or Radium is loaded, because those mods replace the hot collision iterators.",
                 SettingsCategory.SIMULATION,
                 ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(
@@ -114,7 +115,8 @@ public final class UltimaSettingsCatalog {
                 "recipe_match_cache",
                 "Recipe match cache",
                 "Caches vanilla first-match recipe, furnace, and brewing lookups while preserving ordered-match "
-                        + "semantics and invalidating on reload. Default off; Lithium remains allowed.",
+                        + "semantics. Invalidates on recipe reload and drops lookups after tag publication. "
+                        + "Default off; Lithium remains allowed. Not a measured speedup.",
                 SettingsCategory.SIMULATION,
                 ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(

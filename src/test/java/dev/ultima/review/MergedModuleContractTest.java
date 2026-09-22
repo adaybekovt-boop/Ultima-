@@ -62,6 +62,7 @@ final class MergedModuleContractTest {
                 "collision_shell_skip",
                 "supporting_block_shape_skip",
                 "full_cube_move",
+                "cursor_step",
                 "blockentity_sleeping",
                 "tag_bitsets",
                 "state_property_cache",

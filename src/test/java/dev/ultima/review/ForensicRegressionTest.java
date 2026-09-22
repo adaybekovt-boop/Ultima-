@@ -1,5 +1,6 @@
 package dev.ultima.review;
 
+import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -38,6 +40,8 @@ public final class ForensicRegressionTest {
         testEntitySectionOrder();
         testCursorCarryBounds();
         testCursorCarry();
+        testCursorOriginAndLargeBoxes();
+        testDefaultSilProfile();
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
@@ -182,6 +186,59 @@ public final class ForensicRegressionTest {
         }
     }
 
+    private static void testCursorOriginAndLargeBoxes() {
+        int[][] boxes = {{1, 1, 1}, {1, 8, 1}, {8, 1, 1}, {2, 3, 5}, {40, 3, 40}};
+        int[] origins = {0, -64, -30_000_000, 29_999_999};
+        for (int[] box : boxes) {
+            assertTrue(CursorMath.canUseCarry(box[0], box[1], box[2]), "edge box must stay eligible");
+            for (int origin : origins) {
+                CursorModel vanilla = new CursorModel(box[0], box[1], box[2], origin, origin - 3, origin + 7);
+                CursorModel carried = new CursorModel(box[0], box[1], box[2], origin, origin - 3, origin + 7);
+                int steps = 0;
+                while (vanilla.advanceVanilla()) {
+                    assertTrue(carried.advanceCarried(), "carried cursor ended early");
+                    if (vanilla.nextX() != carried.nextX()
+                            || vanilla.nextY() != carried.nextY()
+                            || vanilla.nextZ() != carried.nextZ()
+                            || vanilla.index != carried.index) {
+                        throw new AssertionError("origin cursor mismatch at " + vanilla.positionAndIndex());
+                    }
+                    steps++;
+                }
+                assertFalse(carried.advanceCarried(), "carried cursor emitted an extra position");
+                assertEquals((long) box[0] * box[1] * box[2], steps, "visit count");
+            }
+        }
+    }
+
+    private static void testDefaultSilProfile() {
+        Map<String, Boolean> requested = new LinkedHashMap<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            requested.put(module.key(), module.enabledByDefault());
+        }
+        Set<String> loaded = Set.of("sodium", "iris", "lithium");
+        LoadedModCache.runWithProbeForTest(loaded::contains, () -> {
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            List<String> enabled = new ArrayList<>();
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                if (config.isEnabled(module.key())) {
+                    enabled.add(module.key());
+                }
+            }
+            assertTrue(enabled.isEmpty() || enabled.equals(List.of("settings_ui")),
+                    "S+I+L default enabled mixins must be empty or title-screen UI only, got " + enabled);
+            assertTrue("incompatible_mod".equals(config.resolve("cursor_step").reason()),
+                    "cursor_step must auto-disable beside Lithium");
+            assertFalse(config.isEnabled("recipe_match_cache"), "recipe cache stays off");
+            assertFalse(config.isEnabled("server_metrics"), "server metrics stay off");
+            assertFalse(config.isEnabled("iris_shader_frontend_artifact_cache"), "artifact cache stays off");
+            assertFalse(config.isEnabled("cross_pipeline_admission_broker"), "broker stays off");
+            assertFalse(config.isEnabled("render_warmup_system"), "warmup stays off");
+            assertFalse(config.isEnabled("client_benchmark"), "benchmark stays off");
+            assertFalse(config.isEnabled("terrain_metrics"), "terrain metrics auto-disable on Sodium/Iris");
+        });
+    }
+
     private static void testCursorCarryBounds() {
         assertTrue(CursorMath.canUseCarry(1, 1, Integer.MAX_VALUE), "largest non-wrapping cursor");
         assertFalse(CursorMath.canUseCarry(2, 1, Integer.MAX_VALUE), "overflowing cursor must use vanilla");
@@ -300,7 +357,10 @@ public final class ForensicRegressionTest {
                     "supporting-block skip must declare Lithium incompatibility");
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
-                    "full-cube move must declare Lithium incompatibility");
+                    "full cube move overlaps Lithium");
+            assertTrue(
+                    UltimaModules.byKey("cursor_step").incompatibleMods().contains("lithium"),
+                    "cursor step overlaps Lithium's collision sweepers");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
@@ -617,11 +677,40 @@ public final class ForensicRegressionTest {
         private boolean interiorStarted;
         private boolean interiorExhausted;
 
+        private final int originX;
+        private final int originY;
+        private final int originZ;
+
         private CursorModel(final int width, final int height, final int depth) {
+            this(width, height, depth, 0, 0, 0);
+        }
+
+        private CursorModel(
+                final int width,
+                final int height,
+                final int depth,
+                final int originX,
+                final int originY,
+                final int originZ) {
             this.width = width;
             this.height = height;
             this.depth = depth;
+            this.originX = originX;
+            this.originY = originY;
+            this.originZ = originZ;
             this.end = width * height * depth;
+        }
+
+        private int nextX() {
+            return this.originX + this.x;
+        }
+
+        private int nextY() {
+            return this.originY + this.y;
+        }
+
+        private int nextZ() {
+            return this.originZ + this.z;
         }
 
         private boolean advanceVanilla() {

@@ -87,9 +87,11 @@ Instrumentation:
 ### Auto-disable policy
 
 `Lithium`, `Canary`, and `Radium` disable the overlapping collision/entity and new
-simulation optimizations, including hopper sleeping, slot masks, entity-query early-outs,
-tag bitsets, and the state-property cache. `recipe_match_cache` deliberately remains
-compatible because Lithium has no equivalent first-match recipe lookup cache.
+simulation optimizations, including `cursor_step`, hopper sleeping, slot masks,
+entity-query early-outs, tag bitsets, and the state-property cache. Lithium 0.25.3
+replaces the hot collision iterators and does not call `Cursor3D`. `recipe_match_cache`
+deliberately remains compatible because Lithium has no equivalent first-match recipe
+lookup cache.
 
 `Sodium`, `Iris`, and `Canvas` disable Ultima's geometry renderer integrations
 (`retained_terrain`, `mesher_fast_path`, and the other terrain/mesher modules).
