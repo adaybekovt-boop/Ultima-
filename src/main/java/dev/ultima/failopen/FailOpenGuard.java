@@ -190,9 +190,10 @@ public final class FailOpenGuard {
     }
 
     private static void recordSuccess(final Module module, final Object caseId) {
-        if (caseId != null) {
-            module.consecutive.remove(caseId);
+        if (caseId == null || module.consecutive.isEmpty()) {
+            return;
         }
+        module.consecutive.remove(caseId);
     }
 
     private static void recordFailure(final Module module, final Object caseId) {

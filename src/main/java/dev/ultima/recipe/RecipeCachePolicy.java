@@ -1,10 +1,16 @@
 package dev.ultima.recipe;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
-import net.minecraft.world.item.crafting.AbstractCookingRecipe;
+import java.util.Optional;
+import java.util.Set;
 import net.minecraft.world.item.crafting.BannerDuplicateRecipe;
+import net.minecraft.world.item.crafting.BlastingRecipe;
 import net.minecraft.world.item.crafting.BookCloningRecipe;
+import net.minecraft.world.item.crafting.CampfireCookingRecipe;
 import net.minecraft.world.item.crafting.DecoratedPotRecipe;
 import net.minecraft.world.item.crafting.DyeRecipe;
 import net.minecraft.world.item.crafting.FireworkRocketRecipe;
@@ -21,8 +27,11 @@ import net.minecraft.world.item.crafting.RepairItemRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.ShieldDecorationRecipe;
-import net.minecraft.world.item.crafting.SingleItemRecipe;
-import net.minecraft.world.item.crafting.SmithingRecipe;
+import net.minecraft.world.item.crafting.SmeltingRecipe;
+import net.minecraft.world.item.crafting.SmithingTransformRecipe;
+import net.minecraft.world.item.crafting.SmithingTrimRecipe;
+import net.minecraft.world.item.crafting.SmokingRecipe;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.item.crafting.TransmuteRecipe;
 
 /**
@@ -31,25 +40,76 @@ import net.minecraft.world.item.crafting.TransmuteRecipe;
  *
  * <p>26.2 matching does not consume RNG. {@code Level} is unused by every vanilla recipe except
  * {@link MapExtendingRecipe}, which reads map saved data. Unknown or special classes that cannot
- * be proven to be a pure function of {@code (type, input)} force a vanilla scan.
+ * be proven to be a pure function of {@code (type, input)} are not cached. One unknown recipe does
+ * not disable the whole {@link RecipeType}: only holders strictly before the first unsafe recipe
+ * may be stored, and a miss is stored only when every recipe of that type is an exact known class.
  */
 public final class RecipeCachePolicy {
     public static final RecipeCachePolicy EMPTY = new RecipeCachePolicy(Map.of());
 
     private final Map<RecipeType<?>, TypePlan> plans;
 
+    private static final Set<Class<?>> EXACT_PURE = Set.of(
+            ShapedRecipe.class,
+            ShapelessRecipe.class,
+            TransmuteRecipe.class,
+            DyeRecipe.class,
+            ImbueRecipe.class,
+            SmeltingRecipe.class,
+            BlastingRecipe.class,
+            SmokingRecipe.class,
+            CampfireCookingRecipe.class,
+            StonecutterRecipe.class,
+            SmithingTransformRecipe.class,
+            SmithingTrimRecipe.class,
+            RepairItemRecipe.class,
+            FireworkRocketRecipe.class,
+            FireworkStarRecipe.class,
+            FireworkStarFadeRecipe.class,
+            BookCloningRecipe.class,
+            ShieldDecorationRecipe.class,
+            BannerDuplicateRecipe.class,
+            DecoratedPotRecipe.class);
+
     private RecipeCachePolicy(final Map<RecipeType<?>, TypePlan> plans) {
         this.plans = plans;
     }
 
     public static RecipeCachePolicy inspect(final RecipeMap recipes) {
-        Map<RecipeType<?>, TypePlan> plans = new IdentityHashMap<>();
+        Map<RecipeType<?>, List<RecipeHolder<?>>> ordered = new IdentityHashMap<>();
         for (RecipeHolder<?> holder : recipes.values()) {
-            Recipe<?> recipe = holder.value();
-            TypePlan plan = plans.computeIfAbsent(recipe.getType(), type -> new TypePlan());
-            classify(recipe, plan);
+            ordered.computeIfAbsent(holder.value().getType(), type -> new ArrayList<>()).add(holder);
+        }
+        Map<RecipeType<?>, TypePlan> plans = new IdentityHashMap<>();
+        for (Map.Entry<RecipeType<?>, List<RecipeHolder<?>>> entry : ordered.entrySet()) {
+            plans.put(entry.getKey(), plan(entry.getValue()));
         }
         return new RecipeCachePolicy(plans);
+    }
+
+    /** Exact class match. Subclasses and mixins of a known recipe are not pure. */
+    public static boolean isExactPureClass(final Class<?> recipeClass) {
+        return recipeClass != null && EXACT_PURE.contains(recipeClass);
+    }
+
+    static int cacheablePrefixLength(final List<Class<?>> order) {
+        int length = 0;
+        for (Class<?> recipeClass : order) {
+            if (!isExactPureClass(recipeClass)) {
+                break;
+            }
+            length++;
+        }
+        return length;
+    }
+
+    static boolean fullyPure(final List<Class<?>> order) {
+        for (Class<?> recipeClass : order) {
+            if (!isExactPureClass(recipeClass)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public boolean shouldBypassCache(final RecipeType<?> type, final RecipeInput input) {
@@ -57,55 +117,54 @@ public final class RecipeCachePolicy {
         if (plan == null) {
             return false;
         }
-        if (plan.neverCache) {
-            return true;
-        }
         return plan.mapExtendingPresent && RecipeMatchKeys.containsFilledMap(input);
     }
 
-    static Purity purityOf(final Recipe<?> recipe) {
-        if (recipe instanceof MapExtendingRecipe) {
-            return Purity.IMPURE;
+    /**
+     * Store a hit only when that holder is in the pure prefix. Store a miss only when the type
+     * has no unsafe recipe. An unknown recipe later in the list must not be cached and must not
+     * erase earlier exact matches.
+     */
+    public boolean mayStore(
+            final RecipeType<?> type,
+            final RecipeInput input,
+            final Optional<? extends RecipeHolder<?>> result) {
+        if (result == null || shouldBypassCache(type, input)) {
+            return false;
         }
-        if (recipe instanceof ShapedRecipe
-                || recipe instanceof ShapelessRecipe
-                || recipe instanceof TransmuteRecipe
-                || recipe instanceof DyeRecipe
-                || recipe instanceof ImbueRecipe
-                || recipe instanceof AbstractCookingRecipe
-                || recipe instanceof SingleItemRecipe
-                || recipe instanceof SmithingRecipe
-                || recipe instanceof RepairItemRecipe
-                || recipe instanceof FireworkRocketRecipe
-                || recipe instanceof FireworkStarRecipe
-                || recipe instanceof FireworkStarFadeRecipe
-                || recipe instanceof BookCloningRecipe
-                || recipe instanceof ShieldDecorationRecipe
-                || recipe instanceof BannerDuplicateRecipe
-                || recipe instanceof DecoratedPotRecipe) {
-            return Purity.PURE;
+        TypePlan plan = this.plans.get(type);
+        if (plan == null) {
+            return result.isEmpty();
         }
-        return Purity.IMPURE;
+        if (result.isEmpty()) {
+            return plan.fullyPure;
+        }
+        return plan.cacheableHits.contains(result.get());
     }
 
-    private static void classify(final Recipe<?> recipe, final TypePlan plan) {
-        Purity purity = purityOf(recipe);
-        if (purity == Purity.IMPURE) {
+    private static TypePlan plan(final List<RecipeHolder<?>> holders) {
+        TypePlan plan = new TypePlan();
+        boolean unsafe = false;
+        for (RecipeHolder<?> holder : holders) {
+            Recipe<?> recipe = holder.value();
+            if (isExactPureClass(recipe.getClass())) {
+                if (!unsafe) {
+                    plan.cacheableHits.add(holder);
+                }
+                continue;
+            }
+            unsafe = true;
+            plan.fullyPure = false;
             if (recipe instanceof MapExtendingRecipe) {
                 plan.mapExtendingPresent = true;
-            } else {
-                plan.neverCache = true;
             }
         }
-    }
-
-    enum Purity {
-        PURE,
-        IMPURE
+        return plan;
     }
 
     static final class TypePlan {
-        boolean neverCache;
+        boolean fullyPure = true;
         boolean mapExtendingPresent;
+        final Set<RecipeHolder<?>> cacheableHits = Collections.newSetFromMap(new IdentityHashMap<>());
     }
 }
