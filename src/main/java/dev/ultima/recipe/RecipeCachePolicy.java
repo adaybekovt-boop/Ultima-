@@ -38,11 +38,12 @@ import net.minecraft.world.item.crafting.TransmuteRecipe;
  * Cacheability plan rebuilt on every {@code RecipeManager.apply} ({@code /reload} / datapack / recipe
  * registry replacement).
  *
- * <p>26.2 matching does not consume RNG. {@code Level} is unused by every vanilla recipe except
- * {@link MapExtendingRecipe}, which reads map saved data. Unknown or special classes that cannot
- * be proven to be a pure function of {@code (type, input)} are not cached. One unknown recipe does
- * not disable the whole {@link RecipeType}: only holders strictly before the first unsafe recipe
- * may be stored, and a miss is stored only when every recipe of that type is an exact known class.
+ * <p>26.2 matching does not consume RNG. {@code matches(CraftingInput, Level)} bytecode for every
+ * allowlisted class leaves the {@code Level} local unread. {@link MapExtendingRecipe} is the
+ * exception: it calls {@code MapItem.getSavedData} and is not allowlisted. Unknown classes, extra
+ * instance fields, and mixin-merged methods are not cached. One unknown recipe does not disable
+ * the whole {@link RecipeType}: only holders strictly before the first unsafe recipe may be stored,
+ * and a miss is stored only when every recipe of that type is an exact known class.
  */
 public final class RecipeCachePolicy {
     public static final RecipeCachePolicy EMPTY = new RecipeCachePolicy(Map.of());
@@ -87,9 +88,15 @@ public final class RecipeCachePolicy {
         return new RecipeCachePolicy(plans);
     }
 
-    /** Exact class match. Subclasses and mixins of a known recipe are not pure. */
+    /**
+     * Exact class plus the pinned 26.2 field shape. A subclass, an extra instance field, or a
+     * mixin-merged method fails closed. This does not prove an {@code @Inject} left {@code matches}
+     * untouched when it adds neither a field nor {@code MixinMerged}.
+     */
     public static boolean isExactPureClass(final Class<?> recipeClass) {
-        return recipeClass != null && EXACT_PURE.contains(recipeClass);
+        return recipeClass != null
+                && EXACT_PURE.contains(recipeClass)
+                && RecipeVanillaShape.matchesPinnedShape(recipeClass);
     }
 
     static int cacheablePrefixLength(final List<Class<?>> order) {

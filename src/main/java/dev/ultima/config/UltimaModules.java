@@ -109,9 +109,12 @@ public final class UltimaModules {
             new Module("recipe_match_cache", false,
                     "Opt-in first-match cache for crafting, furnace/blast/smoker, and brewing lookups. "
                             + "Stores the RecipeHolder (or brewing mix) vanilla's ordered scan would return first "
-                            + "for an identical input. Full invalidation on recipe reload. Special/impure recipes "
-                            + "fall back to vanilla. Lithium is not auto-disabled: it has no recipe-lookup cache "
-                            + "(only furnace/brewing block-entity sleeping). Default off."),
+                            + "for an identical input, and only for an exact allowlisted class whose instance fields "
+                            + "still match pinned 26.2 and that has no mixin-merged method. A hit is stored only "
+                            + "for holders before the first unsafe recipe. A miss is stored only when the whole "
+                            + "type is exact-pure. Full invalidation on recipe reload. Unknown recipes bypass. "
+                            + "Lithium is not auto-disabled: it has no recipe-lookup cache "
+                            + "(only furnace/brewing block-entity sleeping). Default off. Not a measured speedup."),
             new Module("tag_bitsets", false,
                     "After tag bind/reload, answer Holder.is(TagKey) with a compact raw-id bitset. Unknown "
                             + "tags and out-of-range ids fall back to vanilla contains(). Default off. "
