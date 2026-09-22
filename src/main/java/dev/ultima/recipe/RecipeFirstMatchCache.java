@@ -29,6 +29,15 @@ public final class RecipeFirstMatchCache {
     }
 
     /**
+     * Drops stored holders after vanilla publishes registry tags. The purity plan built at
+     * {@code apply} stays; only lookup entries are cleared, so a hit taken before
+     * {@code HolderSet.Named.bind} cannot outlive tag publication.
+     */
+    public void dropLookups() {
+        this.table.invalidate();
+    }
+
+    /**
      * @return cached first-match, or {@code null} if the caller must run vanilla
      */
     public @Nullable Optional<RecipeHolder<?>> lookup(

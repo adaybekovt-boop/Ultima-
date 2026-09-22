@@ -11,12 +11,15 @@ import java.util.Set;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeMap;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.RepairItemRecipe;
 import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
@@ -46,6 +49,9 @@ public final class RecipeMatchCacheTest {
         testVanillaClassPolicy();
         testPinnedVanillaShape();
         testProductionPrefixStore();
+        testSmithingKeyIgnoresCount();
+        testTableStaysBounded();
+        RecipeBytecodeContract.run();
         testExactClassPrefixDoesNotDisableTheType();
         testShapelessOrderIndependence();
         testShapedGeometrySensitivity();
@@ -311,6 +317,37 @@ public final class RecipeMatchCacheTest {
         cache.storeUnchecked(RecipeType.CRAFTING, input, Optional.of(safe));
         assertEquals(Optional.of(safe), cache.lookupUnchecked(RecipeType.CRAFTING, input, false),
                 "the stored prefix hit must be the same holder");
+        cache.dropLookups();
+        assertTrue(cache.lookupUnchecked(RecipeType.CRAFTING, input, false) == null,
+                "tag publication must drop the stored holder");
+        assertTrue(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(safe)),
+                "dropping lookups must keep the purity plan");
+    }
+
+    private static void testSmithingKeyIgnoresCount() {
+        MinecraftTestItems.ensureBootstrapped("smithing key count");
+        ItemStack one = MinecraftTestItems.dirt().copyWithCount(1);
+        ItemStack many = MinecraftTestItems.dirt().copyWithCount(32);
+        Object small = RecipeMatchKeys.keyFor(
+                RecipeType.SMITHING, new SmithingRecipeInput(one, one.copyWithCount(1), one.copyWithCount(1)));
+        Object large = RecipeMatchKeys.keyFor(
+                RecipeType.SMITHING, new SmithingRecipeInput(many, many.copyWithCount(7), many.copyWithCount(3)));
+        assertEquals(small, large, "smithing matches ignore stack count");
+        CraftingInput single = CraftingInput.of(1, 1, java.util.List.of(one));
+        CraftingInput stacked = CraftingInput.of(1, 1, java.util.List.of(many));
+        Object craftingOne = RecipeMatchKeys.keyFor(RecipeType.CRAFTING, single);
+        Object craftingMany = RecipeMatchKeys.keyFor(RecipeType.CRAFTING, stacked);
+        assertTrue(craftingOne != null && !craftingOne.equals(craftingMany),
+                "crafting keys must keep count because repair requires count == 1");
+    }
+
+    private static void testTableStaysBounded() {
+        FirstMatchTable<Integer, String> table = new FirstMatchTable<>(4);
+        for (int index = 0; index < 12; index++) {
+            table.put(index, "v" + index);
+            assertTrue(table.size() <= 4, "first-match table grew past its cap");
+        }
+        assertEquals("v11", table.get(11), "the entry written after a clear must remain");
     }
 
     private static RecipeHolder<?> holder(final String path, final Recipe<?> recipe) {
