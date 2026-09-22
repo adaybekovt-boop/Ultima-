@@ -104,6 +104,7 @@ public final class ClientFrameBenchmark {
     private static long currentRouteUnit;
     private static boolean currentFrameSampling;
     private static boolean samplingStarted;
+    private static boolean sampleWindow;
     private static boolean complete;
     private static boolean cameraInitialized;
     private static double startX;
@@ -170,6 +171,11 @@ public final class ClientFrameBenchmark {
     private ClientFrameBenchmark() {
     }
 
+    /** True only after the sample window opens and until the benchmark finishes. */
+    public static boolean isSampleWindow() {
+        return sampleWindow;
+    }
+
     public static void beginFrame(final boolean worldReady) {
         if (!ENABLED || complete || !worldReady) {
             frameStart = 0L;
@@ -184,6 +190,7 @@ public final class ClientFrameBenchmark {
         currentRouteUnit = state.routeUnit();
         if (state.sampling() && !samplingStarted) {
             samplingStarted = true;
+            sampleWindow = true;
             resetSampleCounters();
             if ("artifact_shader_reload".equals(SCENE)) {
                 BenchmarkShaderReload.requestOnce();
@@ -305,6 +312,7 @@ public final class ClientFrameBenchmark {
             return;
         }
         complete = true;
+        sampleWindow = false;
         currentFrameSampling = false;
         frameStart = 0L;
         sampleEndPose = capturePose();

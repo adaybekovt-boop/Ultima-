@@ -272,8 +272,9 @@ def killer_scenario_gate(on_killer: dict) -> str:
     warmup = on_killer.get("renderWarmup") or {}
     if cache.get("available"):
         hits = cache.get("hits") or 0
-        reloads = cache.get("reloads") or 0
-        if hits <= 0 or reloads <= 0:
+        # Lifetime reloads include startup. Only reloads inside the sample window count.
+        sample_reloads = cache.get("sampleReloads")
+        if not isinstance(sample_reloads, int) or isinstance(sample_reloads, bool) or hits <= 0 or sample_reloads <= 0:
             return "INVALID"
     if broker.get("available") and not broker.get("changesScheduling"):
         if broker.get("requestedMode") in ("control", "static"):
@@ -514,6 +515,22 @@ def test_module_classification() -> None:
         raise SystemExit("terrain_metrics must remain default-on instrumentation")
     if defaults.get("server_metrics") is not False:
         raise SystemExit("server_metrics must stay default-off instrumentation")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 4, "reloads": 9, "sampleReloads": 0}
+    }) != "INVALID":
+        raise SystemExit("lifetime reloads must not pass the artifact gate")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 4, "reloads": 9}
+    }) != "INVALID":
+        raise SystemExit("a missing in-sample reload counter must not pass")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 0, "sampleReloads": 1}
+    }) != "INVALID":
+        raise SystemExit("zero artifact hits must not pass")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 2, "sampleReloads": 1}
+    }) != "PASS":
+        raise SystemExit("an in-sample reload with hits must pass the artifact gate")
 
     default_on = {
         "modules": [

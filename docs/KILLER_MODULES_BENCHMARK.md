@@ -3,7 +3,7 @@
 ## Rule zero
 
 The three modules are experimental and default off. Do not quote a speedup. Static checks do not
-make a player-visible win. Artifact samples are invalid when reload count or cache hits are zero.
+make a player-visible win. Artifact samples are invalid when in-sample reload count or cache hits are zero. Lifetime reload counters, including startup, do not satisfy the gate.
 Broker control/static samples are `NOT_APPLICABLE` while active control is unavailable. Warmup
 samples are `NOT_APPLICABLE` while warmed operations stay zero.
 
