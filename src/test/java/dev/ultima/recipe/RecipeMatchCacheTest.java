@@ -1,10 +1,26 @@
 package dev.ultima.recipe;
 
+import dev.ultima.review.MinecraftTestItems;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeMap;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.RepairItemRecipe;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 /**
  * Differential proof that the first-match table returns the same recipe, output, and remnants as a
@@ -25,9 +41,12 @@ public final class RecipeMatchCacheTest {
     private RecipeMatchCacheTest() {
     }
 
-    public static void main(final String[] args) {
+    public static void main(final String[] args) throws Exception {
         dev.ultima.failopen.Wave2FailOpenTest.run();
         testVanillaClassPolicy();
+        testPinnedVanillaShape();
+        testProductionPrefixStore();
+        testExactClassPrefixDoesNotDisableTheType();
         testShapelessOrderIndependence();
         testShapedGeometrySensitivity();
         testOverlappingFirstMatch();
@@ -96,6 +115,26 @@ public final class RecipeMatchCacheTest {
                 "net.minecraft.world.item.crafting.AbstractCookingRecipe",
                 recipeClass("SmokingRecipe").getSuperclass().getName(),
                 "smoking is a cooking recipe");
+    }
+
+    private static void testExactClassPrefixDoesNotDisableTheType() {
+        assertTrue(RecipeCachePolicy.isExactPureClass(recipeClass("SmeltingRecipe")), "smelting leaf is exact-pure");
+        assertTrue(RecipeCachePolicy.isExactPureClass(recipeClass("ShapedRecipe")), "shaped leaf is exact-pure");
+        assertFalse(
+                RecipeCachePolicy.isExactPureClass(recipeClass("AbstractCookingRecipe")),
+                "the cooking base class is not itself a cacheable implementation");
+        assertFalse(
+                RecipeCachePolicy.isExactPureClass(recipeClass("MapExtendingRecipe")),
+                "map extending stays impure");
+        List<Class<?>> mixed = List.of(
+                recipeClass("ShapedRecipe"),
+                recipeClass("MapExtendingRecipe"),
+                recipeClass("ShapelessRecipe"));
+        assertEquals(1, RecipeCachePolicy.cacheablePrefixLength(mixed), "only holders before the unsafe recipe are cacheable");
+        assertFalse(RecipeCachePolicy.fullyPure(mixed), "one unsafe recipe must not mark the prefix pure");
+        List<Class<?>> cooking = List.of(recipeClass("SmeltingRecipe"), recipeClass("BlastingRecipe"));
+        assertTrue(RecipeCachePolicy.fullyPure(cooking), "known cooking leaves stay cacheable together");
+        assertEquals(2, RecipeCachePolicy.cacheablePrefixLength(cooking), "both cooking leaves stay in the prefix");
     }
 
     private static Class<?> recipeClass(final String simpleName) {
@@ -197,9 +236,113 @@ public final class RecipeMatchCacheTest {
         assertEquals(0, cache.craftingTable.size(), "impure map grids are not stored");
         int[][] safe = grid(item(PAPER), item(PAPER), empty(), empty(), empty(), empty(), empty(), empty(), empty());
         MatchResult vanillaSafe = vanillaCraft(recipes, safe, expandable);
-        assertEquals(vanillaSafe, cache.craft(safe), "pure grids still cache while an impure recipe exists in the list");
-        assertEquals(vanillaSafe, cache.craft(safe), "pure-grid cache hit");
-        assertTrue(cache.craftingTable.size() > 0, "pure grids are stored");
+        assertEquals(vanillaSafe, cache.craft(safe), "pure grids after an unsafe recipe still match vanilla");
+        assertEquals(vanillaSafe, cache.craft(safe), "the rescan stays equal to vanilla");
+        assertEquals(0, cache.craftingTable.size(), "a safe recipe after an unsafe one is not stored");
+
+        List<ModelRecipe> prefix = List.of(
+                ModelRecipe.shapeless(30, List.of(1), 1, 1),
+                ModelRecipe.impureMap(31, 2));
+        CachedScanner prefixCache = new CachedScanner(prefix, WorldState.DEFAULT);
+        int[][] hit = grid(item(1), empty(), empty(), empty(), empty(), empty(), empty(), empty(), empty());
+        int[][] miss = grid(item(99), empty(), empty(), empty(), empty(), empty(), empty(), empty(), empty());
+        MatchResult vanillaHit = vanillaCraft(prefix, hit, WorldState.DEFAULT);
+        MatchResult vanillaMiss = vanillaCraft(prefix, miss, WorldState.DEFAULT);
+        assertEquals(30, vanillaHit.recipeId, "the safe prefix recipe matches");
+        assertEquals(0, vanillaMiss.recipeId, "an unmatched grid is a miss");
+        assertEquals(vanillaHit, prefixCache.craft(hit), "prefix hit matches vanilla");
+        assertEquals(1, prefixCache.craftingTable.size(), "a holder before the unsafe recipe is stored");
+        assertEquals(vanillaMiss, prefixCache.craft(miss), "miss matches vanilla");
+        assertEquals(1, prefixCache.craftingTable.size(), "a miss is not stored while an unsafe recipe remains");
+    }
+
+    private static void testPinnedVanillaShape() throws Exception {
+        String[] pure = {
+            "ShapedRecipe", "ShapelessRecipe", "TransmuteRecipe", "DyeRecipe", "ImbueRecipe",
+            "SmeltingRecipe", "BlastingRecipe", "SmokingRecipe", "CampfireCookingRecipe",
+            "StonecutterRecipe", "SmithingTransformRecipe", "SmithingTrimRecipe", "RepairItemRecipe",
+            "FireworkRocketRecipe", "FireworkStarRecipe", "FireworkStarFadeRecipe", "BookCloningRecipe",
+            "ShieldDecorationRecipe", "BannerDuplicateRecipe", "DecoratedPotRecipe"
+        };
+        for (String name : pure) {
+            Class<?> type = recipeClass(name);
+            assertTrue(RecipeCachePolicy.isExactPureClass(type), name + " left the pinned 26.2 shape");
+            assertFalse(RecipeVanillaShape.declaresMixinMerge(type), name + " unexpectedly declares MixinMerged");
+        }
+        assertTrue(RecipeVanillaShape.instanceFieldsMatch(recipeClass("RepairItemRecipe"), Set.of()),
+                "RepairItemRecipe instance fields drifted");
+        assertFalse(RecipeVanillaShape.instanceFieldsMatch(ExtraField.class, Set.of()),
+                "an extra instance field matched an empty vanilla shape");
+        assertFalse(RecipeCachePolicy.isExactPureClass(FieldAddedRepair.class),
+                "a repair subclass stayed on the exact-class allowlist");
+        assertTrue(RecipeVanillaShape.declaresMixinMerge(mixinMergedProbe()),
+                "a MixinMerged method was treated as vanilla");
+        assertFalse(RecipeVanillaShape.declaresMixinMerge(ExtraField.class),
+                "a plain class was treated as mixin-merged");
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void testProductionPrefixStore() {
+        MinecraftTestItems.ensureBootstrapped("recipe prefix store");
+        RecipeHolder<?> safe = holder("safe", new RepairItemRecipe());
+        RecipeHolder<?> unsafe = holder("unsafe", new FieldAddedRepair());
+        RecipeHolder<?> later = holder("later", new RepairItemRecipe());
+        RecipeMap mixed = RecipeMap.create(List.of(safe, unsafe, later));
+        RecipeCachePolicy policy = RecipeCachePolicy.inspect(mixed);
+        SingleRecipeInput input = new SingleRecipeInput(MinecraftTestItems.dirt());
+        assertFalse(policy.mayStore(RecipeType.CRAFTING, input, Optional.empty()),
+                "a miss must not be stored while an unsafe recipe remains");
+        assertTrue(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(safe)),
+                "the holder before the unsafe recipe must be storable");
+        assertFalse(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(unsafe)),
+                "the unsafe holder must not be stored");
+        assertFalse(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(later)),
+                "a safe recipe after an unsafe one must not be stored");
+
+        RecipeCachePolicy pure = RecipeCachePolicy.inspect(RecipeMap.create(List.of(safe, later)));
+        assertTrue(pure.mayStore(RecipeType.CRAFTING, input, Optional.empty()),
+                "a fully exact-pure type may store a miss");
+
+        RecipeFirstMatchCache cache = new RecipeFirstMatchCache();
+        cache.onRecipesReplaced(policy);
+        cache.storeUnchecked(RecipeType.CRAFTING, input, Optional.of(later));
+        assertTrue(cache.lookupUnchecked(RecipeType.CRAFTING, input, false) == null,
+                "a rejected store must stay a lookup miss");
+        cache.storeUnchecked(RecipeType.CRAFTING, input, Optional.of(safe));
+        assertEquals(Optional.of(safe), cache.lookupUnchecked(RecipeType.CRAFTING, input, false),
+                "the stored prefix hit must be the same holder");
+    }
+
+    private static RecipeHolder<?> holder(final String path, final Recipe<?> recipe) {
+        return new RecipeHolder<>(
+                ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath("ultima", path)),
+                recipe);
+    }
+
+    private static Class<?> mixinMergedProbe() throws Exception {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "dev/ultima/recipe/MixinMergedProbe", null, "java/lang/Object", null);
+        MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "probe", "()V", null, null);
+        AnnotationVisitor annotation = method.visitAnnotation(
+                "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;", true);
+        annotation.visit("mixin", "probe.Mixin");
+        annotation.visit("priority", 1000);
+        annotation.visitEnd();
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(0, 1);
+        method.visitEnd();
+        writer.visitEnd();
+        byte[] bytes = writer.toByteArray();
+        ClassLoader loader = new ClassLoader(RecipeMatchCacheTest.class.getClassLoader()) {
+            @Override
+            protected Class<?> findClass(final String name) throws ClassNotFoundException {
+                if ("dev.ultima.recipe.MixinMergedProbe".equals(name)) {
+                    return defineClass(name, bytes, 0, bytes.length);
+                }
+                return super.findClass(name);
+            }
+        };
+        return loader.loadClass("dev.ultima.recipe.MixinMergedProbe");
     }
 
     private static void testReloadInvalidation() {
@@ -783,6 +926,16 @@ public final class RecipeMatchCacheTest {
     private record BrewResult(boolean isIngredient, boolean hasMix, Slot mixed) {
     }
 
+    private static final class ExtraField {
+        @SuppressWarnings("unused")
+        private int ultima$injected;
+    }
+
+    private static final class FieldAddedRepair extends RepairItemRecipe {
+        @SuppressWarnings("unused")
+        private int ultima$injected;
+    }
+
     private static final class CachedScanner {
         private List<ModelRecipe> recipes;
         private List<BrewMix> brewMixes = List.of();
@@ -814,7 +967,9 @@ public final class RecipeMatchCacheTest {
                 return cached;
             }
             MatchResult scanned = vanillaCraft(this.recipes, raw, this.world);
-            this.craftingTable.put(key, scanned);
+            if (mayStoreCrafting(scanned)) {
+                this.craftingTable.put(key, scanned);
+            }
             return scanned;
         }
 
@@ -838,6 +993,35 @@ public final class RecipeMatchCacheTest {
             BrewResult scanned = vanillaBrew(this.brewMixes, source, ingredient);
             this.brewingTable.put(key, scanned);
             return scanned;
+        }
+
+        private boolean mayStoreCrafting(final MatchResult scanned) {
+            int prefix = 0;
+            boolean fullyPure = true;
+            for (ModelRecipe recipe : this.recipes) {
+                if (recipe.kind() == Kind.COOKING) {
+                    continue;
+                }
+                if (recipe.impure()) {
+                    fullyPure = false;
+                    break;
+                }
+                prefix++;
+            }
+            if (scanned.recipeId == 0) {
+                return fullyPure;
+            }
+            int index = 0;
+            for (ModelRecipe recipe : this.recipes) {
+                if (recipe.kind() == Kind.COOKING) {
+                    continue;
+                }
+                if (recipe.id() == scanned.recipeId) {
+                    return index < prefix && !recipe.impure();
+                }
+                index++;
+            }
+            return false;
         }
 
         private boolean shouldBypassCrafting(final CraftingGrid grid) {

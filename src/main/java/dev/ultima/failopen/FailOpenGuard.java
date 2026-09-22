@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 public final class FailOpenGuard {
     public static final int CIRCUIT_BREAKER_THRESHOLD = 3;
     static final int MAX_TRIPPED_CASES = 256;
+    static final int MAX_CONSECUTIVE_CASES = 256;
 
     public enum Module {
         RECIPE_MATCH_CACHE("recipe_match_cache", "ultima-recipe-cache"),
@@ -190,7 +191,10 @@ public final class FailOpenGuard {
     }
 
     private static void recordSuccess(final Module module, final Object caseId) {
-        if (caseId != null) {
+        if (caseId == null || module.consecutive.isEmpty()) {
+            return;
+        }
+        if (module.consecutive.get(caseId) != null) {
             module.consecutive.remove(caseId);
         }
     }
@@ -200,9 +204,41 @@ public final class FailOpenGuard {
         if (caseId == null) {
             return;
         }
-        int consecutive = module.consecutive.merge(caseId, 1, Integer::sum);
+        if (!module.consecutive.containsKey(caseId) && module.consecutive.size() >= MAX_CONSECUTIVE_CASES) {
+            if (module.tripped.size() < MAX_TRIPPED_CASES) {
+                module.tripped.add(caseId);
+            }
+            return;
+        }
+        int consecutive = module.consecutive.merge(caseId, 1, FailOpenGuard::saturate);
         if (consecutive >= CIRCUIT_BREAKER_THRESHOLD && module.tripped.size() < MAX_TRIPPED_CASES) {
             module.tripped.add(caseId);
         }
+    }
+
+    private static int saturate(final int left, final int right) {
+        long sum = (long) left + (long) right;
+        if (sum > Integer.MAX_VALUE || sum < 0L) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) sum;
+    }
+
+    static int consecutiveCaseCount(final Module module) {
+        return module.consecutive.size();
+    }
+
+    static int consecutiveCount(final Module module, final Object caseId) {
+        Integer count = module.consecutive.get(caseId);
+        return count == null ? 0 : count;
+    }
+
+    /** Fault accounting without the WARN log. Production doors call {@link #failOpen}. */
+    static void noteFailureForTests(final Module module, final Object caseId) {
+        recordFailure(module, caseId);
+    }
+
+    static void seedConsecutiveForTests(final Module module, final Object caseId, final int count) {
+        module.consecutive.put(caseId, count);
     }
 }

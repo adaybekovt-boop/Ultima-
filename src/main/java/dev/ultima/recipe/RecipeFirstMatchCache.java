@@ -84,7 +84,7 @@ public final class RecipeFirstMatchCache {
      */
     public void storeUnchecked(
             final RecipeType<?> type, final RecipeInput input, final Optional<? extends RecipeHolder<?>> result) {
-        if (input.isEmpty() || this.policy.shouldBypassCache(type, input)) {
+        if (input.isEmpty() || !this.policy.mayStore(type, input, result)) {
             return;
         }
         Object key = RecipeMatchKeys.keyFor(type, input);

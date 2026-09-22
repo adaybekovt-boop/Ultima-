@@ -147,6 +147,27 @@ public final class UltimaSettingsCatalog {
                 ApplyPolicy.RESTART_GAME));
 
         register(new ModuleSettingSpec(
+                "iris_shader_frontend_artifact_cache",
+                "Iris frontend artifact cache",
+                "Persistent, checksummed cache of deterministic Iris CPU shader-transform output. The normal Iris "
+                        + "driver compilation and link path remains unchanged. Requires the exact supported Iris build.",
+                SettingsCategory.KILLER_MODULES,
+                ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "cross_pipeline_admission_broker",
+                "Cross-pipeline admission broker",
+                "Observes frame, Sodium queue, upload, server, and GC pressure. It does not defer Sodium work. "
+                        + "Control and static requests stay unavailable until a safe budget boundary exists.",
+                SettingsCategory.KILLER_MODULES,
+                ApplyPolicy.RESTART_GAME));
+        register(new ModuleSettingSpec(
+                "render_warmup_system",
+                "Render warmup system",
+                "Profiler only. No safe warmup adapter is active, so this does not remove first-use hitches.",
+                SettingsCategory.KILLER_MODULES,
+                ApplyPolicy.RESTART_GAME));
+
+        register(new ModuleSettingSpec(
                 "temporal",
                 "Temporal frame contract",
                 "Captures current and previous view-projection, depth/color views, and history-reset events. Native "

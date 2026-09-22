@@ -23,7 +23,7 @@ final class MergedModuleContractTest {
         expectedDefaults.put("supporting_block_shape_skip", true);
         expectedDefaults.put("full_cube_move", true);
         expectedDefaults.put("cursor_step", true);
-        expectedDefaults.put("server_metrics", true);
+        expectedDefaults.put("server_metrics", false);
         expectedDefaults.put("blockentity_sleeping", false);
         expectedDefaults.put("recipe_match_cache", false);
         expectedDefaults.put("tag_bitsets", false);
@@ -41,8 +41,11 @@ final class MergedModuleContractTest {
         expectedDefaults.put("temporal", true);
         expectedDefaults.put("fsr_upscaling", false);
         expectedDefaults.put("settings_ui", true);
+        expectedDefaults.put("iris_shader_frontend_artifact_cache", false);
+        expectedDefaults.put("cross_pipeline_admission_broker", false);
+        expectedDefaults.put("render_warmup_system", false);
 
-        assertEquals(24, UltimaModules.all().size(), "module count");
+        assertEquals(expectedDefaults.size(), UltimaModules.all().size(), "module count");
         assertEquals(expectedDefaults.size(), UltimaSettingsCatalog.all().size(), "settings catalog count");
         for (Map.Entry<String, Boolean> entry : expectedDefaults.entrySet()) {
             UltimaModules.Module module = UltimaModules.byKey(entry.getKey());
@@ -95,8 +98,16 @@ final class MergedModuleContractTest {
                 "server_metrics category Advanced");
         assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
                 "settings_ui category Advanced");
+        for (String key : List.of(
+                "iris_shader_frontend_artifact_cache",
+                "cross_pipeline_admission_broker",
+                "render_warmup_system")) {
+            assertTrue(UltimaSettingsCatalog.require(key).category() == SettingsCategory.KILLER_MODULES,
+                    key + " category Experimental Killer Modules");
+        }
 
-        System.out.println("Merged module contract checks passed: 24 modules, defaults/categories/auto-disable verified.");
+        System.out.println("Merged module contract checks passed: " + expectedDefaults.size()
+                + " modules, defaults/categories/auto-disable verified.");
     }
 
     private static void assertTrue(final boolean value, final String message) {
