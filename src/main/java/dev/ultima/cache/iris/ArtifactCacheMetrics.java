@@ -21,10 +21,15 @@ public final class ArtifactCacheMetrics {
     final LongAdder verifyMismatches = new LongAdder();
     final LongAdder reloads = new LongAdder();
     final LongAdder reloadNanos = new LongAdder();
+    final LongAdder sampleReloads = new LongAdder();
+    private volatile String lastUnkeyableReason = "";
+    private volatile String lastMissReason = "";
 
-    public void recordUnkeyableRequest() {
+    public void recordUnkeyableRequest(final String reason) {
         this.requests.increment();
         this.misses.increment();
+        this.lastUnkeyableReason = reason == null || reason.isEmpty() ? "ENCODE_FAILURE" : reason;
+        this.lastMissReason = "unkeyable:" + this.lastUnkeyableReason;
     }
 
     public void recordFrontendTransform(final long nanos) {
@@ -42,6 +47,25 @@ public final class ArtifactCacheMetrics {
     public void recordReload(final long nanos) {
         this.reloads.increment();
         this.reloadNanos.add(Math.max(0L, nanos));
+    }
+
+    /** Counts a reload that happened inside the benchmark sample window, not startup. */
+    public void recordSampleReload() {
+        this.sampleReloads.increment();
+    }
+
+    public void noteMiss(final String reason) {
+        if (reason != null && !reason.isEmpty()) {
+            this.lastMissReason = reason;
+        }
+    }
+
+    public String lastUnkeyableReason() {
+        return this.lastUnkeyableReason;
+    }
+
+    public String lastMissReason() {
+        return this.lastMissReason;
     }
 
     public Snapshot snapshot(final long cacheSizeBytes, final int entries) {
@@ -63,6 +87,9 @@ public final class ArtifactCacheMetrics {
                 this.verifyMismatches.sum(),
                 this.reloads.sum(),
                 this.reloadNanos.sum(),
+                this.sampleReloads.sum(),
+                this.lastUnkeyableReason,
+                this.lastMissReason,
                 cacheSizeBytes,
                 entries);
     }
@@ -85,6 +112,9 @@ public final class ArtifactCacheMetrics {
             long verifyMismatches,
             long reloads,
             long reloadNanos,
+            long sampleReloads,
+            String lastUnkeyableReason,
+            String lastMissReason,
             long cacheSizeBytes,
             int entries) {
     }

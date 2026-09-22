@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,22 +59,30 @@ public final class IrisFrontendArtifactCache {
             final Object parameters,
             final Operation<Map<?, ?>> original) {
         if (failedOpen || contractRejected) {
+            METRICS.noteMiss(failedOpen ? "failed_open" : "contract_rejected");
             return original.call(name, sources, parameters);
         }
         Map<?, ?> computed = null;
         try {
             List<IrisTransformKeyEncoder.StageSource> stages = stageSources(sources);
-            if (stages == null || allSourcesNull(stages)) {
+            if (stages == null) {
+                METRICS.noteMiss("unreadable_sources");
+                return original.call(name, sources, parameters);
+            }
+            if (allSourcesNull(stages)) {
+                METRICS.noteMiss("all_stages_absent");
                 return original.call(name, sources, parameters);
             }
             KillerModuleCompatibility.AdapterState adapter =
                     KillerModuleCompatibility.state(KillerModuleCompatibility.IRIS_MODULE);
             if (!adapter.supported()) {
                 disable("adapter_inactive:" + adapter.state());
+                METRICS.noteMiss("adapter_inactive");
                 return original.call(name, sources, parameters);
             }
             if (!supportedBackend()) {
                 disable("unsupported_gpu_backend");
+                METRICS.noteMiss("unsupported_gpu_backend");
                 return original.call(name, sources, parameters);
             }
             if (!IrisTransformKeyEncoder.supportedStructure(parameters)) {
@@ -82,6 +91,9 @@ public final class IrisFrontendArtifactCache {
                                 "net.irisshaders.iris.pipeline.transform.parameter.")) {
                     contractRejected = true;
                     disable("unsupported_parameter_schema");
+                    METRICS.noteMiss("unsupported_parameter_schema");
+                } else {
+                    METRICS.noteMiss("non_parameter_object");
                 }
                 return original.call(name, sources, parameters);
             }
@@ -96,7 +108,8 @@ public final class IrisFrontendArtifactCache {
                     RenderSystem.getDevice().getDeviceInfo().isZZeroToOne());
             ArtifactKey key = IrisTransformKeyEncoder.encode(kind, name, stages, parameters, environment);
             if (key == null) {
-                METRICS.recordUnkeyableRequest();
+                IrisTransformKeyEncoder.RejectReason reason = IrisTransformKeyEncoder.lastReject();
+                METRICS.recordUnkeyableRequest(reason == null ? "ENCODE_FAILURE" : reason.name());
                 return original.call(name, sources, parameters);
             }
             contractProven = true;
@@ -108,6 +121,7 @@ public final class IrisFrontendArtifactCache {
                 if (result instanceof Map<?, ?> map) {
                     return map;
                 }
+                METRICS.noteMiss("materialize_failed");
                 current.invalidate(key);
             }
 
@@ -117,23 +131,27 @@ public final class IrisFrontendArtifactCache {
             METRICS.recordFrontendTransform(transformNanos);
             Map<String, String> produced = extractStages(computed);
             if (produced == null) {
+                METRICS.noteMiss("unreadable_transform_result");
                 return computed;
             }
             if (VERIFY && cached.isPresent()) {
-                if (cached.get().stages().equals(produced)) {
+                if (transformedStagesMatch(cached.get().stages(), produced)) {
                     METRICS.recordVerifyMatch();
                 } else {
                     METRICS.recordVerifyMismatch();
+                    METRICS.noteMiss("verify_mismatch");
                     current.invalidate(key);
                     disable("verify_mismatch");
                 }
                 return computed;
             }
             if (cached.isEmpty()) {
+                METRICS.noteMiss("store_miss");
                 current.write(key, new ShaderArtifact(produced, transformNanos));
             }
             return computed;
         } catch (Throwable throwable) {
+            METRICS.noteMiss("runtime_failure");
             disable("runtime_failure:" + throwable.getClass().getSimpleName());
             if (computed != null) {
                 return computed;
@@ -182,6 +200,19 @@ public final class IrisFrontendArtifactCache {
 
     public static boolean verifyMode() {
         return VERIFY;
+    }
+
+    public static void recordSampledReload() {
+        METRICS.recordSampleReload();
+    }
+
+    /**
+     * Verify mode compares the cached stage map with the map that would be returned downstream.
+     * A corrupted cached source must not compare equal.
+     */
+    static boolean transformedStagesMatch(
+            final Map<String, String> cached, final Map<String, String> produced) {
+        return cached.equals(produced);
     }
 
     public static boolean failedOpen() {
@@ -275,13 +306,22 @@ public final class IrisFrontendArtifactCache {
                 enumClass = (Class<? extends Enum<?>>)loaded;
                 patchShaderType = enumClass;
             }
-            Map<Object, String> transformed = new LinkedHashMap<>();
+            return materializeStages(artifact, enumClass);
+        } catch (ReflectiveOperationException | IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static @org.jspecify.annotations.Nullable Map<?, ?> materializeStages(
+            final ShaderArtifact artifact, final Class<? extends Enum> enumClass) {
+        try {
+            EnumMap transformed = new EnumMap(enumClass);
             for (Map.Entry<String, String> stage : artifact.stages().entrySet()) {
-                Object key = Enum.valueOf((Class)enumClass, stage.getKey());
-                transformed.put(key, stage.getValue());
+                transformed.put(Enum.valueOf(enumClass, stage.getKey()), stage.getValue());
             }
             return transformed;
-        } catch (ReflectiveOperationException | IllegalArgumentException exception) {
+        } catch (IllegalArgumentException exception) {
             return null;
         }
     }

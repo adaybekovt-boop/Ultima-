@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,6 +43,8 @@ public final class ArtifactCacheStore {
     private static final int MAX_STAGE_NAME_BYTES = 64;
     private static final int MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
     private static final long TOUCH_INTERVAL_MILLIS = 60_000L;
+    /** In-flight temps from another JVM are left alone until they are this old. */
+    private static final long STALE_TEMPORARY_MILLIS = 60_000L;
     private static final String SUFFIX = ".uifa";
     private static final int HOT_ENTRIES = 16;
     private static final int HOT_CHAR_LIMIT = 256 * 1024;
@@ -134,7 +135,7 @@ public final class ArtifactCacheStore {
             try {
                 Files.createDirectories(this.directory);
                 temporary = Files.createTempFile(this.directory, key.hex() + ".", ".tmp");
-                byte[] checksum = sha256(payload);
+                byte[] checksum = Sha256.digest(payload);
                 ByteBuffer header = ByteBuffer.allocate(HEADER_LENGTH);
                 header.putInt(MAGIC);
                 header.putInt(SCHEMA_VERSION);
@@ -220,7 +221,7 @@ public final class ArtifactCacheStore {
             }
             byte[] storedKey = new byte[ArtifactKey.LENGTH];
             header.get(storedKey);
-            if (!MessageDigest.isEqual(storedKey, expectedKey.bytes())) {
+            if (!expectedKey.sameBytes(storedKey)) {
                 throw new CorruptEntryException();
             }
             header.getLong(); // creation time, diagnostic only
@@ -236,7 +237,7 @@ public final class ArtifactCacheStore {
 
             byte[] payload = new byte[payloadLength];
             readFully(channel, ByteBuffer.wrap(payload));
-            if (!MessageDigest.isEqual(expectedChecksum, sha256(payload))) {
+            if (!MessageDigest.isEqual(expectedChecksum, Sha256.digest(payload))) {
                 throw new CorruptEntryException();
             }
             this.metrics.bytesRead.add(fileSize);
@@ -249,11 +250,7 @@ public final class ArtifactCacheStore {
     private void buildIndex() {
         try {
             Files.createDirectories(this.directory);
-            try (DirectoryStream<Path> temporaries = Files.newDirectoryStream(this.directory, "*.tmp")) {
-                for (Path temporary : temporaries) {
-                    Files.deleteIfExists(temporary);
-                }
-            }
+            deleteStaleTemporaries();
             try (DirectoryStream<Path> entries = Files.newDirectoryStream(this.directory, "*" + SUFFIX)) {
                 for (Path path : entries) {
                     indexHeader(path);
@@ -509,11 +506,19 @@ public final class ArtifactCacheStore {
         return input.readBoolean() ? readString(input, maxBytes) : null;
     }
 
-    private static byte[] sha256(final byte[] bytes) throws IOException {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(bytes);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IOException("SHA-256 unavailable", exception);
+    private void deleteStaleTemporaries() throws IOException {
+        long now = System.currentTimeMillis();
+        try (DirectoryStream<Path> temporaries = Files.newDirectoryStream(this.directory, "*.tmp")) {
+            for (Path temporary : temporaries) {
+                try {
+                    long age = now - Files.getLastModifiedTime(temporary).toMillis();
+                    if (age >= STALE_TEMPORARY_MILLIS) {
+                        Files.deleteIfExists(temporary);
+                    }
+                } catch (IOException | SecurityException ignored) {
+                    // A temp we cannot stat or delete is a missed write, not a wrong shader.
+                }
+            }
         }
     }
 

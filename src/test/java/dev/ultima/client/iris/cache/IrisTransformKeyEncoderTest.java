@@ -1,10 +1,15 @@
 package dev.ultima.client.iris.cache;
 
 import dev.ultima.cache.iris.ArtifactKey;
+import dev.ultima.cache.iris.ShaderArtifact;
 import java.lang.reflect.Field;
 import java.security.MessageDigest;
+import java.util.EnumMap;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -25,6 +30,10 @@ public final class IrisTransformKeyEncoderTest {
         mutableTransformerScratchIsExcluded();
         tamperedParametersFailClosed();
         unknownParameterImplementationFailsClosed();
+        rejectReasonsAreExplicit();
+        canonicalEncodingIsDelimiterSafe();
+        corruptedCachedSourceFailsVerifyCompare();
+        materializedHitIsEnumMap();
     }
 
     private static void pinnedParametersOmitTextureOverrides() throws Exception {
@@ -126,6 +135,121 @@ public final class IrisTransformKeyEncoderTest {
         ArtifactKey key = IrisTransformKeyEncoder.encode(
                 "graphics", "name", sources("A"), new Object(), environment(false));
         require(key == null, "unknown parameter implementation produced a partial key");
+        require(IrisTransformKeyEncoder.lastReject() == IrisTransformKeyEncoder.RejectReason.UNSUPPORTED_CLASS,
+                "unknown class did not record UNSUPPORTED_CLASS");
+    }
+
+    private static void rejectReasonsAreExplicit() throws Exception {
+        require(IrisTransformKeyEncoder.encode("graphics", "name", sources("A"), null, environment(false)) == null,
+                "null parameters produced a key");
+        require(IrisTransformKeyEncoder.lastReject() == IrisTransformKeyEncoder.RejectReason.NULL_PARAMETERS,
+                "null parameters did not record NULL_PARAMETERS");
+        ClassLoader loader = Iris1114Fixtures.loader();
+        byte[] original = Iris1114Fixtures.resource(
+                "net/irisshaders/iris/pipeline/transform/parameter/Parameters.class");
+        ClassNode node = new ClassNode();
+        new ClassReader(original).accept(node, 0);
+        node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "textureOverrides", "Ljava/util/Set;", null, null));
+        ClassWriter writer = new ClassWriter(0);
+        node.accept(writer);
+        Object tampered = sodium(Iris1114Fixtures.loaderWithTamperedParameters(writer.toByteArray()), "normals", "normals", false);
+        require(encode(tampered, sources("A"), environment(false)) == null, "tampered encode produced a key");
+        require(IrisTransformKeyEncoder.lastReject() == IrisTransformKeyEncoder.RejectReason.UNSUPPORTED_STRUCTURE,
+                "tampered structure did not record UNSUPPORTED_STRUCTURE");
+        Object real = sodium(loader, "normals", "normals", false);
+        require(encode(real, sources("A"), environment(false)) != null, "supported encode failed");
+        require(IrisTransformKeyEncoder.lastReject() == null, "a successful key left a reject reason");
+    }
+
+    private static void canonicalEncodingIsDelimiterSafe() throws Exception {
+        Object parameters = sodium(Iris1114Fixtures.loader(), "normals", "normals", false);
+        IrisTransformKeyEncoder.Environment environment = environment(false);
+        ArtifactKey pipe = encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", "a|b"),
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "c")), environment);
+        ArtifactKey split = encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", "a"),
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "|bc")), environment);
+        ArtifactKey nul = encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", "a\u0000b"),
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "c")), environment);
+        ArtifactKey empty = encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", ""),
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "c")), environment);
+        ArtifactKey absent = encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", null),
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "c")), environment);
+        require(pipe != null && split != null && nul != null && empty != null && absent != null, "delimiter case failed to key");
+        require(!pipe.equals(split), "length-prefixed stage text aliased a delimiter split");
+        require(!pipe.equals(nul), "NUL inside a stage aliased another stage");
+        require(!empty.equals(absent), "empty stage text aliased an absent stage");
+        require(pipe.equals(encode(parameters, List.of(
+                new IrisTransformKeyEncoder.StageSource("VERTEX", "c"),
+                new IrisTransformKeyEncoder.StageSource("FRAGMENT", "a|b")), environment)),
+                "stage order changed a canonical key");
+        Random random = new Random(0x554C5449);
+        for (int trial = 0; trial < 40; trial++) {
+            String text = randomText(random);
+            ArtifactKey once = encode(parameters, List.of(
+                    new IrisTransformKeyEncoder.StageSource("FRAGMENT", text),
+                    new IrisTransformKeyEncoder.StageSource("VERTEX", "v")), environment);
+            ArtifactKey twice = encode(parameters, List.of(
+                    new IrisTransformKeyEncoder.StageSource("VERTEX", "v"),
+                    new IrisTransformKeyEncoder.StageSource("FRAGMENT", text)), environment);
+            require(once != null && once.equals(twice), "canonical key was not stable for trial " + trial);
+            if (!text.isEmpty()) {
+                ArtifactKey flipped = encode(parameters, List.of(
+                        new IrisTransformKeyEncoder.StageSource("FRAGMENT", text.substring(1)),
+                        new IrisTransformKeyEncoder.StageSource("VERTEX", "v")), environment);
+                require(!once.equals(flipped), "a changed stage did not change the key");
+            }
+        }
+    }
+
+    private static String randomText(final Random random) {
+        String alphabet = "abc|\\/\n\r\u0000\u00e9{}";
+        int length = random.nextInt(12);
+        StringBuilder text = new StringBuilder(length);
+        for (int index = 0; index < length; index++) {
+            text.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return text.toString();
+    }
+
+    private static void corruptedCachedSourceFailsVerifyCompare() {
+        Map<String, String> fresh = new LinkedHashMap<>();
+        fresh.put("VERTEX", "void main(){ gl_Position = vec4(1.0); }");
+        fresh.put("FRAGMENT", "void main(){ gl_FragColor = vec4(1.0); }");
+        fresh.put("GEOMETRY", null);
+        Map<String, String> cached = new LinkedHashMap<>(fresh);
+        require(IrisFrontendArtifactCache.transformedStagesMatch(cached, fresh), "identical stage maps must verify");
+        cached.put("FRAGMENT", fresh.get("FRAGMENT") + "/*corrupt*/");
+        require(!IrisFrontendArtifactCache.transformedStagesMatch(cached, fresh),
+                "verify mode accepted a corrupted cached fragment");
+        Map<String, String> empty = new LinkedHashMap<>(fresh);
+        empty.put("GEOMETRY", "");
+        require(!IrisFrontendArtifactCache.transformedStagesMatch(empty, fresh),
+                "verify mode treated an empty stage as an absent stage");
+    }
+
+    @SuppressWarnings({"rawtypes"})
+    private static void materializedHitIsEnumMap() throws Exception {
+        ClassLoader loader = Iris1114Fixtures.loader();
+        Class<?> shaderType = loader.loadClass("net.irisshaders.iris.pipeline.transform.PatchShaderType");
+        Map<String, String> stages = new LinkedHashMap<>();
+        stages.put("VERTEX", "vert");
+        stages.put("FRAGMENT", null);
+        Object materialized = IrisFrontendArtifactCache.materializeStages(
+                new ShaderArtifact(stages, 1L), asEnum(shaderType));
+        require(materialized instanceof EnumMap, "a persistent hit was not an EnumMap");
+        EnumMap<?, ?> map = (EnumMap<?, ?>) materialized;
+        require("vert".equals(map.get(Enum.valueOf(asEnum(shaderType), "VERTEX"))), "vertex source changed");
+        require(map.containsKey(Enum.valueOf(asEnum(shaderType), "FRAGMENT")) && map.get(Enum.valueOf(asEnum(shaderType), "FRAGMENT")) == null,
+                "absent fragment was dropped");
+        Map<String, String> unknown = new LinkedHashMap<>();
+        unknown.put("NOT_A_STAGE", "x");
+        require(IrisFrontendArtifactCache.materializeStages(new ShaderArtifact(unknown, 1L), asEnum(shaderType)) == null,
+                "an unknown stage name was materialized");
     }
 
     private static Object sodium(

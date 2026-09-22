@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.util.Comparator;
@@ -37,6 +38,8 @@ public final class ArtifactCacheStoreTest {
             readOnlyDirectoryDoesNotEscape(root.resolve("read-only"));
             parallelSameKeyCannotCorrupt(root.resolve("parallel"));
             boundedCleanup(root.resolve("bounded"));
+            freshTemporarySurvivesStartup(root.resolve("fresh-tmp"));
+            staleTemporaryIsRemoved(root.resolve("stale-tmp"));
         } finally {
             deleteTree(root);
         }
@@ -177,6 +180,22 @@ public final class ArtifactCacheStoreTest {
             throw new AssertionError("parallel cache operation failed", failure.get());
         }
         require(store.read(key).orElseThrow().stages().equals(expected.stages()), "parallel entry corrupted");
+    }
+
+    private static void freshTemporarySurvivesStartup(final Path directory) throws IOException {
+        Files.createDirectories(directory);
+        Path temporary = Files.createTempFile(directory, "in-flight-", ".tmp");
+        Files.setLastModifiedTime(temporary, FileTime.fromMillis(System.currentTimeMillis()));
+        store(directory, 1_000_000L, 32);
+        require(Files.exists(temporary), "a young temporary was deleted at startup");
+    }
+
+    private static void staleTemporaryIsRemoved(final Path directory) throws IOException {
+        Files.createDirectories(directory);
+        Path temporary = Files.createTempFile(directory, "abandoned-", ".tmp");
+        Files.setLastModifiedTime(temporary, FileTime.fromMillis(System.currentTimeMillis() - 120_000L));
+        store(directory, 1_000_000L, 32);
+        require(!Files.exists(temporary), "a stale temporary survived startup");
     }
 
     private static void boundedCleanup(final Path directory) {

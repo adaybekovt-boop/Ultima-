@@ -1,6 +1,7 @@
 package dev.ultima.client.iris.cache;
 
 import dev.ultima.cache.iris.ArtifactKey;
+import dev.ultima.cache.iris.Sha256;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -10,10 +11,10 @@ import java.lang.reflect.RecordComponent;
 import java.nio.charset.StandardCharsets;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +31,15 @@ import java.util.Set;
  */
 final class IrisTransformKeyEncoder {
     static final int KEY_SCHEMA = 2;
+
+    enum RejectReason {
+        NULL_PARAMETERS,
+        UNSUPPORTED_CLASS,
+        UNSUPPORTED_STRUCTURE,
+        ENCODE_FAILURE
+    }
+
+    private static final ThreadLocal<RejectReason> LAST_REJECT = new ThreadLocal<>();
     private static final int MAX_DEPTH = 12;
     private static final String PARAMETER_PREFIX = "net.irisshaders.iris.pipeline.transform.parameter.";
     private static final Set<String> PARAMETER_CLASSES = Set.of(
@@ -53,22 +63,33 @@ final class IrisTransformKeyEncoder {
     private IrisTransformKeyEncoder() {
     }
 
+    static @org.jspecify.annotations.Nullable RejectReason lastReject() {
+        return LAST_REJECT.get();
+    }
+
     static @org.jspecify.annotations.Nullable ArtifactKey encode(
             final String transformKind,
             final String name,
             final List<StageSource> sources,
             final Object parameters,
             final Environment environment) {
-        if (parameters == null || !PARAMETER_CLASSES.contains(parameters.getClass().getName())) {
+        LAST_REJECT.remove();
+        if (parameters == null) {
+            LAST_REJECT.set(RejectReason.NULL_PARAMETERS);
+            return null;
+        }
+        if (!PARAMETER_CLASSES.contains(parameters.getClass().getName())) {
+            LAST_REJECT.set(RejectReason.UNSUPPORTED_CLASS);
             return null;
         }
         ParameterPlan plan = PARAMETER_PLANS.get(parameters.getClass());
         if (!plan.supported()) {
+            LAST_REJECT.set(RejectReason.UNSUPPORTED_STRUCTURE);
             return null;
         }
 
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = Sha256.acquire();
             try (DataOutputStream output = new DataOutputStream(new DigestOutputStream(
                     java.io.OutputStream.nullOutputStream(), digest))) {
                 output.writeInt(KEY_SCHEMA);
@@ -81,8 +102,17 @@ final class IrisTransformKeyEncoder {
                 output.writeBoolean(environment.zZeroToOne());
                 writeString(output, transformKind);
                 writeNullableString(output, name);
-                output.writeInt(sources.size());
-                for (StageSource source : sources) {
+                List<StageSource> orderedSources = new ArrayList<>(sources);
+                orderedSources.sort(Comparator.comparing(
+                        StageSource::stage, Comparator.nullsFirst(Comparator.naturalOrder())));
+                Set<String> seenStages = new HashSet<>();
+                for (StageSource source : orderedSources) {
+                    if (!seenStages.add(source.stage())) {
+                        throw new IOException("duplicate shader stage");
+                    }
+                }
+                output.writeInt(orderedSources.size());
+                for (StageSource source : orderedSources) {
                     writeString(output, source.stage());
                     writeNullableString(output, source.source());
                 }
@@ -94,7 +124,8 @@ final class IrisTransformKeyEncoder {
                 }
             }
             return new ArtifactKey(digest.digest());
-        } catch (NoSuchAlgorithmException | IOException | IllegalAccessException | RuntimeException exception) {
+        } catch (IOException | IllegalAccessException | RuntimeException exception) {
+            LAST_REJECT.set(RejectReason.ENCODE_FAILURE);
             return null;
         }
     }

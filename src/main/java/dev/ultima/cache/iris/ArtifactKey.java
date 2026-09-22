@@ -1,5 +1,6 @@
 package dev.ultima.cache.iris;
 
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
 
@@ -20,6 +21,11 @@ public final class ArtifactKey {
 
     public byte[] bytes() {
         return this.bytes.clone();
+    }
+
+    /** Constant-time compare without cloning the stored digest. */
+    boolean sameBytes(final byte[] stored) {
+        return stored != null && MessageDigest.isEqual(this.bytes, stored);
     }
 
     byte firstByte() {

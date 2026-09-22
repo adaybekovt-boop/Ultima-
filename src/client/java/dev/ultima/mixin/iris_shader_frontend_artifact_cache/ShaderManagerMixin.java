@@ -1,5 +1,6 @@
 package dev.ultima.mixin.iris_shader_frontend_artifact_cache;
 
+import dev.ultima.client.benchmark.ClientFrameBenchmark;
 import dev.ultima.client.iris.cache.IrisFrontendArtifactCache;
 import net.minecraft.client.renderer.ShaderManager;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -31,5 +32,8 @@ public abstract class ShaderManagerMixin {
             final ProfilerFiller profiler,
             final CallbackInfo ci) {
         IrisFrontendArtifactCache.endReload();
+        if (ClientFrameBenchmark.isSampleWindow()) {
+            IrisFrontendArtifactCache.recordSampledReload();
+        }
     }
 }
