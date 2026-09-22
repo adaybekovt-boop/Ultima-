@@ -113,8 +113,10 @@ Entries live at `<gameDir>/cache/ultima/iris-frontend-v1/<key>.uifa`. Disk schem
 | Payload checksum | SHA-256 |
 | Payload | At most eight named nullable stage sources |
 
-Writes use a same-directory temporary file, complete writes, `FileChannel.force(true)`, close,
-atomic replace when supported, and best-effort directory fsync. Sixty-four key stripes serialize
+Writes use a same-directory temporary file, a completed write, and an atomic replace when the
+filesystem supports it. There is no per-entry `fsync`. A crash may drop the last entry; a checksum
+or header mismatch is a miss, never a substituted shader. Startup deletes only `*.tmp` files older
+than 60 seconds so another JVM's in-flight temp is not removed. Sixty-four key stripes serialize
 same-key races. Read, write, permission, and cleanup failures never escape into Iris.
 
 The default bounds are 256 MiB and 2,048 entries, configurable with:

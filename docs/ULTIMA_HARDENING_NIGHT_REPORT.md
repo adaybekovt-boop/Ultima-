@@ -43,7 +43,7 @@ Pinned Iris `1.11.4+mc26.2` (`Parameters.class` and `TransformPatcher.class` byt
 
 `KEY_SCHEMA` is 2. `supportedStructure` rejects an extra `textureOverrides` field. Tests load the real `SodiumParameters` class bytes, not a stub that invented the field.
 
-Injection wraps `transformInternal` only. Iris `transform` / `transformCompute` call `cache.containsKey` before `transformInternal`, so the Iris 400-entry LRU stays in front. Same-JVM repeats do not reach Ultima. A 16-entry payload memo inside `ArtifactCacheStore` avoids reopening a file when Iris does miss and Ultima is asked again. Disk writes use a temp file, close, and atomic rename. `FileChannel.force(true)` is gone. A crash may drop the last entry. A checksum mismatch misses and deletes the entry. Startup index build removes `*.tmp`.
+Injection wraps `transformInternal` only. Iris `transform` / `transformCompute` call `cache.containsKey` before `transformInternal`, so the Iris 400-entry LRU stays in front. Same-JVM repeats do not reach Ultima. A 16-entry payload memo inside `ArtifactCacheStore` avoids reopening a file when Iris does miss and Ultima is asked again. Disk writes use a temp file, close, and atomic rename. `FileChannel.force(true)` is gone. A crash may drop the last entry. A checksum mismatch misses and deletes the entry. Startup index build removed every `*.tmp` (superseded by `docs/ULTIMA_CACHE_HARDENING_V2.md`: only temps older than 60 seconds are deleted).
 
 ## 4. Artifact cache remaining unknowns
 
