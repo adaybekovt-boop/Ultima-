@@ -465,14 +465,14 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("full_cube_move"), "full-cube move replacement is default-on");
             assertTrue(defaults.get("cursor_step"), "cursor step remains enabled by default");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
-            assertTrue(defaults.get("terrain_metrics"), "terrain metrics are default-on for the client");
+            assertFalse(defaults.get("terrain_metrics"), "terrain metrics have no consumer outside the benchmark and stay opt-in");
             assertFalse(defaults.get("retained_terrain"), "retained terrain must remain opt-in");
             assertFalse(defaults.get("render_snapshot"), "render snapshots must remain opt-in");
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("mesher_fast_path"), "mesher fast path must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
-            assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
+            assertFalse(defaults.get("temporal"), "temporal has no pixel-changing backend and stays opt-in");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
                     "temporal must declare Sodium incompatibility");
@@ -536,12 +536,21 @@ public final class ForensicRegressionTest {
                     "retained terrain remains inactive, not " + retainedReason);
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
-                    "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),
-                    "temporal Native passthrough default is on in a client environment, not " + temporalReason);
+                    "disabled_by_default".equals(temporalReason) || "not_client_environment".equals(temporalReason),
+                    "temporal Native passthrough remains inactive by default, not " + temporalReason);
             String metricsReason = defaultConfig.resolve("terrain_metrics").reason();
             assertTrue(
-                    "enabled".equals(metricsReason) || "not_client_environment".equals(metricsReason),
-                    "terrain metrics default is on in a client environment, not " + metricsReason);
+                    "disabled_by_default".equals(metricsReason) || "not_client_environment".equals(metricsReason),
+                    "terrain metrics remain inactive by default, not " + metricsReason);
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                if (UltimaModules.isInstrumentation(module.key()) || "temporal".equals(module.key())) {
+                    assertFalse(module.enabledByDefault(), module.key() + " must not run without opt-in");
+                    String reason = defaultConfig.resolve(module.key()).reason();
+                    assertTrue(
+                            "disabled_by_default".equals(reason) || "not_client_environment".equals(reason),
+                            module.key() + " must be inactive in the default profile, not " + reason);
+                }
+            }
             assertTrue("enabled".equals(defaultConfig.resolve("entity_section_lookup").reason()),
                     "entity section lookup is enabled by default");
             assertTrue("enabled".equals(defaultConfig.resolve("cursor_step").reason()),
