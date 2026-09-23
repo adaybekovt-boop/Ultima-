@@ -12,6 +12,11 @@ public final class CursorMath {
             return false;
         }
 
-        return (long)width * height * depth <= Integer.MAX_VALUE;
+        // A product of two positive ints fits in a long; a product of three can wrap it.
+        long area = (long)width * height;
+        if (area > Integer.MAX_VALUE) {
+            return false;
+        }
+        return area * depth <= Integer.MAX_VALUE;
     }
 }

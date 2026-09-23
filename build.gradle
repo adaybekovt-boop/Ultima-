@@ -225,6 +225,14 @@ test {
     description = "Disabled: Ultima uses named JavaExec regression tasks, not a JUnit suite."
 }
 
+tasks.register("frameworkOverheadMicrobench", JavaExec) {
+    group = "benchmark"
+    description = "Loop timings for the module gate and fail-open door healthy path. Not part of check."
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "dev.ultima.failopen.FrameworkOverheadMicrobench"
+}
+
 tasks.register("mixinBytecodeTest", JavaExec) {
     group = "verification"
     description = "Checks compiled Mixin annotations and current vanilla bytecode targets with ASM."

@@ -160,9 +160,11 @@ public final class UltimaModules {
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),
-            Module.client("terrain_metrics", true,
+            Module.client("terrain_metrics", false,
                     "Record independent terrain prepare/submit CPU, draw counts, and rebuild/upload counters. "
-                            + "Does not change rendering. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                            + "Does not change rendering. Default off: only the client benchmark reads these "
+                            + "counters, and the benchmark harness enables them on both A/B sides. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("retained_terrain", false,
                     "Experimental retained opaque terrain: section metadata table, persistent command slots, "
@@ -195,10 +197,11 @@ public final class UltimaModules {
                     "Experimental RGSS endpoint specialization. Reject unless GPU frame time improves by at least "
                             + "3% in an RGSS-limited workload. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
-            Module.client("temporal", true,
+            Module.client("temporal", false,
                     "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
                             + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
-                            + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                            + "DLSS/FSR backends are not implemented, so it stays default off until a backend "
+                            + "consumes the history. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("fsr_upscaling", false,
                     "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
@@ -241,6 +244,19 @@ public final class UltimaModules {
             }
         }
         return null;
+    }
+
+    /**
+     * @return position of the module in {@link #all()}, or {@code -1} for an unknown key. Hot paths
+     *         resolve this once into a constant for {@link UltimaConfig#isRuntimeEnabled(int)}.
+     */
+    public static int indexOf(final String key) {
+        for (int i = 0; i < ALL.size(); i++) {
+            if (ALL.get(i).key().equals(key)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public static boolean isInstrumentation(final String key) {
