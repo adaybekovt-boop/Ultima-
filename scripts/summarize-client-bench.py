@@ -134,6 +134,60 @@ def experimental_on(data: dict) -> bool:
     return role == "enabled"
 
 
+CRITICAL_ENV = (
+    "ultimaGitSha",
+    "minecraft",
+    "fabricLoader",
+    "fabricApi",
+    "java",
+    "os",
+    "cpu",
+    "gpuName",
+    "gpuDriver",
+    "framebufferWidth",
+    "framebufferHeight",
+    "renderDistance",
+    "simulationDistance",
+    "vsync",
+    "shaderPack",
+    "mods",
+)
+
+
+def enabled_module_keys(data: dict) -> set[str]:
+    return {str(module.get("key")) for module in data.get("modules") or [] if module.get("enabled")}
+
+
+def varied_key_set(data: dict) -> set[str]:
+    raw = (data.get("abProtocol") or {}).get("variedKeys") or []
+    if isinstance(raw, str):
+        return {part.strip() for part in raw.split(",") if part.strip()}
+    return {str(part) for part in raw}
+
+
+def critical_mismatches(off: dict, on: dict) -> list[str]:
+    """Refuse a comparison whose machine, game, or non-varied config differs."""
+    reasons: list[str] = []
+    left = off.get("environment")
+    right = on.get("environment")
+    if left is None and right is None:
+        pass
+    elif not isinstance(left, dict) or not isinstance(right, dict):
+        reasons.append("environment")
+    else:
+        for key in CRITICAL_ENV:
+            if left.get(key) != right.get(key):
+                reasons.append("environment." + key)
+    if "modules" in off or "modules" in on:
+        if ("modules" in off) != ("modules" in on):
+            reasons.append("modules")
+        else:
+            extra = (enabled_module_keys(off) ^ enabled_module_keys(on)) - varied_key_set(off) - varied_key_set(on)
+            if extra:
+                reasons.append("ultimaConfig:" + ",".join(sorted(extra)))
+    return reasons
+
+
 def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
     report: dict = {"pairs": [], "metrics": {}, "warnings": []}
     if any(experimental_on(on) for _, _, on in pairs):
@@ -571,6 +625,56 @@ def test_module_classification() -> None:
     }
     if experimental_on(stale_hardcoded):
         raise SystemExit("shipped defaults without moduleClass must not be treated as experimental")
+    test_environment_refusal()
+
+
+def test_environment_refusal() -> None:
+    environment = {key: "same" for key in CRITICAL_ENV}
+    environment["framebufferWidth"] = 1280
+    environment["framebufferHeight"] = 720
+    environment["renderDistance"] = 12
+    environment["simulationDistance"] = 12
+    environment["vsync"] = False
+    environment["mods"] = ["fabric-api", "ultima"]
+    base = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": True},
+            {"key": "recipe_match_cache", "enabled": False},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    changed_gpu = {
+        "environment": dict(environment, gpuName="other"),
+        "modules": base["modules"],
+        "abProtocol": base["abProtocol"],
+    }
+    if not any(reason == "environment.gpuName" for reason in critical_mismatches(base, changed_gpu)):
+        raise SystemExit("a GPU mismatch must be refused")
+    if critical_mismatches(base, base):
+        raise SystemExit("an identical environment must compare")
+    other_module = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": True},
+            {"key": "recipe_match_cache", "enabled": True},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    if not any(reason.startswith("ultimaConfig:") for reason in critical_mismatches(base, other_module)):
+        raise SystemExit("a module outside variedKeys must be refused")
+    allowed = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": False},
+            {"key": "recipe_match_cache", "enabled": False},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    if critical_mismatches(base, allowed):
+        raise SystemExit("the declared A/B module must remain comparable")
+    if critical_mismatches(RTX3090_FIXTURES[0][1], RTX3090_FIXTURES[0][2]):
+        raise SystemExit("legacy fixtures without an environment block must stay comparable")
 
 
 def main(argv: list[str]) -> int:
@@ -604,6 +708,10 @@ def main(argv: list[str]) -> int:
         if "off" not in sides or "on" not in sides:
             print(f"pair {pair} is missing off or on JSON", file=sys.stderr)
             return 2
+        mismatches = critical_mismatches(sides["off"], sides["on"])
+        if mismatches:
+            print(f"pair {pair} refused: " + ", ".join(mismatches), file=sys.stderr)
+            return 3
         pairs.append((pair, sides["off"], sides["on"]))
     print(format_report(summarize_pairs(pairs)), end="")
     return 0
