@@ -27,6 +27,10 @@ loom {
     runs {
         configureEach {
             vmArg "-Xmx6G"
+            if (project.hasProperty("ultima.controlledBench")) {
+                vmArg "-Xms6G"
+                vmArg "-XX:+AlwaysPreTouch"
+            }
             if (project.hasProperty("ultima.jfr")) {
                 vmArg "-XX:StartFlightRecording=dumponexit=true,filename=${project.property('ultima.jfr')},settings=profile,maxsize=256m"
                 vmArg "-XX:FlightRecorderOptions=stackdepth=128"
@@ -60,6 +64,8 @@ dependencies {
     compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
     // Exact, optional adapter surface. Runtime activation also verifies the official jar fingerprint.
     compileOnly "net.caffeinemc:sodium-fabric:${project.sodium_version}"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.12.2"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 def ultimaGitSha = providers.exec {
@@ -67,12 +73,14 @@ def ultimaGitSha = providers.exec {
     commandLine "git", "rev-parse", "HEAD"
 }.standardOutput.asText.map { it.trim() }
 
+def modMetadata = objects.newInstance(ModMetadataExpander)
+modMetadata.modVersion.set(project.version.toString())
+modMetadata.gitSha.set(ultimaGitSha)
+
 processResources {
-    inputs.property "version", project.version
-    inputs.property "git_sha", ultimaGitSha
-    filesMatching(["fabric.mod.json", "ultima-build.properties"]) {
-        expand "version": project.version, "git_sha": ultimaGitSha.get()
-    }
+    inputs.property "version", modMetadata.modVersion
+    inputs.property "git_sha", modMetadata.gitSha
+    filesMatching(["fabric.mod.json", "ultima-build.properties"], modMetadata)
 }
 
 def clientSourceSet = sourceSets.findByName("client")
@@ -211,8 +219,20 @@ tasks.register("killerDiagnosticsTest", JavaExec) {
 }
 
 test {
-    enabled = false
-    description = "Disabled: Ultima uses named JavaExec regression tasks, not a JUnit suite."
+    useJUnitPlatform()
+    description = "Canonical Ultima regression aggregate. Specialized JavaExec tasks stay available locally and are not part of check."
+    timeout = java.time.Duration.ofMinutes(30)
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+        exceptionFormat = "full"
+    }
+}
+
+tasks.register("regressionTest") {
+    group = "verification"
+    description = "Alias for the canonical test aggregate."
+    dependsOn test
 }
 
 tasks.register("frameworkOverheadMicrobench", JavaExec) {
@@ -230,22 +250,6 @@ tasks.register("mixinBytecodeTest", JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = "dev.ultima.review.MixinBytecodeChecks"
 }
-
-check.dependsOn forensicRegressionTest
-check.dependsOn mixinBytecodeTest
-check.dependsOn commandCompactionRecoveryTest
-check.dependsOn recipeMatchCacheTest
-check.dependsOn tagBitsetsTest
-check.dependsOn statePropertyCacheTest
-check.dependsOn slotMaskEntityQueryTest
-check.dependsOn wave2FailOpenTest
-check.dependsOn benchmarkReplayTest
-check.dependsOn irisArtifactCacheTest
-check.dependsOn irisTransformKeyTest
-check.dependsOn admissionBrokerTest
-check.dependsOn brokerMetricsTest
-check.dependsOn renderWarmupTest
-check.dependsOn killerDiagnosticsTest
 
 java {
     toolchain {
@@ -267,6 +271,22 @@ publishing {
             version = project.version
             from components.java
         }
+    }
+}
+
+abstract class ModMetadataExpander implements Action<FileCopyDetails> {
+    @Input
+    abstract Property<String> getModVersion()
+
+    @Input
+    abstract Property<String> getGitSha()
+
+    @Override
+    void execute(final FileCopyDetails details) {
+        if (details.name != "fabric.mod.json" && details.name != "ultima-build.properties") {
+            return
+        }
+        details.expand([version: modVersion.get(), git_sha: gitSha.get()])
     }
 }
 

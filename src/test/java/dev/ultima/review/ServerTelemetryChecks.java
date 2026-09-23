@@ -203,16 +203,27 @@ final class ServerTelemetryChecks {
         assertTrue(UltimaProfilePermissions.mayProfile(2), "gamemaster/operator can profile");
         assertTrue(UltimaProfilePermissions.mayProfile(4), "owner/console can profile");
         assertEquals(2, UltimaProfilePermissions.OPERATOR_LEVEL_ID, "operator level is GAMEMASTERS (2)");
-        String commandSource = read(Path.of("src/main/java/dev/ultima/command/UltimaCommands.java"));
-        assertTrue(
-                commandSource.contains("Commands.LEVEL_GAMEMASTERS"),
-                "/ultima profile must require Commands.LEVEL_GAMEMASTERS");
-        assertTrue(
-                commandSource.contains("requires(Commands.hasPermission(PROFILE_PERMISSION))"),
-                "the profile literal must be permission-gated, not the whole /ultima tree");
-        assertTrue(
-                commandSource.contains("Commands.LEVEL_ALL"),
-                "/ultima config and debug compatibility stay LEVEL_ALL; profile stays GAMEMASTERS");
+        if (dev.ultima.command.UltimaCommands.PROFILE_PERMISSION != net.minecraft.commands.Commands.LEVEL_GAMEMASTERS) {
+            throw new AssertionError("/ultima profile must require Commands.LEVEL_GAMEMASTERS");
+        }
+        var root = dev.ultima.command.UltimaCommands.root().build();
+        if (root.getRequirement() instanceof net.minecraft.server.permissions.PermissionProviderCheck<?>) {
+            throw new AssertionError("the /ultima root must not be operator-gated");
+        }
+        var profile = root.getChild("profile");
+        var config = root.getChild("config");
+        if (!(profile != null && profile.getRequirement() instanceof net.minecraft.server.permissions.PermissionProviderCheck<?> profileCheck)) {
+            throw new AssertionError("the profile literal must be permission-gated");
+        }
+        if (profileCheck.test() != net.minecraft.commands.Commands.LEVEL_GAMEMASTERS) {
+            throw new AssertionError("the profile literal must require LEVEL_GAMEMASTERS");
+        }
+        if (!(config != null && config.getRequirement() instanceof net.minecraft.server.permissions.PermissionProviderCheck<?> configCheck)) {
+            throw new AssertionError("/ultima config must keep its own permission gate");
+        }
+        if (configCheck.test() != net.minecraft.commands.Commands.LEVEL_ALL) {
+            throw new AssertionError("/ultima config must stay LEVEL_ALL");
+        }
         assertTrue(
                 !UltimaModules.byKey("server_metrics").incompatibleMods().contains("lithium"),
                 "server_metrics stays enabled with Lithium; fragile INVOKE injects use require=0");
@@ -288,17 +299,17 @@ final class ServerTelemetryChecks {
      * This does not prove the inject still matches with Lithium loaded.
      */
     private static void testFragileInvokeRequireZero() {
-        String serverLevel = read(Path.of("src/main/java/dev/ultima/mixin/server_metrics/ServerLevelMixin.java"));
-        assertTrue(
-                serverLevel.contains("EntityTickList;forEach") && serverLevel.contains("require = 0"),
-                "EntityTickList.forEach injects must not fail Mixin apply when Lithium rewrites the call");
-        String tracked = read(Path.of("src/main/java/dev/ultima/mixin/server_metrics/ChunkMapTrackedEntityMixin.java"));
-        assertTrue(
-                tracked.contains("ServerEntity;addPairing") && tracked.contains("require = 0"),
-                "ServerEntity.addPairing inject must not fail Mixin apply when Lithium rewrites pairing");
-        assertTrue(
-                tracked.contains("ServerEntity;removePairing") && tracked.contains("require = 0"),
-                "ServerEntity.removePairing inject uses the same require=0 fail-soft");
+        try {
+            BytecodeContracts.requireInjectRequire(
+                    BytecodeContracts.load("dev.ultima.mixin.server_metrics.ServerLevelMixin"),
+                    "EntityTickList;forEach",
+                    0);
+            var tracked = BytecodeContracts.load("dev.ultima.mixin.server_metrics.ChunkMapTrackedEntityMixin");
+            BytecodeContracts.requireInjectRequire(tracked, "ServerEntity;addPairing", 0);
+            BytecodeContracts.requireInjectRequire(tracked, "ServerEntity;removePairing", 0);
+        } catch (IOException e) {
+            throw new AssertionError("could not read compiled server_metrics mixins", e);
+        }
     }
 
     private static Path tempFile(final String dirPrefix, final String fileName) {
