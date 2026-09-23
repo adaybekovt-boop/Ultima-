@@ -327,16 +327,27 @@ public final class HopperSleepEquivalenceTest {
     private static void testWorldUnloadClearsWakeRegistry() {
         BlockEntitySleepRuntime.clearAll();
         assertFalse(BlockEntitySleepRuntime.registry().hasWatchers(), "clearAll drops wake subscriptions");
-        String init;
         try {
-            init = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/dev/ultima/Ultima.java"));
+            var init = dev.ultima.review.BytecodeContracts.load("dev.ultima.Ultima");
+            assertTrue(
+                    dev.ultima.review.BytecodeContracts.readsField(
+                            init, "net/fabricmc/fabric/api/event/lifecycle/v1/ServerLifecycleEvents", "SERVER_STOPPED"),
+                    "clears on dedicated/integrated stop");
+            assertTrue(
+                    dev.ultima.review.BytecodeContracts.readsField(
+                            init, "net/fabricmc/fabric/api/event/lifecycle/v1/ServerLevelEvents", "UNLOAD"),
+                    "clears on level unload including singleplayer leave");
+            assertTrue(
+                    dev.ultima.review.BytecodeContracts.invokes(
+                            init, "dev/ultima/sleeping/BlockEntitySleepRuntime", "clearAll"),
+                    "SERVER_STOPPED calls clearAll");
+            assertTrue(
+                    dev.ultima.review.BytecodeContracts.invokes(
+                            init, "dev/ultima/sleeping/BlockEntitySleepRuntime", "clearLevel"),
+                    "UNLOAD calls clearLevel");
         } catch (java.io.IOException e) {
-            throw new AssertionError("could not read Ultima initializer", e);
+            throw new AssertionError("could not read compiled Ultima initializer", e);
         }
-        assertTrue(init.contains("ServerLifecycleEvents.SERVER_STOPPED"), "clears on dedicated/integrated stop");
-        assertTrue(init.contains("ServerLevelEvents.UNLOAD"), "clears on level unload including singleplayer leave");
-        assertTrue(init.contains("BlockEntitySleepRuntime.clearAll()"), "SERVER_STOPPED calls clearAll");
-        assertTrue(init.contains("BlockEntitySleepRuntime.clearLevel(world)"), "UNLOAD calls clearLevel");
     }
 
     private static void testHopperChainCooldownMatchesVanilla() {

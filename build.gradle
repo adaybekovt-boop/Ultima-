@@ -27,6 +27,10 @@ loom {
     runs {
         configureEach {
             vmArg "-Xmx6G"
+            if (project.hasProperty("ultima.controlledBench")) {
+                vmArg "-Xms6G"
+                vmArg "-XX:+AlwaysPreTouch"
+            }
             if (project.hasProperty("ultima.jfr")) {
                 vmArg "-XX:StartFlightRecording=dumponexit=true,filename=${project.property('ultima.jfr')},settings=profile,maxsize=256m"
                 vmArg "-XX:FlightRecorderOptions=stackdepth=128"
@@ -60,6 +64,8 @@ dependencies {
     compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
     // Exact, optional adapter surface. Runtime activation also verifies the official jar fingerprint.
     compileOnly "net.caffeinemc:sodium-fabric:${project.sodium_version}"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.12.2"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 def ultimaGitSha = providers.exec {
@@ -67,45 +73,37 @@ def ultimaGitSha = providers.exec {
     commandLine "git", "rev-parse", "HEAD"
 }.standardOutput.asText.map { it.trim() }
 
+def modMetadata = objects.newInstance(ModMetadataExpander)
+modMetadata.modVersion.set(project.version.toString())
+modMetadata.gitSha.set(ultimaGitSha)
+
 processResources {
-    inputs.property "version", project.version
-    inputs.property "git_sha", ultimaGitSha
-    filesMatching(["fabric.mod.json", "ultima-build.properties"]) {
-        expand "version": project.version, "git_sha": ultimaGitSha.get()
-    }
+    inputs.property "version", modMetadata.modVersion
+    inputs.property "git_sha", modMetadata.gitSha
+    filesMatching(["fabric.mod.json", "ultima-build.properties"], modMetadata)
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.release = 25
+def clientSourceSet = sourceSets.findByName("client")
+if (clientSourceSet == null) {
+    throw new GradleException("Loom client source set is missing after splitEnvironmentSourceSets()")
 }
+sourceSets.test.compileClasspath += clientSourceSet.output + clientSourceSet.compileClasspath
+sourceSets.test.runtimeClasspath += clientSourceSet.output + clientSourceSet.runtimeClasspath
 
-afterEvaluate {
-    def client = sourceSets.findByName("client")
-    if (client != null) {
-        sourceSets.test.compileClasspath += client.output + client.compileClasspath
-        sourceSets.test.runtimeClasspath += client.output + client.runtimeClasspath
+tasks.withType(JavaExec).configureEach { task ->
+    if (task.name != "runClient" || !project.hasProperty("ultima.bench")) {
+        return
     }
-
-    def runClient = tasks.findByName("runClient")
-    if (runClient != null && project.hasProperty("ultima.bench")) {
-        def jvmFile = file("run/bench-client.jvm.properties")
-        if (jvmFile.exists()) {
-            def props = new Properties()
-            jvmFile.withReader("UTF-8") { reader -> props.load(reader) }
-            props.each { key, value ->
-                runClient.jvmArgs("-D${key}=${value}")
-            }
-        }
-        def argFile = file("run/bench-client.program.args")
-        if (argFile.exists()) {
-            argFile.readLines("UTF-8").findAll { line ->
-                def trimmed = line.trim()
-                !trimmed.isEmpty() && !trimmed.startsWith("#")
-            }.each { line ->
-                runClient.args(line)
-            }
-        }
-    }
+    def jvmFile = layout.projectDirectory.file("run/bench-client.jvm.properties")
+    def argFile = layout.projectDirectory.file("run/bench-client.program.args")
+    task.inputs.file(jvmFile).optional()
+    task.inputs.file(argFile).optional()
+    def jvmArgsProvider = objects.newInstance(BenchClientJvmArgs)
+    jvmArgsProvider.propertiesFile.set(jvmFile)
+    task.jvmArgumentProviders.add(jvmArgsProvider)
+    def programArgsProvider = objects.newInstance(BenchClientProgramArgs)
+    programArgsProvider.argumentsFile.set(argFile)
+    task.argumentProviders.add(programArgsProvider)
 }
 
 tasks.register("forensicRegressionTest", JavaExec) {
@@ -221,8 +219,20 @@ tasks.register("killerDiagnosticsTest", JavaExec) {
 }
 
 test {
-    enabled = false
-    description = "Disabled: Ultima uses named JavaExec regression tasks, not a JUnit suite."
+    useJUnitPlatform()
+    description = "Canonical Ultima regression aggregate. Specialized JavaExec tasks stay available locally and are not part of check."
+    timeout = java.time.Duration.ofMinutes(30)
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+        exceptionFormat = "full"
+    }
+}
+
+tasks.register("regressionTest") {
+    group = "verification"
+    description = "Alias for the canonical test aggregate."
+    dependsOn test
 }
 
 tasks.register("frameworkOverheadMicrobench", JavaExec) {
@@ -241,32 +251,86 @@ tasks.register("mixinBytecodeTest", JavaExec) {
     mainClass = "dev.ultima.review.MixinBytecodeChecks"
 }
 
-check.dependsOn forensicRegressionTest
-check.dependsOn mixinBytecodeTest
-check.dependsOn commandCompactionRecoveryTest
-check.dependsOn recipeMatchCacheTest
-check.dependsOn tagBitsetsTest
-check.dependsOn statePropertyCacheTest
-check.dependsOn slotMaskEntityQueryTest
-check.dependsOn wave2FailOpenTest
-check.dependsOn benchmarkReplayTest
-check.dependsOn irisArtifactCacheTest
-check.dependsOn irisTransformKeyTest
-check.dependsOn admissionBrokerTest
-check.dependsOn brokerMetricsTest
-check.dependsOn renderWarmupTest
-check.dependsOn killerDiagnosticsTest
-
 java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = "UTF-8"
 }
 
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
+            groupId = project.maven_group
+            artifactId = project.archives_base_name
+            version = project.version
             from components.java
         }
+    }
+}
+
+abstract class ModMetadataExpander implements Action<FileCopyDetails> {
+    @Input
+    abstract Property<String> getModVersion()
+
+    @Input
+    abstract Property<String> getGitSha()
+
+    @Override
+    void execute(final FileCopyDetails details) {
+        if (details.name != "fabric.mod.json" && details.name != "ultima-build.properties") {
+            return
+        }
+        details.expand([version: modVersion.get(), git_sha: gitSha.get()])
+    }
+}
+
+abstract class BenchClientJvmArgs implements CommandLineArgumentProvider {
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getPropertiesFile()
+
+    @Override
+    Iterable<String> asArguments() {
+        def file = propertiesFile.asFile.getOrNull()
+        if (file == null || !file.isFile()) {
+            return List.of()
+        }
+        def props = new Properties()
+        file.withReader("UTF-8") { reader -> props.load(reader) }
+        def args = new ArrayList<String>(props.size())
+        props.stringPropertyNames().each { key ->
+            args.add("-D${key}=${props.getProperty(key)}")
+        }
+        return args
+    }
+}
+
+abstract class BenchClientProgramArgs implements CommandLineArgumentProvider {
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getArgumentsFile()
+
+    @Override
+    Iterable<String> asArguments() {
+        def file = argumentsFile.asFile.getOrNull()
+        if (file == null || !file.isFile()) {
+            return List.of()
+        }
+        def args = new ArrayList<String>()
+        file.eachLine("UTF-8") { line ->
+            def trimmed = line.trim()
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                args.add(line)
+            }
+        }
+        return args
     }
 }

@@ -13,6 +13,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeMap;
@@ -45,10 +46,10 @@ public final class RecipeMatchCacheTest {
     }
 
     public static void main(final String[] args) throws Exception {
-        dev.ultima.failopen.Wave2FailOpenTest.run();
         testVanillaClassPolicy();
         testPinnedVanillaShape();
         testProductionPrefixStore();
+        testProductionOrderedScanAgrees();
         testUnplannedTypeFailsClosed();
         testSmithingKeyIgnoresCount();
         testTableStaysBounded();
@@ -323,6 +324,41 @@ public final class RecipeMatchCacheTest {
                 "tag publication must drop the stored holder");
         assertTrue(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(safe)),
                 "dropping lookups must keep the purity plan");
+    }
+
+    private static void testProductionOrderedScanAgrees() {
+        MinecraftTestItems.ensureBootstrapped("production ordered scan");
+        RecipeHolder<?> first = holder("first", new RepairItemRecipe());
+        RecipeHolder<?> second = holder("second", new RepairItemRecipe());
+        RecipeHolder<?> unsafe = holder("unsafe", new FieldAddedRepair());
+        CraftingInput input = CraftingInput.of(1, 1, List.of(MinecraftTestItems.dirt()));
+        RecipeMap pure = RecipeMap.create(List.of(first, second));
+        Optional<RecipeHolder<?>> scanned = orderedCraftingScan(pure, input);
+        RecipeFirstMatchCache cache = new RecipeFirstMatchCache();
+        cache.onRecipesReplaced(RecipeCachePolicy.inspect(pure));
+        assertEquals(Optional.empty(), scanned, "a 1x1 dirt grid is not a repair");
+        cache.storeUnchecked(RecipeType.CRAFTING, input, scanned);
+        assertEquals(scanned, cache.lookupUnchecked(RecipeType.CRAFTING, input, false),
+                "production lookup must return the ordered vanilla scan");
+        assertEquals(scanned, orderedCraftingScan(RecipeMap.create(List.of(second, first)), input),
+                "reordering two non-matching pure recipes stays a miss");
+
+        RecipeMap mixed = RecipeMap.create(List.of(unsafe, first));
+        Optional<RecipeHolder<?>> mixedScan = orderedCraftingScan(mixed, input);
+        RecipeFirstMatchCache mixedCache = new RecipeFirstMatchCache();
+        mixedCache.onRecipesReplaced(RecipeCachePolicy.inspect(mixed));
+        mixedCache.storeUnchecked(RecipeType.CRAFTING, input, mixedScan);
+        assertTrue(mixedCache.lookupUnchecked(RecipeType.CRAFTING, input, false) == null,
+                "an unsafe recipe keeps production lookup on the vanilla scan");
+    }
+
+    private static Optional<RecipeHolder<?>> orderedCraftingScan(final RecipeMap map, final CraftingInput input) {
+        for (RecipeHolder<CraftingRecipe> holder : map.byType(RecipeType.CRAFTING)) {
+            if (holder.value().matches(input, null)) {
+                return Optional.of(holder);
+            }
+        }
+        return Optional.empty();
     }
 
     private static void testUnplannedTypeFailsClosed() {

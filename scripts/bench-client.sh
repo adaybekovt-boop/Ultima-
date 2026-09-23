@@ -215,6 +215,12 @@ write_jvm_prop() {
   if [[ -n "${HOLD_POSITION:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.holdPosition" "$([[ "$HOLD_POSITION" == 1 ]] && echo true || echo false)"
   fi
+  if [[ -n "${VARIED_KEYS:-}" ]]; then
+    write_jvm_prop "ultima.clientBenchmark.variedKeys" "$VARIED_KEYS"
+  fi
+  if [[ -n "${SHADER_PACK:-}" ]]; then
+    write_jvm_prop "ultima.clientBenchmark.shaderPack" "$SHADER_PACK"
+  fi
 } > run/bench-client.jvm.properties
 
 {
@@ -234,7 +240,7 @@ write_jvm_prop() {
   fi
 } > run/bench-client.program.args
 
-GRADLE_ARGS=(--no-daemon runClient -Pultima.bench=1)
+GRADLE_ARGS=(runClient -Pultima.bench=1 -Pultima.controlledBench=1)
 if [[ -n "$GAME_DIR_JAVA" ]]; then
   GRADLE_ARGS+=("-Pultima.gameDir=${GAME_DIR_JAVA}")
 fi

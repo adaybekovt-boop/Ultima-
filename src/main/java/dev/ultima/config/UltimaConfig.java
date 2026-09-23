@@ -533,6 +533,15 @@ public final class UltimaConfig {
                 return true;
             }
         }
+        return targetsRendererFamily(module) && RendererFamilyEvidence.conflicts();
+    }
+
+    private static boolean targetsRendererFamily(final UltimaModules.Module module) {
+        for (String modId : module.incompatibleMods()) {
+            if (RendererFamilyEvidence.KNOWN_IDS.contains(modId)) {
+                return true;
+            }
+        }
         return false;
     }
 

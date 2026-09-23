@@ -31,6 +31,9 @@ public final class ServerMetrics {
     private static final int MAX_DETAILED_TICKS = MAX_PROFILE_SECONDS * 20;
     private static final java.util.concurrent.atomic.AtomicInteger PHASE_CLOCKS_CREATED =
             new java.util.concurrent.atomic.AtomicInteger();
+    private static final org.slf4j.Logger LAG_LOGGER = org.slf4j.LoggerFactory.getLogger("ultima-server-metrics");
+    private static final long LAG_LOG_INTERVAL_NS = 1_000_000_000L;
+    private static long lastLagLogNs;
 
     private static final ThreadLocal<PhaseClock> CLOCKS = ThreadLocal.withInitial(() -> {
         PHASE_CLOCKS_CREATED.incrementAndGet();
@@ -129,6 +132,7 @@ public final class ServerMetrics {
         eventCount = 0;
         playerSlotCount = 0;
         CLOCKS.remove();
+        lastLagLogNs = 0L;
         for (int i = 0; i < METRIC_COUNT; i++) {
             ACCUM[i].set(0L);
             LAST[i] = 0L;
@@ -145,9 +149,8 @@ public final class ServerMetrics {
         CLOCKS.get().reset();
         if (tick >= 200L && !entityPhaseHookSeen && !entityPhaseHookWarningLogged) {
             entityPhaseHookWarningLogged = true;
-            org.slf4j.LoggerFactory.getLogger("ultima-server-metrics")
-                    .warn("The optional tick.entities Mixin hook has not fired in 200 ticks; "
-                            + "that metric is unavailable and must not be interpreted as a measured zero.");
+            LAG_LOGGER.warn("The optional tick.entities Mixin hook has not fired in 200 ticks; "
+                    + "that metric is unavailable and must not be interpreted as a measured zero.");
         }
     }
 
@@ -161,11 +164,14 @@ public final class ServerMetrics {
         if (!enabled) {
             return;
         }
-        CLOCKS.get().closeAll(clock.getAsLong(), ACCUM);
+        PhaseClock phaseClock = CLOCKS.get();
+        phaseClock.closeAll(clock.getAsLong(), ACCUM);
         for (int i = 0; i < METRIC_COUNT; i++) {
             long value = ACCUM[i].getAndSet(0L);
             LAST[i] = value;
-            RINGS[i].add(value);
+            if (phaseClock.wasOpened(i) || value != 0L) {
+                RINGS[i].add(value);
+            }
         }
         if (detailed) {
             appendGeneratedAndPacketEvents();
@@ -406,9 +412,13 @@ public final class ServerMetrics {
     }
 
     private static void logLagTick() {
+        long now = System.nanoTime();
+        if (now - lastLagLogNs < LAG_LOG_INTERVAL_NS) {
+            return;
+        }
+        lastLagLogNs = now;
         long totalNs = LAST[MetricId.TICK_TOTAL.ordinal()];
-        org.slf4j.LoggerFactory.getLogger("ultima-server-metrics")
-                .info(
+        LAG_LOGGER.info(
                         "Lag tick #{} {} ms (threshold {} ms): entities={}ms be={}ms ai={}ms worldgen={}ms send_prepare={}ms",
                         tickNumber,
                         String.format(Locale.ROOT, "%.2f", totalNs / 1_000_000.0),
@@ -468,16 +478,23 @@ public final class ServerMetrics {
     static final class PhaseClock {
         private final long[] startNs = new long[METRIC_COUNT];
         private final int[] depth = new int[METRIC_COUNT];
+        private final boolean[] opened = new boolean[METRIC_COUNT];
 
         void reset() {
             for (int i = 0; i < METRIC_COUNT; i++) {
                 this.depth[i] = 0;
                 this.startNs[i] = 0L;
+                this.opened[i] = false;
             }
+        }
+
+        boolean wasOpened(final int ordinal) {
+            return this.opened[ordinal];
         }
 
         void begin(final int ordinal, final long now) {
             if (this.depth[ordinal]++ == 0) {
+                this.opened[ordinal] = true;
                 this.startNs[ordinal] = now;
             }
         }

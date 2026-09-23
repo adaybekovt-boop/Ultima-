@@ -70,13 +70,14 @@ public final class BlockStatePropertyPack {
         return kind(packed) == KIND_VANILLA;
     }
 
+    private static final PathType[] PATH_TYPES = PathType.values();
+
     public static @Nullable PathType pathType(final int packed) {
         if ((packed & PATH_TYPE_PRESENT) == 0) {
             return null;
         }
         int ordinal = (packed >>> PATH_TYPE_SHIFT) & PATH_TYPE_MASK;
-        PathType[] values = PathType.values();
-        return ordinal >= 0 && ordinal < values.length ? values[ordinal] : null;
+        return ordinal >= 0 && ordinal < PATH_TYPES.length ? PATH_TYPES[ordinal] : null;
     }
 
     public static int withPathType(final int packed, final PathType pathType) {
