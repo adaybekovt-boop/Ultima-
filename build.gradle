@@ -75,37 +75,27 @@ processResources {
     }
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.release = 25
+def clientSourceSet = sourceSets.findByName("client")
+if (clientSourceSet == null) {
+    throw new GradleException("Loom client source set is missing after splitEnvironmentSourceSets()")
 }
+sourceSets.test.compileClasspath += clientSourceSet.output + clientSourceSet.compileClasspath
+sourceSets.test.runtimeClasspath += clientSourceSet.output + clientSourceSet.runtimeClasspath
 
-afterEvaluate {
-    def client = sourceSets.findByName("client")
-    if (client != null) {
-        sourceSets.test.compileClasspath += client.output + client.compileClasspath
-        sourceSets.test.runtimeClasspath += client.output + client.runtimeClasspath
+tasks.withType(JavaExec).configureEach { task ->
+    if (task.name != "runClient" || !project.hasProperty("ultima.bench")) {
+        return
     }
-
-    def runClient = tasks.findByName("runClient")
-    if (runClient != null && project.hasProperty("ultima.bench")) {
-        def jvmFile = file("run/bench-client.jvm.properties")
-        if (jvmFile.exists()) {
-            def props = new Properties()
-            jvmFile.withReader("UTF-8") { reader -> props.load(reader) }
-            props.each { key, value ->
-                runClient.jvmArgs("-D${key}=${value}")
-            }
-        }
-        def argFile = file("run/bench-client.program.args")
-        if (argFile.exists()) {
-            argFile.readLines("UTF-8").findAll { line ->
-                def trimmed = line.trim()
-                !trimmed.isEmpty() && !trimmed.startsWith("#")
-            }.each { line ->
-                runClient.args(line)
-            }
-        }
-    }
+    def jvmFile = layout.projectDirectory.file("run/bench-client.jvm.properties")
+    def argFile = layout.projectDirectory.file("run/bench-client.program.args")
+    task.inputs.file(jvmFile).optional()
+    task.inputs.file(argFile).optional()
+    def jvmArgsProvider = objects.newInstance(BenchClientJvmArgs)
+    jvmArgsProvider.propertiesFile.set(jvmFile)
+    task.jvmArgumentProviders.add(jvmArgsProvider)
+    def programArgsProvider = objects.newInstance(BenchClientProgramArgs)
+    programArgsProvider.argumentsFile.set(argFile)
+    task.argumentProviders.add(programArgsProvider)
 }
 
 tasks.register("forensicRegressionTest", JavaExec) {
@@ -258,15 +248,69 @@ check.dependsOn renderWarmupTest
 check.dependsOn killerDiagnosticsTest
 
 java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = "UTF-8"
 }
 
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
+            groupId = project.maven_group
+            artifactId = project.archives_base_name
+            version = project.version
             from components.java
         }
+    }
+}
+
+abstract class BenchClientJvmArgs implements CommandLineArgumentProvider {
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getPropertiesFile()
+
+    @Override
+    Iterable<String> asArguments() {
+        def file = propertiesFile.asFile.getOrNull()
+        if (file == null || !file.isFile()) {
+            return List.of()
+        }
+        def props = new Properties()
+        file.withReader("UTF-8") { reader -> props.load(reader) }
+        def args = new ArrayList<String>(props.size())
+        props.stringPropertyNames().each { key ->
+            args.add("-D${key}=${props.getProperty(key)}")
+        }
+        return args
+    }
+}
+
+abstract class BenchClientProgramArgs implements CommandLineArgumentProvider {
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getArgumentsFile()
+
+    @Override
+    Iterable<String> asArguments() {
+        def file = argumentsFile.asFile.getOrNull()
+        if (file == null || !file.isFile()) {
+            return List.of()
+        }
+        def args = new ArrayList<String>()
+        file.eachLine("UTF-8") { line ->
+            def trimmed = line.trim()
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                args.add(line)
+            }
+        }
+        return args
     }
 }

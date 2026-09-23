@@ -143,8 +143,10 @@ performance dataset (diagnostic-only commits since then do not alter the release
 **FOUNDATION VERDICT: KEEP.**
 
 Released as tag `ultima-foundation-final-2.6.1` at commit
-`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (main HEAD, PR #7 merge commit):
+`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (PR #7 merge commit):
 https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1
+
+That commit was main HEAD when this note was written. It is an ancestor of later `main`, not the current tip. The FPS figures in this section are historical measurements, not a claim about current `main`.
 
 `Tested SHA = Released SHA`: **YES** for the diagnostic/compaction code tree (merge SHA
 rebuilt, tree equals `858359f`). The six-pair FPS dataset SHA equals the released SHA:
