@@ -243,6 +243,19 @@ public final class UltimaModules {
         return null;
     }
 
+    /**
+     * @return position of the module in {@link #all()}, or {@code -1} for an unknown key. Hot paths
+     *         resolve this once into a constant for {@link UltimaConfig#isRuntimeEnabled(int)}.
+     */
+    public static int indexOf(final String key) {
+        for (int i = 0; i < ALL.size(); i++) {
+            if (ALL.get(i).key().equals(key)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     public static boolean isInstrumentation(final String key) {
         return "client_benchmark".equals(key)
                 || "terrain_metrics".equals(key)

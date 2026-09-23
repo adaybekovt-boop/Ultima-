@@ -45,6 +45,7 @@ public final class ForensicRegressionTest {
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
+        testRuntimeModuleFlags();
         testOffsetCubeMatchesVanillaMove();
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
@@ -328,6 +329,111 @@ public final class ForensicRegressionTest {
                     "shell pre-check must reject a cursor that cannot carry");
         }
         assertTrue(CursorMath.canUseCarry(3, 3, 3), "ordinary collision cursor must remain eligible");
+    }
+
+    private static void testRuntimeModuleFlags() {
+        int tags = UltimaModules.indexOf("tag_bitsets");
+        int state = UltimaModules.indexOf("state_property_cache");
+        int shell = UltimaModules.indexOf("collision_shell_skip");
+        int cursor = UltimaModules.indexOf("cursor_step");
+        assertTrue(tags >= 0 && state >= 0 && shell >= 0 && cursor >= 0, "module indexes resolve");
+        assertEquals(-1L, UltimaModules.indexOf("misspelled_module"), "unknown module index");
+        for (int i = 0; i < UltimaModules.all().size(); i++) {
+            assertEquals(i, UltimaModules.indexOf(UltimaModules.all().get(i).key()), "indexOf matches all() order");
+        }
+
+        LoadedModCache.runWithProbeForTest(id -> false, () -> {
+            Map<String, Boolean> requested = new LinkedHashMap<>();
+            requested.put("tag_bitsets", true);
+            requested.put("state_property_cache", false);
+            requested.put("cursor_step", true);
+            requested.put("collision_shell_skip", true);
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            assertTrue(config.isRuntimeEnabled(tags), "launch-enabled module is runtime-enabled");
+            assertFalse(config.isRuntimeEnabled(state), "launch-disabled module is runtime-disabled");
+            assertTrue(config.isRuntimeEnabled(shell), "dependency satisfied at launch");
+            assertFalse(config.isRuntimeEnabled(-1), "unknown index fails closed");
+            assertFalse(config.isRuntimeEnabled(UltimaModules.all().size()), "out-of-range index fails closed");
+
+            config.setRequested("tag_bitsets", false);
+            assertFalse(config.isRuntimeEnabled(tags), "UI disable stops runtime work immediately");
+            assertFalse(config.isEnabled("tag_bitsets"), "UI shows the live requested state");
+            assertTrue(config.wasEnabledAtLaunch("tag_bitsets"), "launch state is unchanged");
+            assertTrue(config.hasPendingRestart("tag_bitsets"), "disable is a pending restart");
+            config.setRequested("tag_bitsets", true);
+            assertTrue(config.isRuntimeEnabled(tags), "re-enable restores the launched module");
+            assertFalse(config.hasPendingRestart("tag_bitsets"), "round trip clears pending restart");
+
+            config.setRequested("state_property_cache", true);
+            assertTrue(config.isEnabled("state_property_cache"), "UI resolves the new request");
+            assertTrue(config.hasPendingRestart("state_property_cache"), "enable without Mixins waits for restart");
+            assertFalse(config.isRuntimeEnabled(state), "runtime code without applied Mixins stays off");
+
+            config.setRequested("cursor_step", false);
+            assertFalse(config.isRuntimeEnabled(cursor), "dependency disabled");
+            assertFalse(config.isRuntimeEnabled(shell), "dependent follows its live dependency");
+            assertTrue("dependency_disabled".equals(config.resolve("collision_shell_skip").reason()),
+                    "UI reason still comes from live resolution");
+        });
+
+        LoadedModCache.runWithProbeForTest("lithium"::equals, () -> {
+            Map<String, Boolean> requested = new LinkedHashMap<>();
+            requested.put("tag_bitsets", true);
+            requested.put("cursor_step", true);
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            assertFalse(config.isRuntimeEnabled(tags), "Lithium auto-disable reaches the runtime flag");
+            assertFalse(config.isRuntimeEnabled(cursor), "cursor_step stays off beside Lithium");
+            config.setRequested("tag_bitsets", true);
+            assertFalse(config.isRuntimeEnabled(tags), "re-request cannot bypass the incompatibility");
+        });
+
+        List<String> common = new ArrayList<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (!module.clientOnly()) {
+                common.add(module.key());
+            }
+        }
+        Random random = new Random(0x464C4147L);
+        for (int trial = 0; trial < 300; trial++) {
+            Set<String> loaded = random.nextBoolean() ? Set.of("lithium") : Set.of();
+            LoadedModCache.runWithProbeForTest(loaded::contains, () -> {
+                Map<String, Boolean> requested = new LinkedHashMap<>();
+                for (String key : common) {
+                    requested.put(key, random.nextBoolean());
+                }
+                UltimaConfig config = UltimaConfig.createForTests(requested);
+                for (int step = 0; step < 12; step++) {
+                    for (String key : common) {
+                        boolean expected = config.wasEnabledAtLaunch(key) && config.isEnabled(key);
+                        if (config.isRuntimeEnabled(UltimaModules.indexOf(key)) != expected) {
+                            throw new AssertionError("runtime flag mismatch for " + key + " at step " + step);
+                        }
+                    }
+                    config.setRequested(common.get(random.nextInt(common.size())), random.nextBoolean());
+                }
+            });
+        }
+
+        LoadedModCache.runWithProbeForTest(id -> false, () -> {
+            UltimaConfig config = UltimaConfig.createForTests(Map.of("tag_bitsets", true));
+            java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
+            if (!(threads instanceof com.sun.management.ThreadMXBean allocation)
+                    || !allocation.isThreadAllocatedMemorySupported()) {
+                return;
+            }
+            allocation.setThreadAllocatedMemoryEnabled(true);
+            long thread = Thread.currentThread().threadId();
+            int hits = 0;
+            long before = allocation.getThreadAllocatedBytes(thread);
+            for (int i = 0; i < 1_000_000; i++) {
+                if (config.isRuntimeEnabled(tags)) {
+                    hits++;
+                }
+            }
+            long allocated = allocation.getThreadAllocatedBytes(thread) - before;
+            assertEquals(1_000_000L, hits, "runtime flag answers every probe");
+            assertTrue(allocated < 64 * 1024, "runtime flag probes must not allocate, got " + allocated + " bytes");
+        });
     }
 
     private static void testConfigParsingAndDependencies() {

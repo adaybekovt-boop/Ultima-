@@ -11,6 +11,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
 import dev.ultima.fsr.FsrEasuConstants;
 import dev.ultima.fsr.FsrIrisCapabilities;
 import dev.ultima.fsr.FsrRuntimeGate;
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class FsrUpscaling {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-fsr");
+    private static final int MODULE_INDEX = UltimaModules.indexOf("fsr_upscaling");
     private static final FsrUpscaling INSTANCE = new FsrUpscaling();
     static final int CONSTANTS_BYTES = new Std140SizeCalculator()
             .putVec4()
@@ -63,7 +65,7 @@ public final class FsrUpscaling {
     }
 
     public boolean moduleEnabled() {
-        return UltimaConfig.get().isEnabled("fsr_upscaling");
+        return UltimaConfig.get().isRuntimeEnabled(MODULE_INDEX);
     }
 
     public boolean isFailedOpen() {
