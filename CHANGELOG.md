@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-23 — reproducible build, regression aggregate, fail-closed opt-in fixes
+
+Started from `2d9fbe976de0e42ad10d7581f86314bf81c17f0e`. No FPS or TPS claim.
+
+- The Gradle 9.5.1 wrapper is the build path. Java compiles with toolchain 25 and `release` 25. `fabric-api` is `>=0.156.0+26.2`.
+- `./gradlew test` runs the merged regression checkpoint once. `./gradlew check` follows that test task.
+- `isRedstoneConductor` is cached only after a predicate proves it is constant and does not read the world. An unreadable predicate stays on vanilla.
+- Mesher circuit-breaker and retained-terrain GPU tables reset on world join/leave. Resource reload also resets the circuit breaker. Vanilla mesh buffers are not closed.
+- FSR `GameRenderer` hooks are MixinExtras `@WrapOperation`s. EASU and RCAS constant buffers are rewritten only when size or sharpness changes, and fail-open closes them.
+- Renderer conflicts are exact ids `sodium`, `iris`, and `canvas`, plus the canonical Sodium and Iris entry classes. An unknown fork id stays on vanilla.
+- `server_metrics` closes an unclosed phase on tick exit, does not store a zero sample for a phase that never opened, rate-limits lag lines, and reads the Netty outbound buffer only on the event loop.
+- Dedicated-server classloading is unchanged: no `net.minecraft.client` imports were added under `src/main`.
+
+---
+
 ## 2026-08-19 — FSR / Iris capability gate
 
 `fsr_upscaling` is no longer on the same unconditional Sodium/Iris/Canvas
