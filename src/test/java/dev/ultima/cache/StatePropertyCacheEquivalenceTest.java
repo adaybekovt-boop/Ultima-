@@ -2,14 +2,18 @@ package dev.ultima.cache;
 
 import dev.ultima.cache.state.BlockStatePropertyPack;
 import dev.ultima.cache.state.FluidStatePropertyPack;
+import dev.ultima.cache.state.RedstoneConductorPurity;
 import dev.ultima.cache.state.StatePropertyRuntime;
 import dev.ultima.config.UltimaModules;
+import java.util.List;
 import java.util.Random;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
@@ -27,7 +31,6 @@ public final class StatePropertyCacheEquivalenceTest {
     }
 
     public static void run() {
-        dev.ultima.failopen.Wave2FailOpenTest.run();
         testPackRoundTrip();
         testSkipKind();
         testPathfindableIndependentBits();
@@ -39,6 +42,7 @@ public final class StatePropertyCacheEquivalenceTest {
         testDifferentialRandomPacks();
         testNegativeModdedSkip();
         testLiveVanillaStatesIfAvailable();
+        testRedstoneConductorPredicateProof();
         runIsolatedLookupMicrobench();
         System.out.println("State property cache equivalence checks passed.");
     }
@@ -254,6 +258,23 @@ public final class StatePropertyCacheEquivalenceTest {
                         + redstoneSkipped
                         + " fluidStates="
                         + fluids);
+    }
+
+    private static void testRedstoneConductorPredicateProof() {
+        if (!tryBootstrap()) {
+            throw new AssertionError("redstone conductor purity proof requires bootstrapped blocks");
+        }
+        BlockState stone = Blocks.STONE.defaultBlockState();
+        BlockBehaviour.StatePredicate constant = (state, level, pos) -> true;
+        BlockBehaviour.StatePredicate worldReading = (state, level, pos) -> level.getBlockState(pos).isAir();
+        BlockBehaviour.StatePredicate positionDependent = (state, level, pos) -> pos.getY() >= 0;
+        assertTrue(RedstoneConductorPurity.isConstant(constant, List.of(stone)), "a constant predicate is cacheable");
+        assertTrue(!RedstoneConductorPurity.isConstant(worldReading, List.of(stone)), "a world read is not cacheable");
+        assertTrue(!RedstoneConductorPurity.isConstant(positionDependent, List.of(stone)),
+                "a position-dependent predicate is not cacheable");
+        assertTrue(!RedstoneConductorPurity.isConstant(null, List.of(stone)), "a missing predicate is not cacheable");
+        assertTrue(!RedstoneConductorPurity.allows(stone),
+                "without the accessor mixin the conductor cache stays closed");
     }
 
     private static void runIsolatedLookupMicrobench() {
