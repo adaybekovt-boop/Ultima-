@@ -86,14 +86,10 @@ public abstract class EntitySectionStorageMixin<T extends EntityAccess> {
         if (section instanceof EntitySectionCounterHolder holder) {
             EntitySectionCounters counters = holder.ultima$entityCounters();
             if (counters.total() == 0 && !counters.unknown()) {
-                EntitySectionCounters desynced = new EntitySectionCounters();
-                desynced.add(false, false, false, true);
-                return desynced;
+                return EntitySectionCounters.unknownBlocking();
             }
             return counters;
         }
-        EntitySectionCounters unknown = new EntitySectionCounters();
-        unknown.add(false, false, false, true);
-        return unknown;
+        return EntitySectionCounters.unknownBlocking();
     }
 }

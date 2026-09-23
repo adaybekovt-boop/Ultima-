@@ -17,10 +17,21 @@ public enum EntityQueryKind {
     COLLIDABLE,
     UNKNOWN;
 
+    private static final ClassValue<EntityQueryKind> BY_CLASS = new ClassValue<>() {
+        @Override
+        protected EntityQueryKind computeValue(final Class<?> type) {
+            return classify(type);
+        }
+    };
+
     public static EntityQueryKind ofQueryClass(final Class<?> queryClass) {
         if (queryClass == null) {
             return UNKNOWN;
         }
+        return BY_CLASS.get(queryClass);
+    }
+
+    private static EntityQueryKind classify(final Class<?> queryClass) {
         String name = queryClass.getName();
         if ("net.minecraft.world.entity.player.Player".equals(name)
                 || "net.minecraft.server.level.ServerPlayer".equals(name)
