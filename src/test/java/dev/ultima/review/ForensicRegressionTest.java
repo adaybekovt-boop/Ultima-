@@ -244,6 +244,48 @@ public final class ForensicRegressionTest {
         assertFalse(CursorMath.canUseCarry(2, 1, Integer.MAX_VALUE), "overflowing cursor must use vanilla");
         assertFalse(CursorMath.canUseCarry(0, 2, 2), "zero width must preserve vanilla divide-by-zero");
         assertFalse(CursorMath.canUseCarry(-1, 2, 2), "inverted bounds must preserve vanilla behavior");
+        assertFalse(CursorMath.canUseCarry(2, 2, 0), "zero depth must preserve vanilla behavior");
+        assertFalse(CursorMath.canUseCarry(2, 2, Integer.MIN_VALUE), "negative depth must preserve vanilla behavior");
+
+        int max = Integer.MAX_VALUE;
+        assertTrue(CursorMath.canUseCarry(max, 1, 1), "width-only max volume");
+        assertTrue(CursorMath.canUseCarry(1, max, 1), "height-only max volume");
+        assertFalse(CursorMath.canUseCarry(max, max, 1), "max*max area must use vanilla");
+        assertFalse(CursorMath.canUseCarry(max, max, max), "max^3 volume must use vanilla");
+        assertFalse(CursorMath.canUseCarry(max, 1, 2), "max*2 volume must use vanilla");
+        // 2^21 cubed is exactly 2^63, which wraps a signed long to Long.MIN_VALUE.
+        assertFalse(CursorMath.canUseCarry(1 << 21, 1 << 21, 1 << 21), "2^63 volume must not wrap to eligible");
+        assertFalse(CursorMath.canUseCarry(1 << 22, 1 << 22, 1 << 22), "2^66 volume must not wrap to eligible");
+        assertTrue(CursorMath.canUseCarry(1 << 10, 1 << 10, (1 << 11) - 1), "just below 2^31 stays eligible");
+        assertFalse(CursorMath.canUseCarry(1 << 10, 1 << 10, 1 << 11), "exactly 2^31 volume must use vanilla");
+        assertTrue(CursorMath.canUseCarry(46_340, 46_340, 1), "largest square area below 2^31");
+        assertFalse(CursorMath.canUseCarry(46_341, 46_341, 1), "first square area above 2^31");
+
+        Random random = new Random(0x43555253L);
+        java.math.BigInteger limit = java.math.BigInteger.valueOf(Integer.MAX_VALUE);
+        for (int trial = 0; trial < 200_000; trial++) {
+            int width = randomCursorDimension(random);
+            int height = randomCursorDimension(random);
+            int depth = randomCursorDimension(random);
+            boolean expected = width > 0 && height > 0 && depth > 0
+                    && java.math.BigInteger.valueOf(width)
+                            .multiply(java.math.BigInteger.valueOf(height))
+                            .multiply(java.math.BigInteger.valueOf(depth))
+                            .compareTo(limit) <= 0;
+            if (CursorMath.canUseCarry(width, height, depth) != expected) {
+                throw new AssertionError("canUseCarry mismatch for " + width + "x" + height + "x" + depth);
+            }
+        }
+    }
+
+    private static int randomCursorDimension(final Random random) {
+        return switch (random.nextInt(5)) {
+            case 0 -> random.nextInt(-4, 64);
+            case 1 -> 1 << random.nextInt(31);
+            case 2 -> Integer.MAX_VALUE - random.nextInt(4);
+            case 3 -> random.nextInt(1, 1 << 22);
+            default -> random.nextInt();
+        };
     }
 
     private static void testInteriorCursorAndIndex() {
