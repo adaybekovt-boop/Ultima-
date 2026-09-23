@@ -10,7 +10,9 @@ Verified with `git merge-base --is-ancestor`. The branch was created from that c
 
 ## 2. Final SHA
 
-The documentation commit that adds this file is the branch tip. The last code commit before it is `6bca547290bae07c4d1809abae9cf925e0fceffc`.
+`9284c64c82fdd2ce896348ac78d135aeef9a6823`
+
+That commit adds this report. The last code commit before it is `6bca547290bae07c4d1809abae9cf925e0fceffc`. The branch tip is this SHA plus the one-line correction that writes the hash into the report.
 
 ## 3. Branch
 
@@ -390,7 +392,7 @@ This report, `README.md`, and `CHANGELOG.md` are the documentation commit on top
 - `26af26d` perf: cut proven opt-in lookup and allocation work
 - `9af7e50` fix: keep server_metrics samples on the phases that actually ran
 - `6bca547` ci: make verification and benchmark comparisons reproducible
-- documentation commit on top of `6bca547`
+- `9284c64` docs: record the Opus execution results
 
 ## 44. Gameplay semantics changed?
 
