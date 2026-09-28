@@ -9,7 +9,11 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.network.chat.Component;
 
 /**
  * Starts the real client with Ultima loaded, opens Ultima's settings screen and clicks through its
@@ -45,6 +49,7 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
     };
     private static final int TELEPORT_SETTLE_TICKS = 240;
     private static final int FRAME_SETTLE_TICKS = 5;
+    private static final int LEFT_MOUSE_BUTTON = 0;
 
     @Override
     public void runTest(final ClientGameTestContext context) {
@@ -59,9 +64,7 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         context.waitTicks(5);
         shoot(context, shots, "02_settings_rendering");
         for (String category : new String[] {"simulation", "killer_modules", "advanced"}) {
-            // Fails when the settings screen has no button with that translation key.
-            context.clickScreenButton("ultima.category." + category);
-            context.waitTicks(3);
+            openCategory(context, category);
             shoot(context, shots, "02_settings_" + category);
         }
         context.setScreen(TitleScreen::new);
@@ -85,6 +88,47 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
                 shoot(context, shots, "03_world_point" + (++index));
             }
         }
+    }
+
+    /**
+     * Clicks the category button with the mouse. Fabric's own button lookup does not see the buttons of a scrolling
+     * list, so this walks the widget tree, and it fails when the button is missing or does not become selected.
+     */
+    private static void openCategory(final ClientGameTestContext context, final String category) {
+        String text = Component.translatable("ultima.category." + category).getString();
+        double[] center = context.computeOnClient(client -> {
+            AbstractWidget button = findButton(client.gui.screen(), text);
+            if (button == null) {
+                throw new AssertionError("the settings screen has no button '" + text + "'");
+            }
+            double scale = (double) client.getWindow().getWidth() / client.getWindow().getGuiScaledWidth();
+            return new double[] {(button.getX() + button.getWidth() / 2.0) * scale, (button.getY() + button.getHeight() / 2.0) * scale};
+        });
+        context.getInput().setCursorPos(center[0], center[1]);
+        context.getInput().pressMouse(LEFT_MOUSE_BUTTON);
+        context.waitTicks(3);
+        boolean selected = context.computeOnClient(client -> {
+            AbstractWidget button = findButton(client.gui.screen(), text);
+            return button != null && !button.active;
+        });
+        if (!selected) {
+            throw new AssertionError("clicking '" + text + "' did not select the category");
+        }
+    }
+
+    private static AbstractWidget findButton(final ContainerEventHandler parent, final String text) {
+        for (GuiEventListener child : parent.children()) {
+            if (child instanceof AbstractWidget widget && text.equals(widget.getMessage().getString())) {
+                return widget;
+            }
+            if (child instanceof ContainerEventHandler nested) {
+                AbstractWidget found = findButton(nested, text);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static void buildArrangement(final TestServerContext server) {
