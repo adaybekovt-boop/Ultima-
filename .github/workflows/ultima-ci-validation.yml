@@ -164,11 +164,11 @@ jobs:
           done
           exit "$status"
 
-      - name: Thumbnails of the first world screenshot, for reading a failure from the log
+      - name: Text pictures of two world screenshots, for reading a failure from the log
         if: failure()
         continue-on-error: true
         shell: bash
-        run: python3 scripts/dump-thumbnails.py build/clienttest/baseline/03_world_point1.png build/clienttest/control/03_world_point1.png build/clienttest/mesher/03_world_point1.png
+        run: python3 scripts/dump-thumbnails.py build/clienttest/baseline/03_world_point1.png build/clienttest/control/03_world_point1.png build/clienttest/baseline/03_world_point3.png build/clienttest/control/03_world_point3.png
 
       - name: Upload client test outputs
         if: always()

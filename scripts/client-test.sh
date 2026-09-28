@@ -21,6 +21,11 @@ bash scripts/ensure-wrapper.sh
 
 rm -rf "$RUN_DIR/saves" "$RUN_DIR/screenshots" "$RUN_DIR/logs" "$RUN_DIR/config" "build/clienttest/$LABEL"
 mkdir -p "$RUN_DIR/config" "build/clienttest/$LABEL"
+# Clouds drift with the game time and would differ between two identical runs.
+cat > "$RUN_DIR/options.txt" <<'OPTIONS'
+renderClouds:"false"
+tutorialStep:"none"
+OPTIONS
 python3 - "$LABEL" "$FORCE_ON" "$RUN_DIR/config/ultima.properties" <<'PY'
 import re, sys
 from pathlib import Path
