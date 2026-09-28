@@ -77,11 +77,13 @@ How the screenshots are compared (`scripts/compare-screenshots.py`):
 - Every difference that is not excluded is printed with a coarse map and its hot spots (tile
   position, pixel count, colour before and after), because a bare percentage is hard to act on.
 
-CI result on the mesher modules: 0.12 % of the pixels of the first camera position differ by up to
-15 levels of 255; the other two positions are identical to within four levels. With the control at
-0 % this is a real, deterministic difference between the mesher modules' output and vanilla's, not
-noise. It is inside the budget and has not been investigated; read the hot spots in the `client`
-job log before making `java_mesher` or `mesher_fast_path` default.
+CI result on the mesher modules: 0.31 % of the pixels of the first camera position differ by more
+than one level (the other two positions: 0 % and 0.003 %). Almost all of it is a band of tinted
+leaf pixels that are one or two levels of 255 off, e.g. (45, 63, 21) against (46, 65, 22); a few
+pixels differ by up to 15. With the control at 0 % this is a deterministic difference between the
+mesher modules' output and vanilla's, not noise, most likely a rounding difference in the vertex
+colour of tinted faces. It is inside the budget and has not been traced to a cause; read the hot
+spots in the `client` job log before making `java_mesher` or `mesher_fast_path` default.
 
 What it proves: with the shipped defaults or retained terrain on, the arrangement renders like
 vanilla; with the mesher modules on it renders like vanilla except for the residual above; and the
