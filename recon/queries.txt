@@ -1,20 +1,18 @@
-# round 3b-1
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.Entity move\(|setPos\(|position\(|getBoundingBox|onGround\(|horizontalCollision|verticalCollision|setDeltaMovement|setNoGravity|setOnGround|snapTo|setBoundingBox|tick\(
+# round 3c
+javapg minecraft-common-*26.2.jar net.minecraft.world.entity.Entity move\(|setPos\(|position\(|getBoundingBox|onGround|setDeltaMovement|setNoGravity|setBoundingBox|getOnPos|horizontalCollision|verticalCollision
 javapg minecraft-common-*26.2.jar net.minecraft.world.entity.MoverType .
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.EntityType create\(|spawn\(|EntityType<.*> (PIG|ITEM|COW|MINECART|ARMOR_STAND);
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.item.ItemEntity ItemEntity\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.phys.AABB AABB\(|move\(|inflate\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.phys.Vec3 Vec3\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase getBlock\(|isSignalSource|isRedstoneConductor|isPathfindable|getCollisionShape|hasAnalogOutputSignal|is\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.Block getStateDefinition|defaultBlockState
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.state.StateDefinition getPossibleStates|getOwner
-javapg minecraft-common-*26.2.jar net.minecraft.server.level.ServerLevel setChunkForced|getForcedChunks
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.Level getEntitiesOfClass|getGameTime|isLoaded
-javapg minecraft-common-*26.2.jar net.minecraft.server.MinecraftServer getRecipeManager|createCommandSourceStack|reloadResources|tickRateManager|saveEverything|isStopped
-javapg minecraft-common-*26.2.jar net.minecraft.commands.Commands performPrefixedCommand|performCommand
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.ItemStack ItemStack\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.crafting.SingleRecipeInput SingleRecipeInput\(
-javapg minecraft-common-*26.2.jar net.minecraft.core.registries.BuiltInRegistries BLOCK;|ITEM;|ENTITY_TYPE;
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.crafting.RecipeHolder id\(|value\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.Blocks (HOPPER|BARREL|CHEST|FURNACE|DROPPER|HONEY_BLOCK|SLIME_BLOCK|SOUL_SAND|POWDER_SNOW|ANVIL|SCAFFOLDING|OAK_TRAPDOOR|OAK_FENCE|COBBLESTONE_WALL|OAK_SLAB|CAULDRON|GLASS_PANE|IRON_BARS|WHITE_CARPET|OAK_STAIRS);
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.Items (DIRT|COBBLESTONE|IRON_INGOT|COAL|OAK_PLANKS|STICK|RAW_IRON|OAK_LOG|DIAMOND|BREAD|APPLE|SAND|IRON_ORE|GOLD_INGOT);
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.EntityGetter getEntitiesOfClass|getEntities\(|getEntityCollisions
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.CollisionGetter noCollision|getBlockCollisions|isUnobstructed
+javapg minecraft-common-*26.2.jar net.minecraft.core.Direction Direction (UP|DOWN|NORTH|SOUTH|EAST|WEST);
+javapg minecraft-common-*26.2.jar net.minecraft.core.BlockPos BlockPos\(
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase is\(net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block>\);|getFluidState
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.pathfinder.PathComputationType .
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity serverTick
+javapg fabric-gametest-api-v1*.jar net.fabricmc.fabric.api.gametest.v1.GameTest .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext waitTicks|takeScreenshot|assertScreenshot|worldBuilder|getInput|runOnClient|setScreen|waitFor|getClient
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldBuilder .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.screenshot.TestScreenshotComparisonOptions .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.screenshot.TestScreenshotComparisonAlgorithm .
+javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext .
