@@ -57,6 +57,24 @@ def dilate(mask, radius: int):
     return result
 
 
+def hotspots(mask, a, b, tile: int = 32, top: int = 8) -> list[str]:
+    """The tiles with the most changed pixels, each with the colours of one changed pixel in both images."""
+    import numpy as np  # noqa: PLC0415
+
+    height, width = mask.shape
+    found = []
+    for tile_y in range(0, height, tile):
+        for tile_x in range(0, width, tile):
+            block = mask[tile_y:tile_y + tile, tile_x:tile_x + tile]
+            count = int(block.sum())
+            if count:
+                ys, xs = np.nonzero(block)
+                y, x = tile_y + int(ys[0]), tile_x + int(xs[0])
+                found.append((count, tile_x, tile_y, tuple(int(v) for v in a[y, x]), tuple(int(v) for v in b[y, x])))
+    found.sort(reverse=True)
+    return [f"      tile x={x:<4} y={y:<4} {count:>4} px   {before} -> {after}" for count, x, y, before, after in found[:top]]
+
+
 def ascii_map(mask) -> str:
     """A coarse picture of where the changed pixels are, one glyph per block."""
     height, width = mask.shape
@@ -121,12 +139,10 @@ def main(argv: list[str]) -> int:
         rows.append(f"{name:<32} {raw.mean() * 100:>8.4f}% {noise_fraction * 100:>8.4f}% {fraction * 100:>15.4f}% {worst:>6}  {verdict}")
         failures.extend(f"{name}: {problem}" for problem in problems)
         if problems:
-            if noise is not None and noise_fraction > 0:
-                print(f"{name}: noise between the two identical runs ({noise_fraction * 100:.2f}% of the image):")
-                print(ascii_map(noise))
             if fraction > 0:
                 print(f"{name}: changed outside the noise:" if args.control else f"{name}: changed:")
                 print(ascii_map(effective))
+                print("\n".join(hotspots(effective, a, b)))
     if not (names_a & names_b):
         failures.append("no screenshots to compare")
     print(f"\n{'image':<32} {'A vs B':>9} {'noise':>9} {'B outside noise':>16} {'worst':>6}")
