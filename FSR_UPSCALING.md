@@ -39,13 +39,12 @@ Sodium, Iris, or any other Minecraft mod.
 
 | Not implemented | Why |
 |---|---|
-| FSR2 / FSR3 temporal upscaling | Needs per-object motion vectors, jitter, and frame history. Ultima's `temporal` module is Native passthrough only. |
+| FSR2 / FSR3 temporal upscaling | Needs per-object motion vectors, jitter, and frame history. Ultima ships no temporal pipeline. |
 | Frame generation / optical flow | Separate feature by project policy; not mixed into native render. |
 | DLSS | Closed NVIDIA binary, no official OpenGL path, not distributable with the mod. |
 | Temporal jitter / MV textures | FSR1 is spatial and does not use them. |
 
-`TemporalMode.FSR_*` remains **unsupported**. This module does not become a
-`TemporalBackend`.
+Ultima has no temporal backend; FSR1 is the only upscaler and it is purely spatial.
 
 ---
 
@@ -134,8 +133,7 @@ The Rendering category of Ultima Settings now exposes:
 - **FSR quality** `CycleButton` (Ultra Quality / Quality / Balanced /
   Performance / Ultra Performance). Hidden while the module is off.
 
-This is the isolated `fsr_upscaling` module. It is **not** a `TemporalMode`
-graphics-menu entry; `TemporalMode.FSR_*` stays `isSupported() == false`.
+This is the isolated `fsr_upscaling` module.
 
 **Left for a future iteration:** RCAS sharpness slider. Sharpness remains the
 default `0.2` stops (`fsr_upscaling.sharpness` in `ultima.properties`). There is
@@ -238,9 +236,8 @@ park the world target, leave native / Iris rendering alone.
 
 ## Agent decisions
 
-1. **Standalone module, not a TemporalBackend.** FSR1 is spatial. Reusing the
-   temporal contract would imply history/jitter that this pass does not use, and
-   `temporal` already auto-disables on Sodium.
+1. **Standalone module.** FSR1 is spatial, so it needs no history, jitter, or
+   motion vectors.
 2. **Redirect `mainRenderTarget` during the world pass** instead of resizing
    vanilla main every frame (see above).
 3. **Upscale after outline + potion post, before GUI.** Those passes are part of
@@ -254,10 +251,7 @@ park the world target, leave native / Iris rendering alone.
    rounded 0.77 / 0.67 / 0.59 table values.
 7. **Missing shaders/device wait and retry** instead of a permanent fail-open.
    Only a hard compile/link failure fail-opens for the session.
-8. **Temporal Native capture uses `mainRenderTarget()`** so, when both modules
-   are on, it snapshots the redirected world target rather than the empty
-   vanilla main. Temporal still does not change pixels.
-9. **C1 SkyRenderer safety.** Vanilla `SkyRenderer` captures
+8. **C1 SkyRenderer safety.** Vanilla `SkyRenderer` captures
    `gameRenderer.mainRenderTarget()` once. Fail-open / 1×1 must not
    `destroyBuffers()` on that object. Chosen fix: **(a) park the world target
    for the rest of the session** (close only on `GameRenderer.close`), plus
@@ -265,7 +259,7 @@ park the world target, leave native / Iris rendering alone.
    (this frame; extract already ran) and `LevelExtractor` (next extract).
    (a) alone would leave sky drawing into the parked unused RT. (c) was
    rejected as a more fragile intercept.
-10. **H1 world-icon screenshot.** `takeAutoScreenshot` reads the raw
+9. **H1 world-icon screenshot.** `takeAutoScreenshot` reads the raw
     `mainRenderTarget` field from a method that was not in the GETFIELD
     redirect list, so it captured empty vanilla main. Chosen fix: **(b)**
     defer `tryTakeScreenshotIfNeeded` until after RCAS writes the upscaled

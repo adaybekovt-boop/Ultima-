@@ -197,12 +197,6 @@ public final class UltimaModules {
                     "Experimental RGSS endpoint specialization. Reject unless GPU frame time improves by at least "
                             + "3% in an RGSS-limited workload. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
-            Module.client("temporal", false,
-                    "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
-                            + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
-                            + "DLSS/FSR backends are not implemented, so it stays default off until a backend "
-                            + "consumes the history. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
-                    RENDERER_FAMILY),
             Module.client("fsr_upscaling", false,
                     "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
                             + "and upscales to native before HUD/GUI. Default off. Isolated from retained_terrain "

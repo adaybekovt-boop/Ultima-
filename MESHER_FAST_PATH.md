@@ -29,9 +29,9 @@ Zero approximation: if identity with vanilla cannot be guaranteed, fallback.
 
 `FastPathCriteria` is the single source of truth. `CubeModelCache.lookup`
 returns the same `Reason` enum the kernel/tests use. The synthetic kernel
-(`FastPathCubeMesher` / `VanillaCubeOracle`) admits cells only through
-`fromFixtureState`. Flag-only `fromFlags` is a fixture heuristic and does
-not admit production cells.
+(`FastPathCubeMesher` / `VanillaCubeOracle`, test source set only) admits cells only through
+`FixtureAdmission.fromFixtureState`. Flag-only `FixtureAdmission.fromFlags` is a fixture
+heuristic and does not admit production cells.
 
 The cache is an `IdentityHashMap<BlockState, …>`. Minecraft interns each
 property combination, so `furnace[facing=north]` and `furnace[facing=south]`
@@ -128,8 +128,8 @@ empty occluder so tests never guess voxel joins.
 ## Equivalence tests
 
 **Honesty constraint:** kernel tests in `MesherFastPathChecks` exercise
-`FastPathCubeMesher` / `VanillaCubeOracle` / `OcclusionMask`. Those classes are
-**not** called from `SectionCompilerMixin`. Production compile goes through
+`FastPathCubeMesher` / `VanillaCubeOracle` / `OcclusionMask`. Those classes live in
+`src/test` and are **not** part of the shipped jar or called from `SectionCompilerMixin`. Production compile goes through
 `HybridSectionMesher.tessellateFastCube`. Kernel PASS does **not** by itself
 prove production vertices, UVs, or AO.
 

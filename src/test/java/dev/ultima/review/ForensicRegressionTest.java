@@ -4,11 +4,6 @@ import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
-import dev.ultima.temporal.MotionVectorMath;
-import dev.ultima.temporal.MotionVectorSemantic;
-import dev.ultima.temporal.TemporalMode;
-import dev.ultima.temporal.TemporalResolution;
-import dev.ultima.temporal.TemporalSettings;
 import dev.ultima.util.CursorMath;
 import dev.ultima.util.SectionRangeMath;
 import java.lang.reflect.Constructor;
@@ -49,7 +44,6 @@ public final class ForensicRegressionTest {
         testOffsetCubeMatchesVanillaMove();
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
-        testTemporalMathAndSettings();
         RetainedFoundationChecks.run();
         AuditStage1Checks.run();
         MesherFastPathChecks.run();
@@ -472,10 +466,6 @@ public final class ForensicRegressionTest {
             assertFalse(defaults.get("mesher_fast_path"), "mesher fast path must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
-            assertFalse(defaults.get("temporal"), "temporal has no pixel-changing backend and stays opt-in");
-            assertTrue(
-                    UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
-                    "temporal must declare Sodium incompatibility");
             assertTrue(
                     UltimaModules.byKey("retained_terrain").incompatibleMods().contains("sodium"),
                     "retained terrain must declare Sodium incompatibility");
@@ -534,16 +524,12 @@ public final class ForensicRegressionTest {
             assertTrue(
                     "disabled_by_default".equals(retainedReason) || "not_client_environment".equals(retainedReason),
                     "retained terrain remains inactive, not " + retainedReason);
-            String temporalReason = defaultConfig.resolve("temporal").reason();
-            assertTrue(
-                    "disabled_by_default".equals(temporalReason) || "not_client_environment".equals(temporalReason),
-                    "temporal Native passthrough remains inactive by default, not " + temporalReason);
             String metricsReason = defaultConfig.resolve("terrain_metrics").reason();
             assertTrue(
                     "disabled_by_default".equals(metricsReason) || "not_client_environment".equals(metricsReason),
                     "terrain metrics remain inactive by default, not " + metricsReason);
             for (UltimaModules.Module module : UltimaModules.all()) {
-                if (UltimaModules.isInstrumentation(module.key()) || "temporal".equals(module.key())) {
+                if (UltimaModules.isInstrumentation(module.key())) {
                     assertFalse(module.enabledByDefault(), module.key() + " must not run without opt-in");
                     String reason = defaultConfig.resolve(module.key()).reason();
                     assertTrue(
@@ -667,125 +653,6 @@ public final class ForensicRegressionTest {
                 throw new AssertionError("floatToIntBits was not stable for " + value);
             }
         }
-    }
-
-    private static void testTemporalMathAndSettings() {
-        org.joml.Matrix4f identity = new org.joml.Matrix4f();
-        org.joml.Vector4f clip = new org.joml.Vector4f();
-        org.joml.Vector2f currentNdc = new org.joml.Vector2f();
-        org.joml.Vector2f previousNdc = new org.joml.Vector2f();
-        org.joml.Vector2f velocity = new org.joml.Vector2f(1.0F, 1.0F);
-
-        MotionVectorSemantic semantic = MotionVectorMath.staticWorldVelocityNdc(
-                identity,
-                identity,
-                0.0,
-                64.0,
-                0.0,
-                identity,
-                identity,
-                0.0,
-                64.0,
-                0.0,
-                8.0,
-                72.0,
-                12.0,
-                clip,
-                currentNdc,
-                previousNdc,
-                velocity);
-        assertTrue(semantic == MotionVectorSemantic.STATIC_WORLD_CAMERA_ONLY, "static terrain semantic");
-        assertTrue(MotionVectorMath.isZero(velocity, 1.0e-6F), "static camera and unchanged VP must yield zero velocity");
-
-        MotionVectorMath.staticWorldVelocityNdc(
-                identity,
-                identity,
-                1.0,
-                0.0,
-                0.0,
-                identity,
-                identity,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                -10.0,
-                clip,
-                currentNdc,
-                previousNdc,
-                velocity);
-        assertFalse(MotionVectorMath.isZero(velocity, 1.0e-6F), "camera translation must produce static-terrain screen velocity");
-
-        org.joml.Vector2f objectVelocity = new org.joml.Vector2f();
-        MotionVectorSemantic objectSemantic = MotionVectorMath.objectVelocityNdc(
-                identity,
-                identity,
-                0.0,
-                0.0,
-                0.0,
-                identity,
-                identity,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                -10.0,
-                0.0,
-                0.0,
-                -10.0,
-                clip,
-                currentNdc,
-                previousNdc,
-                objectVelocity);
-        assertTrue(objectSemantic == MotionVectorSemantic.OBJECT_TRANSFORM, "moving object semantic");
-        assertFalse(MotionVectorMath.isZero(objectVelocity, 1.0e-6F), "object translation must not be dropped");
-
-        org.joml.Vector2f cameraOnlyIfFaked = new org.joml.Vector2f();
-        MotionVectorMath.staticWorldVelocityNdc(
-                identity,
-                identity,
-                0.0,
-                0.0,
-                0.0,
-                identity,
-                identity,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                -10.0,
-                clip,
-                currentNdc,
-                previousNdc,
-                cameraOnlyIfFaked);
-        assertTrue(
-                MotionVectorMath.isZero(cameraOnlyIfFaked, 1.0e-6F),
-                "camera-only static-world math must not invent object motion");
-
-        var nativeSize = TemporalResolution.recommended(TemporalMode.NATIVE, 1920, 1080);
-        assertEquals(1920L, nativeSize.width(), "Native render width equals output width");
-        assertEquals(1080L, nativeSize.height(), "Native render height equals output height");
-        assertTrue(
-                TemporalResolution.isNativeResolution(TemporalMode.NATIVE, 1920, 1080, 1920, 1080),
-                "Native mode is native resolution");
-
-        var unsupportedSize = TemporalResolution.recommended(TemporalMode.DLSS_PERFORMANCE, 1920, 1080);
-        assertEquals(1920L, unsupportedSize.width(), "unsupported DLSS must not lower render width");
-        assertEquals(1080L, unsupportedSize.height(), "unsupported DLSS must not lower render height");
-        assertFalse(TemporalMode.DLSS_QUALITY.isSupported(), "DLSS is unsupported in this build");
-        assertFalse(TemporalMode.FSR_QUALITY.isSupported(), "FSR is unsupported in this build");
-        assertTrue(TemporalMode.NATIVE.isSupported(), "Native is supported");
-
-        TemporalSettings settings = new TemporalSettings();
-        assertTrue(settings.resolved() == TemporalMode.NATIVE, "default resolved mode is Native");
-        settings.request(TemporalMode.DLSS_QUALITY);
-        assertTrue(settings.requestedUnsupported(), "unsupported request must be visible");
-        assertTrue(settings.resolved() == TemporalMode.NATIVE, "unsupported request must resolve to Native");
-        assertTrue(TemporalMode.fromKey("dlss-quality") == TemporalMode.DLSS_QUALITY, "mode key parse");
-        assertTrue(TemporalMode.fromKey("not-a-mode") == TemporalMode.NATIVE, "unknown mode key is Native");
     }
 
     private static int invokeFindIndex(final VoxelShape shape, final Direction.Axis axis, final double coord) {

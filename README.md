@@ -78,7 +78,6 @@ Client renderer / mesher experiments:
 - `iris_shader_frontend_artifact_cache`
 - `cross_pipeline_admission_broker`
 - `render_warmup_system`
-- `temporal` (Native passthrough only; no backend consumes the history yet)
 
 Instrumentation (no effect on gameplay or pixels; `scripts/bench-client.sh` turns on
 `client_benchmark` and `terrain_metrics` for both A/B sides):
@@ -86,8 +85,9 @@ Instrumentation (no effect on gameplay or pixels; `scripts/bench-client.sh` turn
 - `client_benchmark`
 - `terrain_metrics`
 
-Existing `config/ultima.properties` files keep their explicit `terrain_metrics=true` /
-`temporal=true` lines; only fresh configs get the new defaults.
+Existing `config/ultima.properties` files keep their explicit `terrain_metrics=true` line;
+only fresh configs get the new defaults. Keys of removed modules (for example the old
+`temporal=true`) are ignored.
 
 ### Auto-disable policy
 

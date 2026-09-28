@@ -3,11 +3,9 @@ package dev.ultima.meshing;
 /**
  * Single source of truth for hybrid-mesher admission.
  *
- * <p>Production ({@code CubeModelCache}/{@code HybridSectionMesher}) and the
- * synthetic kernel ({@link #fromFixtureState}) must agree on this tree. Flag
- * bits alone are a fixture heuristic ({@link #fromFlags}); they do not see
- * model class or render layer. Translucent / glass blocks are
- * <strong>always fallback</strong> in this version (sorting / shader /
+ * <p>Production ({@code CubeModelCache}/{@code HybridSectionMesher}) admits cells through this
+ * tree; the synthetic test kernel mirrors it in the test source set. Translucent / glass blocks
+ * are <strong>always fallback</strong> in this version (sorting / shader /
  * {@code HalfTransparentBlock} risk).
  *
  * <p>Covered (fast path) when every check passes:
@@ -105,55 +103,5 @@ public final class FastPathCriteria {
     }
 
     private FastPathCriteria() {
-    }
-
-    /**
-     * Coarse fixture-flag heuristic. Does <em>not</em> encode translucency or
-     * model class. Production must not use this to admit a cell; use
-     * {@link #fromFixtureState} in tests and {@code CubeModelCache.lookup} in
-     * game. Occlusion / {@code skipRendering} bits on flags are test-fixture
-     * only (see {@code RenderSectionSnapshot.flagsOfForTest}).
-     */
-    public static Result fromFlags(final int flags) {
-        if (BlockRenderFlags.air(flags)) {
-            return Result.fallback(Reason.AIR);
-        }
-        if (BlockRenderFlags.hasFluid(flags)) {
-            return Result.fallback(Reason.HAS_FLUID);
-        }
-        if (!BlockRenderFlags.model(flags)) {
-            return Result.fallback(Reason.NOT_MODEL);
-        }
-        if (BlockRenderFlags.skipRendering(flags)) {
-            return Result.fallback(Reason.SKIP_RENDERING);
-        }
-        if (BlockRenderFlags.translucent(flags)) {
-            return Result.fallback(Reason.TRANSLUCENT_LAYER);
-        }
-        return Result.admitted();
-    }
-
-    public static Result fromFixtureState(final int stateId) {
-        if (stateId == SectionFixtures.WEIGHTED_CUBE) {
-            return Result.admittedWeighted();
-        }
-        if (SectionFixtures.fixtureAllowsFastPath(stateId)) {
-            Result fromFlags = fromFlags(SectionFixtures.flags(stateId));
-            if (fromFlags.fastPath()) {
-                return fromFlags;
-            }
-        }
-        return switch (stateId) {
-            case SectionFixtures.AIR -> Result.fallback(Reason.AIR);
-            case SectionFixtures.FLUID -> Result.fallback(Reason.HAS_FLUID);
-            case SectionFixtures.LEAVES -> Result.fallback(Reason.SKIP_RENDERING);
-            case SectionFixtures.TRANSPARENT -> Result.fallback(Reason.TRANSLUCENT_LAYER);
-            case SectionFixtures.RANDOM, SectionFixtures.GRASS_OVERLAY -> Result.fallback(Reason.WEIGHTED_NON_CUBE);
-            case SectionFixtures.FENCE -> Result.fallback(Reason.MULTIPART_MODEL);
-            case SectionFixtures.STAIRS, SectionFixtures.SLAB, SectionFixtures.PLANT, SectionFixtures.CUTOUT ->
-                    Result.fallback(Reason.NOT_UNIT_CUBE_FACE);
-            case SectionFixtures.BLOCK_ENTITY -> Result.admitted();
-            default -> fromFlags(SectionFixtures.flags(stateId));
-        };
     }
 }
