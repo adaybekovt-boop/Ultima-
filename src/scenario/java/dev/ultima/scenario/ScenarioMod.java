@@ -19,6 +19,21 @@ public final class ScenarioMod implements ModInitializer {
             return;
         }
         Path out = Path.of(System.getProperty("ultima.scenario.out", "build/scenarios"));
+        String workloadName = System.getProperty("ultima.scenario.bench");
+        if (workloadName != null && !workloadName.isBlank()) {
+            BenchWorkload workload = BenchWorkloads.all().get(workloadName);
+            if (workload == null) {
+                throw new IllegalArgumentException("unknown benchmark workload '" + workloadName
+                        + "'; known: " + BenchWorkloads.all().keySet());
+            }
+            int warmup = Integer.getInteger("ultima.scenario.warmup", 600);
+            int ticks = Integer.getInteger("ultima.scenario.ticks", 1200);
+            BenchRunner bench = new BenchRunner(label, out, workload, warmup, ticks);
+            ServerLifecycleEvents.SERVER_STARTED.register(bench::onStarted);
+            ServerTickEvents.START_SERVER_TICK.register(bench::onStartTick);
+            ServerTickEvents.END_SERVER_TICK.register(bench::onEndTick);
+            return;
+        }
         ScenarioRunner runner = new ScenarioRunner(label, out, Scenarios.all());
         ServerLifecycleEvents.SERVER_STARTED.register(runner::onStarted);
         ServerTickEvents.END_SERVER_TICK.register(runner::onTick);

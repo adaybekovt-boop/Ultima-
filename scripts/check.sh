@@ -12,4 +12,5 @@ else
 fi
 "$PYTHON_BIN" scripts/summarize-client-bench.py --self-test
 "$PYTHON_BIN" scripts/summarize-mesher-bench.py --self-test
+"$PYTHON_BIN" scripts/bench-modules.py --self-test
 DRY_RUN=1 bash scripts/bench-mesher-ab.sh
