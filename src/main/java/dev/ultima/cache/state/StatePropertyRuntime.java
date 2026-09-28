@@ -179,10 +179,7 @@ public final class StatePropertyRuntime {
     }
 
     public static boolean mayCacheRedstoneConductor(final BlockState state) {
-        return moduleEnabled()
-                && state != null
-                && VanillaClassGuard.isVanillaType(state.getBlock())
-                && !state.getBlock().hasDynamicShape();
+        return moduleEnabled() && RedstoneConductorPurity.allows(state);
     }
 
     public static void noteUncacheableRedstoneConductor(final BlockState state) {

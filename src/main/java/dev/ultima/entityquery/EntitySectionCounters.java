@@ -11,11 +11,27 @@ package dev.ultima.entityquery;
  * update on spawn/despawn.
  */
 public final class EntitySectionCounters {
+    private static final EntitySectionCounters UNKNOWN_BLOCKING = createUnknownBlocking();
+
     private int players;
     private int living;
     private int items;
     private int total;
     private boolean unknown;
+
+    /**
+     * Shared occupant state for a section whose type is not trusted. Callers must not mutate it.
+     */
+    public static EntitySectionCounters unknownBlocking() {
+        return UNKNOWN_BLOCKING;
+    }
+
+    private static EntitySectionCounters createUnknownBlocking() {
+        EntitySectionCounters counters = new EntitySectionCounters();
+        counters.unknown = true;
+        counters.total = 1;
+        return counters;
+    }
 
     public void add(final boolean player, final boolean livingEntity, final boolean itemEntity, final boolean unknownType) {
         if (unknownType) {

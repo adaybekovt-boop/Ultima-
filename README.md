@@ -31,11 +31,12 @@ See [`SERVER_HOSTING.md`](SERVER_HOSTING.md) for the handshake audit and hosting
 
 ```bash
 bash scripts/bootstrap.sh
-./gradlew build
-./gradlew forensicRegressionTest
+./gradlew test
 bash scripts/check.sh
 bash scripts/mixin-smoke.sh
 ```
+
+`./gradlew test` is the canonical regression aggregate. `./gradlew forensicRegressionTest` remains a local JavaExec for the same merged checkpoint and is not a second CI path.
 
 Built mod JARs appear in `build/libs/`.
 

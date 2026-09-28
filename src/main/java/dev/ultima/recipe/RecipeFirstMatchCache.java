@@ -79,11 +79,11 @@ public final class RecipeFirstMatchCache {
             recordFallback(input, recordTelemetry);
             return null;
         }
-        if (!this.table.contains(key)) {
+        Optional<RecipeHolder<?>> hit = this.table.get(key);
+        if (hit == null) {
             recordMiss(input, recordTelemetry);
             return null;
         }
-        Optional<RecipeHolder<?>> hit = this.table.get(key);
         recordHit(input, recordTelemetry);
         return hit;
     }

@@ -25,8 +25,6 @@ final class VanillaClientHostingChecks {
     private static final Path FABRIC_MOD_JSON = Path.of("src/main/resources/fabric.mod.json");
     private static final Path COMMON_MIXINS = Path.of("src/main/resources/ultima.mixins.json");
     private static final Path CLIENT_MIXINS = Path.of("src/client/resources/ultima.client.mixins.json");
-    private static final Path MAIN_JAVA = Path.of("src/main/java");
-    private static final Path CLIENT_JAVA = Path.of("src/client/java");
     private static final Path MAIN_RESOURCES = Path.of("src/main/resources");
 
     private static final List<String> FORBIDDEN_NETWORK_TOKENS = List.of(
@@ -188,22 +186,30 @@ final class VanillaClientHostingChecks {
     }
 
     private static void testNoCustomNetworkingOrRegistries() {
-        List<Path> roots = List.of(MAIN_JAVA, CLIENT_JAVA);
+        List<Path> roots = List.of(Path.of("build/classes/java/main"), Path.of("build/classes/java/client"));
         List<String> hits = new ArrayList<>();
         for (Path root : roots) {
+            if (!Files.isDirectory(root)) {
+                throw new AssertionError("compiled classes missing: " + root);
+            }
             try (Stream<Path> walk = Files.walk(root)) {
-                walk.filter(path -> path.toString().endsWith(".java")).forEach(path -> {
-                    String source = readString(path);
-                    for (String token : FORBIDDEN_NETWORK_TOKENS) {
-                        if (source.contains(token)) {
-                            hits.add(path + " contains " + token);
+                walk.filter(path -> path.toString().endsWith(".class")).forEach(path -> {
+                    try {
+                        var node = BytecodeContracts.loadFile(path);
+                        for (String token : FORBIDDEN_NETWORK_TOKENS) {
+                            if (BytecodeContracts.mentions(node, token)) {
+                                hits.add(path + " contains " + token);
+                            }
                         }
-                    }
-                    if (source.contains("Registry.register(")
-                            || source.contains("BuiltInRegistries")
-                            || source.contains("FabricItem")
-                            || source.contains("FabricBlock")) {
-                        hits.add(path + " registers custom content that would fail registry sync");
+                        if (BytecodeContracts.mentions(node, "BuiltInRegistries")
+                                || BytecodeContracts.mentions(node, "FabricItem")
+                                || BytecodeContracts.mentions(node, "FabricBlock")
+                                || BytecodeContracts.invokesOwner(node, "net/minecraft/core/Registry")
+                                        && BytecodeContracts.invokes(node, "net/minecraft/core/Registry", "register")) {
+                            hits.add(path + " registers custom content that would fail registry sync");
+                        }
+                    } catch (IOException e) {
+                        throw new AssertionError("could not read " + path, e);
                     }
                 });
             } catch (IOException e) {

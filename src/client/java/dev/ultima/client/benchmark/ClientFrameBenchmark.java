@@ -472,6 +472,9 @@ public final class ClientFrameBenchmark {
                 .append("    \"sampleTicks\": ").append(SAMPLE_TICKS).append(",\n")
                 .append("    \"requestedRole\": ").append(BenchmarkJson.quote(abRole)).append(",\n")
                 .append("    \"scene\": ").append(BenchmarkJson.quote(System.getProperty("ultima.clientBenchmark.scene", "unspecified"))).append(",\n")
+                .append("    \"variedKeys\": ");
+        appendQuotedArrayInline(json, variedKeys());
+        json.append(",\n")
                 .append("    \"pairLabel\": ").append(BenchmarkJson.quote(System.getProperty("ultima.clientBenchmark.pairLabel", ""))).append("\n")
                 .append("  }");
     }
@@ -502,6 +505,8 @@ public final class ClientFrameBenchmark {
                 .append("    \"java\": ").append(BenchmarkJson.quote(System.getProperty("java.runtime.version", ""))).append(",\n")
                 .append("    \"javaVm\": ").append(BenchmarkJson.quote(System.getProperty("java.vm.name", ""))).append(",\n")
                 .append("    \"os\": ").append(BenchmarkJson.quote(System.getProperty("os.name", "") + " " + System.getProperty("os.arch", ""))).append(",\n")
+                .append("    \"cpu\": ").append(BenchmarkJson.quote(cpuDescription())).append(",\n")
+                .append("    \"shaderPack\": ").append(BenchmarkJson.quote(System.getProperty("ultima.clientBenchmark.shaderPack", ""))).append(",\n")
                 .append("    \"maxMemoryBytes\": ").append(Runtime.getRuntime().maxMemory()).append(",\n")
                 .append("    \"lwjgl\": ").append(BenchmarkJson.quote(lwjglVersion())).append(",\n")
                 .append("    \"gpuName\": ").append(BenchmarkJson.quote(deviceInfo != null ? deviceInfo.name() : "")).append(",\n")
@@ -565,6 +570,41 @@ public final class ClientFrameBenchmark {
                 .append("      \"sampleEnd\": ").append(BenchmarkJson.quote(sampleEndScreenshot)).append("\n")
                 .append("    }\n")
                 .append("  }");
+    }
+
+    private static List<String> variedKeys() {
+        String raw = System.getProperty("ultima.clientBenchmark.variedKeys", "");
+        if (raw.isBlank()) {
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            String key = part.trim();
+            if (!key.isEmpty()) {
+                keys.add(key);
+            }
+        }
+        return keys;
+    }
+
+    private static String cpuDescription() {
+        String identifier = System.getenv("PROCESSOR_IDENTIFIER");
+        if (identifier != null && !identifier.isBlank()) {
+            return identifier;
+        }
+        try {
+            for (String row : Files.readString(Path.of("/proc/cpuinfo")).split("\n")) {
+                if (row.startsWith("model name")) {
+                    int colon = row.indexOf(':');
+                    if (colon >= 0) {
+                        return row.substring(colon + 1).trim();
+                    }
+                }
+            }
+        } catch (IOException ignored) {
+            // A missing cpuinfo still leaves os.arch in the environment block.
+        }
+        return System.getProperty("os.arch", "");
     }
 
     private static void appendModules(final StringBuilder json) {

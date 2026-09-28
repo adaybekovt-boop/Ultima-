@@ -32,11 +32,35 @@ fi
 
 cd "$(dirname "$0")/.."
 
+VARIED_KEYS="$(
+  OFF_MODE="$OFF_MODE" ON_MODE="$ON_MODE" python3 - <<'PY'
+import os, re
+from pathlib import Path
+text = Path("src/main/java/dev/ultima/config/UltimaModules.java").read_text(encoding="utf-8")
+defaults = {}
+for match in re.finditer(r'(?:new Module|Module\.client)\("([a-z_]+)", (true|false),', text):
+    defaults[match.group(1)] = match.group(2) == "true"
+
+def enabled(mode, key, default):
+    if mode == "enabled":
+        return True
+    if mode == "disabled":
+        return False
+    return default
+
+off_mode = os.environ["OFF_MODE"]
+on_mode = os.environ["ON_MODE"]
+varied = [key for key, default in defaults.items() if enabled(off_mode, key, default) != enabled(on_mode, key, default)]
+print(",".join(varied))
+PY
+)"
+export VARIED_KEYS
+
 run_side() {
   local pair="$1" side="$2" mode="$3"
   local label="${PREFIX}_pair${pair}_${side}"
   echo "===== ${label} (${mode}) ====="
-  PAIR_LABEL="$label" SCENE="$SCENE" bash scripts/bench-client.sh "$label" "$mode"
+  PAIR_LABEL="$label" SCENE="$SCENE" VARIED_KEYS="$VARIED_KEYS" bash scripts/bench-client.sh "$label" "$mode"
 }
 
 for (( pair = 1; pair <= PAIRS; pair++ )); do

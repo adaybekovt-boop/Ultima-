@@ -47,7 +47,15 @@ public final class FsrUpscaling {
             .get();
 
     private final FsrTargets targets = new FsrTargets();
-    private @Nullable GpuBuffer constants;
+    private @Nullable GpuBuffer easuConstants;
+    private @Nullable GpuBuffer rcasConstants;
+    private int cachedEasuInW = -1;
+    private int cachedEasuInH = -1;
+    private int cachedEasuOutW = -1;
+    private int cachedEasuOutH = -1;
+    private int cachedRcasW = -1;
+    private int cachedRcasH = -1;
+    private int cachedRcasSharpnessBits;
     private boolean worldPass;
     private boolean failedOpen;
     private @Nullable FsrResourcePlan activePlan;
@@ -187,7 +195,7 @@ public final class FsrUpscaling {
                 return this.activePlan;
             }
             this.targets.apply(plan);
-            this.ensureConstants();
+            this.ensureConstantBuffers();
             this.worldPass = this.targets.world() != null;
             this.activePlan = plan;
             return plan;
@@ -252,10 +260,7 @@ public final class FsrUpscaling {
     public void shutdown() {
         this.worldPass = false;
         this.targets.close();
-        if (this.constants != null) {
-            this.constants.close();
-            this.constants = null;
-        }
+        this.releaseConstants();
         this.activePlan = null;
     }
 
@@ -276,6 +281,7 @@ public final class FsrUpscaling {
                 this.activePlan == null ? 1 : this.activePlan.output().height());
         this.targets.apply(parked);
         this.activePlan = parked;
+        this.releaseConstants();
     }
 
     private void releaseIfInactive(final int nativeWidth, final int nativeHeight) {
@@ -298,24 +304,67 @@ public final class FsrUpscaling {
         FsrTargets.resizeIfPresent(outline, this.companionTargetSize(nativeWidth, nativeHeight));
     }
 
-    private void ensureConstants() {
-        if (this.constants != null) {
-            return;
+    private void ensureConstantBuffers() {
+        if (this.easuConstants == null) {
+            this.easuConstants = RenderSystem.getDevice().createBuffer(
+                    () -> "Ultima FSR EASU constants",
+                    GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
+                    CONSTANTS_BYTES);
+            this.cachedEasuInW = -1;
         }
-        this.constants = RenderSystem.getDevice().createBuffer(
-                () -> "Ultima FSR constants",
-                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
-                CONSTANTS_BYTES);
+        if (this.rcasConstants == null) {
+            this.rcasConstants = RenderSystem.getDevice().createBuffer(
+                    () -> "Ultima FSR RCAS constants",
+                    GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
+                    CONSTANTS_BYTES);
+            this.cachedRcasW = -1;
+        }
+    }
+
+    private void releaseConstants() {
+        if (this.easuConstants != null) {
+            this.easuConstants.close();
+            this.easuConstants = null;
+        }
+        if (this.rcasConstants != null) {
+            this.rcasConstants.close();
+            this.rcasConstants = null;
+        }
+        this.cachedEasuInW = -1;
+        this.cachedEasuInH = -1;
+        this.cachedEasuOutW = -1;
+        this.cachedEasuOutH = -1;
+        this.cachedRcasW = -1;
+        this.cachedRcasH = -1;
+        this.cachedRcasSharpnessBits = 0;
     }
 
     private void dispatchEasu(final RenderTarget input, final RenderTarget output, final FsrResourcePlan plan) {
-        FsrEasuConstants.EasuCon con = FsrEasuConstants.easuSameViewportAndInput(
-                plan.internal().width(),
-                plan.internal().height(),
-                plan.output().width(),
-                plan.output().height());
-        this.uploadConstants(con, Float.NaN, plan.internal(), plan.output());
-        this.drawPass("Ultima FSR EASU", FsrPipelines.easu(), input.getColorTextureView(), output.getColorTextureView());
+        this.ensureConstantBuffers();
+        int inW = plan.internal().width();
+        int inH = plan.internal().height();
+        int outW = plan.output().width();
+        int outH = plan.output().height();
+        boolean same = this.cachedEasuInW == inW
+                && this.cachedEasuInH == inH
+                && this.cachedEasuOutW == outW
+                && this.cachedEasuOutH == outH;
+        ConstantWriter upload = null;
+        if (!same) {
+            FsrEasuConstants.EasuCon con = FsrEasuConstants.easuSameViewportAndInput(inW, inH, outW, outH);
+            upload = (encoder, buffer) -> this.writeConstants(encoder, buffer, con, Float.NaN, plan.internal(), plan.output());
+        }
+        this.drawPass(
+                "Ultima FSR EASU",
+                FsrPipelines.easu(),
+                input.getColorTextureView(),
+                output.getColorTextureView(),
+                this.easuConstants,
+                upload);
+        this.cachedEasuInW = inW;
+        this.cachedEasuInH = inH;
+        this.cachedEasuOutW = outW;
+        this.cachedEasuOutH = outH;
     }
 
     private void dispatchRcas(
@@ -323,22 +372,38 @@ public final class FsrUpscaling {
             final RenderTarget output,
             final FsrResourcePlan plan,
             final float sharpnessStops) {
-        FsrEasuConstants.RcasCon rcas = FsrEasuConstants.rcas(FsrSettings.clampSharpness(sharpnessStops));
-        FsrEasuConstants.EasuCon unused = FsrEasuConstants.easuSameViewportAndInput(
-                plan.output().width(),
-                plan.output().height(),
-                plan.output().width(),
-                plan.output().height());
-        this.uploadConstants(unused, rcas.sharpnessLinear(), plan.output(), plan.output());
-        this.drawPass("Ultima FSR RCAS", FsrPipelines.rcas(), input.getColorTextureView(), output.getColorTextureView());
+        this.ensureConstantBuffers();
+        float clamped = FsrSettings.clampSharpness(sharpnessStops);
+        int bits = Float.floatToIntBits(clamped);
+        int width = plan.output().width();
+        int height = plan.output().height();
+        boolean same = this.cachedRcasW == width && this.cachedRcasH == height && this.cachedRcasSharpnessBits == bits;
+        ConstantWriter upload = null;
+        if (!same) {
+            FsrEasuConstants.RcasCon rcas = FsrEasuConstants.rcas(clamped);
+            FsrEasuConstants.EasuCon layout = FsrEasuConstants.easuSameViewportAndInput(width, height, width, height);
+            upload = (encoder, buffer) -> this.writeConstants(
+                    encoder, buffer, layout, rcas.sharpnessLinear(), plan.output(), plan.output());
+        }
+        this.drawPass(
+                "Ultima FSR RCAS",
+                FsrPipelines.rcas(),
+                input.getColorTextureView(),
+                output.getColorTextureView(),
+                this.rcasConstants,
+                upload);
+        this.cachedRcasW = width;
+        this.cachedRcasH = height;
+        this.cachedRcasSharpnessBits = bits;
     }
 
-    private void uploadConstants(
+    private void writeConstants(
+            final CommandEncoder encoder,
+            final GpuBuffer constants,
             final FsrEasuConstants.EasuCon con,
             final float rcasLinear,
             final FsrSize input,
             final FsrSize output) {
-        this.ensureConstants();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var data = Std140Builder.onStack(stack, CONSTANTS_BYTES)
                     .putVec4(Float.isNaN(rcasLinear) ? con.con0()[0] : rcasLinear, con.con0()[1], con.con0()[2], con.con0()[3])
@@ -348,7 +413,7 @@ public final class FsrUpscaling {
                     .putVec2(input.width(), input.height())
                     .putVec2(output.width(), output.height())
                     .get();
-            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(this.constants.slice(), data);
+            encoder.writeToBuffer(constants.slice(), data);
         }
     }
 
@@ -356,17 +421,27 @@ public final class FsrUpscaling {
             final String label,
             final RenderPipeline pipeline,
             final GpuTextureView input,
-            final GpuTextureView output) {
-        if (pipeline == null || input == null || output == null || this.constants == null) {
+            final GpuTextureView output,
+            final @Nullable GpuBuffer constants,
+            final @Nullable ConstantWriter upload) {
+        if (pipeline == null || input == null || output == null || constants == null) {
             throw new IllegalStateException(label + " missing pipeline, texture, or constants");
         }
         CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
+        if (upload != null) {
+            upload.write(encoder, constants);
+        }
         try (RenderPass renderPass = encoder.createRenderPass(() -> label, output, Optional.empty())) {
             renderPass.setPipeline(pipeline);
             RenderSystem.bindDefaultUniforms(renderPass);
             renderPass.bindTexture("InSampler", input, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-            renderPass.setUniform("FsrConstants", this.constants);
+            renderPass.setUniform("FsrConstants", constants);
             renderPass.draw(3, 1, 0, 0);
         }
+    }
+
+    @FunctionalInterface
+    private interface ConstantWriter {
+        void write(CommandEncoder encoder, GpuBuffer constants);
     }
 }

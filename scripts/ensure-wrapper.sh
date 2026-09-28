@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+# The committed Gradle 9.5.1 wrapper is the canonical build path.
+# This script only recreates it when a checkout is missing the wrapper files.
 set -euo pipefail
 
-if [[ -x ./gradlew && -f gradle/wrapper/gradle-wrapper.jar ]]; then
+if [[ -x ./gradlew && -f gradle/wrapper/gradle-wrapper.jar && -f gradle/wrapper/gradle-wrapper.properties ]]; then
   exit 0
 fi
 

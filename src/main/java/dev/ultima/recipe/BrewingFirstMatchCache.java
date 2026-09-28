@@ -84,12 +84,13 @@ public final class BrewingFirstMatchCache {
     public @Nullable MixDecision lookupMixUnchecked(final ItemStack source, final ItemStack ingredient) {
         RecipeMatchKeys.BrewingKey key =
                 RecipeMatchKeys.BrewingKey.pair(RecipeMatchKeys.BrewingKey.Kind.MIX, source, ingredient);
-        if (!this.table.contains(key)) {
+        Object hit = this.table.get(key);
+        if (hit == null) {
             RecipeMatchTelemetry.brewingMiss();
             return null;
         }
         RecipeMatchTelemetry.brewingHit();
-        return (MixDecision) this.table.get(key);
+        return (MixDecision) hit;
     }
 
     public void storeMix(final ItemStack source, final ItemStack ingredient, final ItemStack result) {
@@ -106,12 +107,13 @@ public final class BrewingFirstMatchCache {
     }
 
     private @Nullable Boolean lookupBoolean(final RecipeMatchKeys.BrewingKey key) {
-        if (!this.table.contains(key)) {
+        Object hit = this.table.get(key);
+        if (hit == null) {
             RecipeMatchTelemetry.brewingMiss();
             return null;
         }
         RecipeMatchTelemetry.brewingHit();
-        return (Boolean) this.table.get(key);
+        return (Boolean) hit;
     }
 
     public record MixDecision(boolean unchanged, @Nullable ItemStack output) {

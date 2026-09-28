@@ -137,7 +137,7 @@ if [[ ! -f /exec-daemon/tmux.portal.conf ]]; then TMUX_CONF=(); fi
 tmux "${TMUX_CONF[@]}" kill-session -t "=${SESSION}" 2>/dev/null || true
 rm -f "$LOG"
 tmux "${TMUX_CONF[@]}" new-session -d -s "${SESSION}" -c "$PWD" -- bash -l
-GRADLE_CMD="./gradlew --no-daemon --console=plain runServer"
+GRADLE_CMD="./gradlew --console=plain runServer -Pultima.controlledBench=1"
 if [[ -n "${JFR:-}" ]]; then
   mkdir -p run
   JFR_PATH="${JFR_PATH:-$PWD/run/ultima-server-${LABEL}.jfr}"
@@ -212,6 +212,15 @@ for cx in -272 -16 240; do
 done
 send "function ultima:load_test" 8
 wait_for 'ultima-bench-load-complete' 180
+send "scoreboard objectives add ultima_bench dummy" 2
+send "execute store result score #ultima_entities ultima_bench if entity @e[type=!minecraft:player]" 2
+send "execute store result score #ultima_players ultima_bench if entity @a" 2
+send "scoreboard players get #ultima_entities ultima_bench" 2
+wait_for '#ultima_entities' 60
+send "scoreboard players get #ultima_players ultima_bench" 2
+wait_for '#ultima_players' 60
+send "seed" 2
+wait_for 'Seed:' 60
 send "tick sprint ${WARMUP_TICKS}" 2
 wait_for_count 'Sprint completed' 1 1800
 send "tick sprint ${TICKS}" 5

@@ -4,7 +4,7 @@ set -euo pipefail
 bash scripts/ensure-wrapper.sh
 mkdir -p run/logs
 rm -f run/logs/latest.log
-./gradlew --no-daemon runServer -Pultima.mixinSmoke --args nogui --console=plain
+./gradlew runServer -Pultima.mixinSmoke --args nogui --console=plain
 
 LOG=run/logs/latest.log
 if [[ ! -f "$LOG" ]]; then

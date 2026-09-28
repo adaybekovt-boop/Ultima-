@@ -24,6 +24,7 @@ public final class MixinBytecodeChecks {
     private static final String MIXIN = "Lorg/spongepowered/asm/mixin/Mixin;";
     private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
     private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
+    private static final String WRAP = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
     private static final String ACCESSOR = "Lorg/spongepowered/asm/mixin/gen/Accessor;";
 
     private MixinBytecodeChecks() {
@@ -86,6 +87,7 @@ public final class MixinBytecodeChecks {
 
         checkPriority("dev/ultima/mixin/fsr_upscaling/GameRendererMixin", 1100);
         checkPriority("dev/ultima/mixin/temporal/GameRendererMixin", 900);
+        checkFsrChainableHooks();
         checkConfigContracts();
         checkVanillaSynchronization();
         checkPinnedKillerContracts();
@@ -321,6 +323,42 @@ public final class MixinBytecodeChecks {
         return matches;
     }
 
+    private static void checkFsrChainableHooks() throws IOException {
+        ClassNode mixin = readResource("dev/ultima/mixin/fsr_upscaling/GameRendererMixin.class");
+        if (mixin == null) {
+            throw new AssertionError("compiled FSR GameRendererMixin is missing");
+        }
+        int fieldWraps = 0;
+        int screenshotWraps = 0;
+        for (MethodNode method : mixin.methods) {
+            if (annotation(method.invisibleAnnotations, REDIRECT) != null
+                    || annotation(method.visibleAnnotations, REDIRECT) != null) {
+                throw new AssertionError("FSR GameRendererMixin still uses @Redirect on " + method.name);
+            }
+            AnnotationNode wrap = annotation(method.invisibleAnnotations, WRAP);
+            if (wrap == null) {
+                wrap = annotation(method.visibleAnnotations, WRAP);
+            }
+            if (wrap == null) {
+                continue;
+            }
+            AnnotationNode at = firstAnnotation(value(wrap, "at"));
+            String target = at == null ? "" : String.valueOf(value(at, "target"));
+            if (target.contains("mainRenderTarget:Lcom/mojang/blaze3d/pipeline/RenderTarget;")) {
+                fieldWraps++;
+            }
+            if (target.contains("tryTakeScreenshotIfNeeded()V")) {
+                screenshotWraps++;
+            }
+        }
+        if (fieldWraps != 2) {
+            throw new AssertionError("FSR must wrap both mainRenderTarget reads, found " + fieldWraps);
+        }
+        if (screenshotWraps != 1) {
+            throw new AssertionError("FSR must wrap the world-icon screenshot call, found " + screenshotWraps);
+        }
+    }
+
     private static void checkPriority(final String resourceName, final int expected) throws IOException {
         ClassNode node = readResource(resourceName + ".class");
         AnnotationNode mixin = annotation(node == null ? null : node.invisibleAnnotations, MIXIN);
@@ -358,13 +396,16 @@ public final class MixinBytecodeChecks {
     }
 
     private static List<ClassNode> compiledMixins() throws IOException {
+        Path mainRoot = Path.of("build/classes/java/main/dev/ultima/mixin");
+        Path clientRoot = Path.of("build/classes/java/client/dev/ultima/mixin");
+        if (!Files.isDirectory(mainRoot)) {
+            throw new AssertionError("compiled common mixins are missing: " + mainRoot);
+        }
+        if (!Files.isDirectory(clientRoot)) {
+            throw new AssertionError("compiled client mixins are missing: " + clientRoot);
+        }
         List<ClassNode> result = new ArrayList<>();
-        for (Path root : List.of(
-                Path.of("build/classes/java/main/dev/ultima/mixin"),
-                Path.of("build/classes/java/client/dev/ultima/mixin"))) {
-            if (!Files.isDirectory(root)) {
-                continue;
-            }
+        for (Path root : List.of(mainRoot, clientRoot)) {
             try (var files = Files.walk(root)) {
                 for (Path file : files.filter(path -> path.toString().endsWith(".class")).toList()) {
                     try (InputStream input = Files.newInputStream(file)) {
@@ -375,7 +416,39 @@ public final class MixinBytecodeChecks {
                 }
             }
         }
+        requireConfiguredMixinClasses("ultima.mixins.json", "mixins");
+        requireConfiguredMixinClasses("ultima.client.mixins.json", "client");
         return result;
+    }
+
+    private static void requireConfiguredMixinClasses(final String resource, final String arrayName) throws IOException {
+        String json;
+        try (InputStream input = MixinBytecodeChecks.class.getClassLoader().getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new AssertionError("Missing " + resource);
+            }
+            json = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        int arrayAt = json.indexOf("\"" + arrayName + "\"");
+        if (arrayAt < 0) {
+            throw new AssertionError(resource + " has no " + arrayName + " array");
+        }
+        int start = json.indexOf('[', arrayAt);
+        int end = json.indexOf(']', start);
+        if (start < 0 || end < 0) {
+            throw new AssertionError(resource + " " + arrayName + " array is malformed");
+        }
+        String body = json.substring(start + 1, end);
+        for (String raw : body.split(",")) {
+            String name = raw.replace("\"", "").trim();
+            if (name.isEmpty()) {
+                continue;
+            }
+            String binary = "dev.ultima.mixin." + name;
+            if (MixinBytecodeChecks.class.getClassLoader().getResource(binary.replace('.', '/') + ".class") == null) {
+                throw new AssertionError("configured mixin class is not compiled: " + binary);
+            }
+        }
     }
 
     private static ClassNode readResource(final String resource) throws IOException {

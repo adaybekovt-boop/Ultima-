@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-23 — reproducible build, regression aggregate, fail-closed opt-in fixes
+
+Started from `2d9fbe976de0e42ad10d7581f86314bf81c17f0e`. No FPS or TPS claim.
+
+- The Gradle 9.5.1 wrapper is the build path. Java compiles with toolchain 25 and `release` 25. `fabric-api` is `>=0.156.0+26.2`.
+- `./gradlew test` runs the merged regression checkpoint once. `./gradlew check` follows that test task.
+- `isRedstoneConductor` is cached only after a predicate proves it is constant and does not read the world. An unreadable predicate stays on vanilla.
+- Mesher circuit-breaker and retained-terrain GPU tables reset on world join/leave. Resource reload also resets the circuit breaker. Vanilla mesh buffers are not closed.
+- FSR `GameRenderer` hooks are MixinExtras `@WrapOperation`s. EASU and RCAS constant buffers are rewritten only when size or sharpness changes, and fail-open closes them.
+- Renderer conflicts are exact ids `sodium`, `iris`, and `canvas`, plus the canonical Sodium and Iris entry classes. An unknown fork id stays on vanilla.
+- `server_metrics` closes an unclosed phase on tick exit, does not store a zero sample for a phase that never opened, rate-limits lag lines, and reads the Netty outbound buffer only on the event loop.
+- Dedicated-server classloading is unchanged: no `net.minecraft.client` imports were added under `src/main`.
+
+---
+
 ## 2026-08-19 — FSR / Iris capability gate
 
 `fsr_upscaling` is no longer on the same unconditional Sodium/Iris/Canvas
@@ -143,8 +158,10 @@ performance dataset (diagnostic-only commits since then do not alter the release
 **FOUNDATION VERDICT: KEEP.**
 
 Released as tag `ultima-foundation-final-2.6.1` at commit
-`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (main HEAD, PR #7 merge commit):
+`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (PR #7 merge commit):
 https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1
+
+That commit was main HEAD when this note was written. It is an ancestor of later `main`, not the current tip. The FPS figures in this section are historical measurements, not a claim about current `main`.
 
 `Tested SHA = Released SHA`: **YES** for the diagnostic/compaction code tree (merge SHA
 rebuilt, tree equals `858359f`). The six-pair FPS dataset SHA equals the released SHA:
