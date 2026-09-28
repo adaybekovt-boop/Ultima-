@@ -55,6 +55,7 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
             for (String point : CAMERA_POINTS) {
                 server.runCommand("tp @p " + point);
                 context.waitTicks(SETTLE_TICKS);
+                world.getClientWorld().waitForChunksRender();
                 shoot(context, shots, "03_world_point" + (++index));
             }
         }
