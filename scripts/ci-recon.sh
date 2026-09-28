@@ -21,24 +21,24 @@ while IFS= read -r line || [[ -n "$line" ]]; do
       set -- $rest
       jar=$(find_jar "$1" 1)
       echo "jar=$jar"
-      [[ -n "$jar" ]] && unzip -Z1 "$jar" | grep -E "${2:-.}" | head -100
+      [[ -n "$jar" ]] && unzip -Z1 "$jar" | grep -E "${2:-.}" | head -25
       ;;
     javap)
       set -- $rest
       glob="$1"; shift
       jar=$(find_jar "$glob" 1)
       echo "jar=$jar"
-      [[ -n "$jar" ]] && javap -public -cp "$jar" "$@" 2>&1 | head -200
+      [[ -n "$jar" ]] && javap -public -cp "$jar" "$@" 2>&1 | head -25
       ;;
     javapg)
       # javapg <jar-glob> <fqcn> <grep-regex>
       set -- $rest
       glob="$1"; cls="$2"; shift 2
       jar=$(find_jar "$glob" 1)
-      [[ -n "$jar" ]] && javap -public -cp "$jar" "$cls" 2>&1 | grep -E "${*:-.}" | head -60
+      [[ -n "$jar" ]] && javap -public -cp "$jar" "$cls" 2>&1 | grep -E "${*:-.}" | head -25
       ;;
     sh)
-      bash -c "$rest" 2>&1 | head -200
+      bash -c "$rest" 2>&1 | head -25
       ;;
     *)
       echo "unknown directive: $cmd"

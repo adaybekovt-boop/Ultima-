@@ -1,34 +1,8 @@
-# round 2
+# round 3a
 ls fabric-gametest-api-v1*.jar \.class$
 ls fabric-client-gametest-api-v1*.jar \.class$
 javapg fabric-lifecycle-events-v1*.jar net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents .
 javapg fabric-lifecycle-events-v1*.jar net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents .
-javapg minecraft-common-*26.2.jar net.minecraft.server.MinecraftServer overworld|getLevel\(|halt|tickChildren|tickServer|getTickCount|getPlayerList|getCommands|getAllLevels|isRunning|isDedicatedServer|execute\(|getWorldPath|levels
-javapg minecraft-common-*26.2.jar net.minecraft.server.level.ServerLevel getEntities|getAllEntities|tick\(|getChunkSource|getSeed|addFreshEntity|getServer|players\(|dimension\(|addEntity
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.Level setBlock|getBlockState|getBlockEntity|getGameTime|getBlockCollisions|getEntityCollisions|noCollision|getRandom|random|getEntities
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.Entity  move\(|setPos\(|position\(|getBoundingBox|onGround|horizontalCollision|verticalCollision|setDeltaMovement|getDeltaMovement|setNoGravity|setOnGround|snapTo|absSnapTo|setYRot|makeBoundingBox|tick\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.MoverType .
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.EntityType create|spawn|PIG|ITEM |ARMOR_STAND|MARKER|MINECART|ARROW|COW|ZOMBIE|SHEEP|FALLING_BLOCK
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.item.ItemEntity init
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.ItemStack init|copy\(|getCount|isEmpty|getItem\(|setCount|EMPTY
-sh unzip -Z1 "$(find $PWD/.gradle -name 'minecraft-common-*26.2.jar' | head -1)" | grep -iE 'entity/vehicle/.*(Minecart|Boat)[A-Za-z]*\.class$' | head -30
-sh unzip -Z1 "$(find $PWD/.gradle -name 'minecraft-common-*26.2.jar' | head -1)" | grep -E 'world/level/block/entity/(Hopper|Chest|Barrel|AbstractFurnace|Furnace|Dispenser|Dropper|Crafter|BaseContainer|BrewingStand)[A-Za-z]*\.class$'
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.entity.HopperBlockEntity public
-javapg minecraft-common-*26.2.jar net.minecraft.world.Container .
-javapg minecraft-common-*26.2.jar net.minecraft.core.BlockPos init|betweenClosed|offset\(|above\(|asLong|containing
-javapg minecraft-common-*26.2.jar net.minecraft.world.phys.AABB init
-javapg minecraft-common-*26.2.jar net.minecraft.world.phys.Vec3 init
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.state.BlockState getBlock|setValue|getValue|hasProperty|getCollisionShape
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.state.BlockBehaviour\$BlockStateBase getCollisionShape|isRedstoneConductor|is\(
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.Blocks (STONE|HOPPER|CHEST|BARREL|FURNACE|SNOW|POWDER_SNOW|OAK_STAIRS|OAK_SLAB|OAK_FENCE|COBBLESTONE_WALL|CAULDRON|AIR|BEDROCK|IRON_BLOCK|SLIME_BLOCK|HONEY_BLOCK|COBWEB|LADDER|SOUL_SAND|OAK_TRAPDOOR|OAK_DOOR|CACTUS|DIRT|DROPPER|DISPENSER|RAIL|POWERED_RAIL|BREWING_STAND|CRAFTER|TRAPPED_CHEST|LECTERN|HOPPER|COMPOSTER|BAMBOO|FLOWER_POT|END_ROD|CHAIN|LANTERN|STONE_BRICK_STAIRS|GLASS_PANE|IRON_BARS|OAK_FENCE_GATE|OAK_BUTTON|OAK_PRESSURE_PLATE|SCAFFOLDING|DEEPSLATE|TUFF|GRASS_BLOCK|SAND|GRAVEL|SANDSTONE|BOOKSHELF|CARPET|WHITE_CARPET|MOSS_CARPET|AMETHYST_CLUSTER|POINTED_DRIPSTONE|BIG_DRIPLEAF|SEA_PICKLE|TURTLE_EGG|CAKE|ANVIL|GRINDSTONE|BELL|CANDLE|CHORUS_PLANT|DRAGON_EGG|LIGHTNING_ROD|SCULK_SENSOR|SNIFFER_EGG|VINE|WATER|LAVA)[A-Z_]*;
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.Items (DIRT|COBBLESTONE|STONE|IRON_INGOT|COAL|OAK_PLANKS|STICK|DIAMOND|BREAD|IRON_ORE|RAW_IRON|POTION|NETHER_WART|BLAZE_POWDER|GUNPOWDER|APPLE|OAK_LOG|SAND|GLASS_BOTTLE|WHEAT|EMERALD|GOLD_INGOT|REDSTONE|IRON_PICKAXE) .* [A-Z_]+;
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.HopperBlock FACING|ENABLED
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.StairBlock FACING|HALF|SHAPE
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.SlabBlock TYPE
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.block.SnowLayerBlock LAYERS
-javapg minecraft-common-*26.2.jar net.minecraft.tags.BlockTags LOGS|LEAVES|WALLS|STAIRS|SLABS|FENCES|PLANKS|MINEABLE
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.crafting.RecipeManager public
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.crafting.CraftingInput of|<init>
-javapg minecraft-common-*26.2.jar net.minecraft.world.item.crafting.RecipeType CRAFTING|SMELTING
-javapg minecraft-common-*26.2.jar net.minecraft.world.entity.Entity getType|discard|isRemoved|getUUID|getId|getEncodeId
-javapg minecraft-common-*26.2.jar net.minecraft.world.level.chunk.LevelChunk getBlockEntities|setBlockState|getBlockEntity
+javapg minecraft-common-*26.2.jar net.minecraft.server.MinecraftServer overworld|getLevel\(|halt|tickChildren|tickServer|getTickCount|getPlayerList|getCommands|getAllLevels|isRunning|isDedicatedServer|getWorldPath
+javapg minecraft-common-*26.2.jar net.minecraft.server.level.ServerLevel getEntities|getAllEntities|tick\(|getChunkSource|getSeed|addFreshEntity|players\(
+javapg minecraft-common-*26.2.jar net.minecraft.world.level.Level setBlock|getBlockState|getBlockEntity|getGameTime|getBlockCollisions|getEntityCollisions|noCollision|getRandom
