@@ -87,7 +87,7 @@ public final class SettingsScreenLogicTest {
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(12L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
         assertEquals(3L, UltimaSettingsCatalog.inCategory(SettingsCategory.KILLER_MODULES).size(), "killer count");
-        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
+        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,
                     spec.key() + " Mixins apply at launch, so the UI must warn about a restart");
