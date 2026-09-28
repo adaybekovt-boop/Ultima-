@@ -137,7 +137,7 @@ final class HopperScenario implements Scenario {
         this.container(level, this.at(12, 1, 14), Blocks.CHEST);
         ItemStack[] partial = new ItemStack[27];
         for (int i = 0; i < partial.length; i++) {
-            partial[i] = new ItemStack(i % 3 == 0 ? cobble : i % 3 == 1 ? dirt : sand, 40 + i);
+            partial[i] = new ItemStack(i % 3 == 0 ? cobble : i % 3 == 1 ? dirt : sand, 40 + i % 24);
         }
         fill(level, this.at(12, 1, 14), partial);
         fill(level, this.at(10, 1, 14), new ItemStack(cobble, 64), new ItemStack(dirt, 64), new ItemStack(sand, 64));
