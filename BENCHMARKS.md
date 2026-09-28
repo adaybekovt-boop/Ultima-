@@ -8,6 +8,12 @@ The `+30.8%` figure from an old `retained_terrain` run belongs to code about 150
 and to a module that is off by default; it is kept in [`docs/history.md`](docs/history.md) and is
 not a claim about this release.
 
+## How to measure
+
+The scripts, the scenarios each module is judged in, and what a run costs are described in
+[`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). Results are pasted into the table below together
+with the run's environment block.
+
 ## How defaults are decided
 
 Each module is judged in its own scenario, against the same build with the module off, in
