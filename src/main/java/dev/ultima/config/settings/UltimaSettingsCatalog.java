@@ -54,8 +54,8 @@ public final class UltimaSettingsCatalog {
                 "fsr_upscaling",
                 "FSR upscaling",
                 "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution and "
-                        + "upscales to native before HUD, GUI, and chat. Default off. This is a standalone module, "
-                        + "not a TemporalMode backend. Sodium-only is allowed. Iris (with or without Sodium) stays "
+                        + "upscales to native before HUD, GUI, and chat. Default off. Sodium-only is allowed. "
+                        + "Iris (with or without Sodium) stays "
                         + "off: no safe post-Iris hook and Iris internal resolution is not controllable, so Ultima "
                         + "will not ship a native-res sharpen as if it were upscaling. Auto-off when Canvas is "
                         + "loaded. A quality preset appears under this toggle when it is on; RCAS sharpness remains 0.2.",
@@ -169,13 +169,6 @@ public final class UltimaSettingsCatalog {
                 SettingsCategory.KILLER_MODULES,
                 ApplyPolicy.RESTART_GAME));
 
-        register(new ModuleSettingSpec(
-                "temporal",
-                "Temporal frame contract",
-                "Captures current and previous view-projection, depth/color views, and history-reset events. Native "
-                        + "passthrough only; spatial FSR1 is the separate Rendering option FSR upscaling.",
-                SettingsCategory.ADVANCED,
-                ApplyPolicy.RESTART_GAME));
         register(new ModuleSettingSpec(
                 "rgss_endpoint",
                 "RGSS endpoint specialization",

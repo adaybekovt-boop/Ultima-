@@ -86,7 +86,6 @@ public final class MixinBytecodeChecks {
         }
 
         checkPriority("dev/ultima/mixin/fsr_upscaling/GameRendererMixin", 1100);
-        checkPriority("dev/ultima/mixin/temporal/GameRendererMixin", 900);
         checkFsrChainableHooks();
         checkConfigContracts();
         checkVanillaSynchronization();

@@ -38,7 +38,6 @@ final class MergedModuleContractTest {
         expectedDefaults.put("mesher_fast_path", false);
         expectedDefaults.put("section_task_queue", false);
         expectedDefaults.put("rgss_endpoint", false);
-        expectedDefaults.put("temporal", false);
         expectedDefaults.put("fsr_upscaling", false);
         expectedDefaults.put("settings_ui", true);
         expectedDefaults.put("iris_shader_frontend_artifact_cache", false);

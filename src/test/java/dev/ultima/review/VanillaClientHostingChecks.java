@@ -14,6 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -26,6 +28,14 @@ final class VanillaClientHostingChecks {
     private static final Path COMMON_MIXINS = Path.of("src/main/resources/ultima.mixins.json");
     private static final Path CLIENT_MIXINS = Path.of("src/client/resources/ultima.client.mixins.json");
     private static final Path MAIN_RESOURCES = Path.of("src/main/resources");
+    private static final Path COMMON_SOURCE = Path.of("src/main/java");
+
+    /** Comments and literals are blanked first, so a class name inside a string is not a reference. */
+    private static final Pattern COMMENTS_AND_LITERALS = Pattern.compile(
+            "//[^\\n]*|/\\*.*?\\*/|\"(?:\\\\.|[^\"\\\\\\n])*\"|'(?:\\\\.|[^'\\\\\\n])+'",
+            Pattern.DOTALL);
+    private static final Pattern CLIENT_CLASS_REFERENCE = Pattern.compile(
+            "\\b(?:net\\.minecraft\\.client|com\\.mojang\\.blaze3d)\\b");
 
     private static final List<String> FORBIDDEN_NETWORK_TOKENS = List.of(
             "PayloadTypeRegistry",
@@ -67,7 +77,6 @@ final class VanillaClientHostingChecks {
             "mesher_fast_path",
             "section_task_queue",
             "rgss_endpoint",
-            "temporal",
             "fsr_upscaling",
             "iris_shader_frontend_artifact_cache",
             "cross_pipeline_admission_broker",
@@ -88,6 +97,7 @@ final class VanillaClientHostingChecks {
         testModuleSidesMatchMixinConfigs(commonMixins, clientMixins);
         testNoCustomNetworkingOrRegistries();
         testNoServerDataPackContent();
+        testCommonSourceDoesNotReferenceClientClasses();
         System.out.println("Vanilla-client hosting contract checks passed.");
     }
 
@@ -226,6 +236,43 @@ final class VanillaClientHostingChecks {
         assertFalse(Files.exists(data), "no data-pack registries that Fabric would sync to clients");
         Path assets = MAIN_RESOURCES.resolve("assets");
         assertFalse(Files.exists(assets), "common assets would ship on dedicated servers without need");
+    }
+
+    private static void testCommonSourceDoesNotReferenceClientClasses() {
+        List<String> hits = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(COMMON_SOURCE)) {
+            walk.filter(path -> path.toString().endsWith(".java")).forEach(path -> {
+                String code = blankCommentsAndLiterals(readString(path));
+                Matcher matcher = CLIENT_CLASS_REFERENCE.matcher(code);
+                while (matcher.find()) {
+                    int line = 1;
+                    for (int i = 0; i < matcher.start(); i++) {
+                        if (code.charAt(i) == '\n') {
+                            line++;
+                        }
+                    }
+                    hits.add(path + ":" + line + " references " + matcher.group());
+                }
+            });
+        } catch (IOException e) {
+            throw new AssertionError("could not scan " + COMMON_SOURCE, e);
+        }
+        if (!hits.isEmpty()) {
+            throw new AssertionError(
+                    "src/main must not load client or blaze3d classes (dedicated servers would fail):\n"
+                            + String.join("\n", hits));
+        }
+    }
+
+    private static String blankCommentsAndLiterals(final String source) {
+        Matcher matcher = COMMENTS_AND_LITERALS.matcher(source);
+        StringBuilder out = new StringBuilder(source.length());
+        while (matcher.find()) {
+            String blanked = matcher.group().replaceAll("[^\\n]", " ");
+            matcher.appendReplacement(out, Matcher.quoteReplacement(blanked));
+        }
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private static List<String> stringEntrypoints(final JsonArray array) {

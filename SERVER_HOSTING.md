@@ -5,7 +5,7 @@ Fabric client that will open a singleplayer world to LAN. Guests may connect
 with ordinary Minecraft 26.2 — no Ultima install, and no Fabric install.
 
 - **You** get client render optimizations (`retained_terrain`, `java_mesher`,
-  temporal / FSR contract, and the other client modules) only on machines that
+  FSR upscaling, and the other client modules) only on machines that
   actually have Ultima.
 - **Everyone** on that server gets the simulation optimizations (collisions,
   entity-section lookup, cursor stepping, full-cube move). Those run where the
@@ -22,7 +22,7 @@ client counterpart. Fabric therefore has nothing to reject a vanilla guest for.
 | `"entrypoints".main` | Runs on dedicated server **and** on the host's integrated server | Send a handshake or mod list |
 | `"entrypoints".client` | Fabric's client-only slot (`ClientModInitializer`) | Load render code on a dedicated server |
 | mixin `"environment": "*"` (`ultima.mixins.json`) | Apply simulation Mixins on dedicated + integrated server + host client physics | Change the network protocol |
-| mixin `"environment": "client"` (`ultima.client.mixins.json`) | Apply render / mesher / temporal Mixins only on a physical client | Run those classes on a dedicated server |
+| mixin `"environment": "client"` (`ultima.client.mixins.json`) | Apply render / mesher Mixins only on a physical client | Run those classes on a dedicated server |
 | `"depends"` | The **host** process that loads Ultima needs Fabric Loader, Minecraft 26.2, Java 25, and Fabric API | Ask a remote vanilla client to install any of those |
 
 Fabric Loader has no "both sides must have this mod" flag. A remote client is

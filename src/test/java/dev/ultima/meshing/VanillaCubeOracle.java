@@ -41,7 +41,7 @@ public final class VanillaCubeOracle {
             final CardinalLighting lighting,
             final List<MeshEquivalence.TerrainVertex> out) {
         int stateId = volume.state(SectionIndex.interior(x, y, z));
-        if (!FastPathCriteria.fromFixtureState(stateId).fastPath()) {
+        if (!FixtureAdmission.fromFixtureState(stateId).fastPath()) {
             return false;
         }
         int mask = OcclusionMask.visibleFaces(volume, x, y, z);
