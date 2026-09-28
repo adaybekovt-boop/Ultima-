@@ -161,13 +161,20 @@ jobs:
         shell: bash
         run: |
           status=0
-          for label in defaults mesher retained; do
+          # The shipped defaults and retained terrain must render exactly like the baseline (one colour level of slack).
+          for label in defaults retained; do
             echo "=== baseline vs $label"
             python3 scripts/compare-screenshots.py build/clienttest/baseline "build/clienttest/$label" \
-              --control build/clienttest/control --max-unstable 0.10 \
-              --channel-tolerance 4 --max-changed-fraction 0.0025 \
+              --control build/clienttest/control --max-unstable 0.01 \
+              --channel-tolerance 1 --max-changed-fraction 0 \
               --ignore '01_title.png' '02_settings_*' || status=1
           done
+          # The mesher modules are measured against a small budget; the residual is printed with its hot spots.
+          echo "=== baseline vs mesher"
+          python3 scripts/compare-screenshots.py build/clienttest/baseline build/clienttest/mesher \
+            --control build/clienttest/control --max-unstable 0.01 \
+            --channel-tolerance 1 --max-changed-fraction 0.005 \
+            --ignore '01_title.png' '02_settings_*' || status=1
           exit "$status"
 
       - name: Upload client test outputs
