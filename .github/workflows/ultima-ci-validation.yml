@@ -51,17 +51,17 @@ jobs:
         shell: bash
         run: bash scripts/check.sh
 
-      - name: Recon (temporary, removed before merge)
-        if: always() && runner.os == 'Linux'
-        continue-on-error: true
-        shell: bash
-        run: bash scripts/ci-recon.sh
-
       - name: Common Mixin apply smoke
         if: runner.os == 'Linux'
         shell: bash
         timeout-minutes: 20
         run: bash scripts/mixin-smoke.sh
+
+      - name: Recon (temporary, removed before merge)
+        if: always() && runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: bash scripts/ci-recon.sh
 
       - name: Upload build outputs
         if: always()
