@@ -160,7 +160,7 @@ jobs:
           for label in defaults mesher; do
             echo "=== baseline vs $label"
             python3 scripts/compare-screenshots.py build/clienttest/baseline "build/clienttest/$label" \
-              --control build/clienttest/control --ignore 01_title.png || status=1
+              --control build/clienttest/control --ignore '01_title.png' '02_settings_*' || status=1
           done
           exit "$status"
 

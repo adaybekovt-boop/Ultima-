@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare the screenshots of two client-test runs pixel by pixel.
 
-usage: compare-screenshots.py DIR_A DIR_B [--control DIR_C] [--ignore NAME ...]
+usage: compare-screenshots.py DIR_A DIR_B [--control DIR_C] [--ignore PATTERN ...]
            [--max-changed-fraction F] [--channel-tolerance N] [--max-unstable F] [--dilate N]
 
 Every PNG that exists in both directories is compared. A pixel counts as changed when any colour
@@ -13,13 +13,14 @@ an image is missing on either side.
 C are the environment's own noise (animation, entity movement, chunk-load timing under software
 rendering); they are dilated by --dilate pixels and excluded from the A-vs-B comparison. The run
 fails when more than --max-unstable of an image is noise, because an image that is mostly noise
-proves nothing. --ignore drops an image from the check (it is still listed).
+proves nothing. --ignore drops the images matching a glob pattern from the check (they are still listed).
 
 Needs Pillow and numpy (pip install pillow numpy).
 """
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import sys
 from pathlib import Path
 
@@ -108,12 +109,16 @@ def main(argv: list[str]) -> int:
             noise = dilate(changed(a, c, args.channel_tolerance), args.dilate)
             noise_fraction = float(noise.mean())
             effective = raw & ~noise
+            if noise_fraction > 0:
+                print(f"    noise between the two identical runs ({noise_fraction * 100:.2f}% of the image):")
+                print(ascii_map(noise))
         fraction = float(effective.mean())
-        ignored = name in args.ignore
+        ignored = any(fnmatch.fnmatch(name, pattern) for pattern in args.ignore)
         print(f"{name:<32} {raw.mean() * 100:>8.4f}% {noise_fraction * 100:>8.4f}% {fraction * 100:>15.4f}% {worst:>6}"
               + ("  (ignored)" if ignored else ""))
-        if fraction > 0 or noise_fraction > 0:
-            print(ascii_map(effective if args.control and fraction > 0 else raw))
+        if fraction > 0:
+            print("    changed outside the noise:" if args.control else "    changed:")
+            print(ascii_map(effective))
         if ignored:
             continue
         if fraction > args.max_changed_fraction:

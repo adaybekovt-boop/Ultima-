@@ -23,7 +23,8 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         "192 110 -160 135 25",
         "-240 100 288 270 15"
     };
-    private static final int SETTLE_TICKS = 240;
+    private static final int TELEPORT_SETTLE_TICKS = 20;
+    private static final int FRAME_SETTLE_TICKS = 5;
 
     @Override
     public void runTest(final ClientGameTestContext context) {
@@ -54,7 +55,9 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
             int index = 0;
             for (String point : CAMERA_POINTS) {
                 server.runCommand("tp @p " + point);
-                context.waitTicks(SETTLE_TICKS);
+                context.waitTicks(TELEPORT_SETTLE_TICKS);
+                world.getConnection().waitForChunksRender();
+                context.waitTicks(FRAME_SETTLE_TICKS);
                 shoot(context, shots, "03_world_point" + (++index));
             }
         }
