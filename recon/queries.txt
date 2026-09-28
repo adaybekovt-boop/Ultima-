@@ -1,8 +1,4 @@
-# round 3d: Loom test wiring and remaining client gametest API
-jar fabric-loom-*.jar
-ls fabric-loom-*.jar FabricApiExtension|TestSettings|FabricApiExtension
-javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext .
-javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext .
-javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldBuilder .
-javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.screenshot.TestScreenshotOptions .
-javapg fabric-client-gametest-api-v1*.jar net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext .
+# round 3e
+sh javap -p -constants -cp "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" net.fabricmc.fabric.impl.client.gametest.TestSystemProperties
+sh unzip -p "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" net/fabricmc/fabric/impl/client/gametest/FabricClientGameTestRunner.class | strings | grep -iE "gametest|entrypoint" | head -20
+sh unzip -p "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" fabric.mod.json | head -40

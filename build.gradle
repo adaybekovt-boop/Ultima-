@@ -79,6 +79,37 @@ loom {
     }
 }
 
+// Development-only client game test (see scripts/client-test.sh); like the scenario harness it is
+// not part of the mod jar.
+sourceSets {
+    clienttest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output +
+                sourceSets.client.compileClasspath + sourceSets.client.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output +
+                sourceSets.client.runtimeClasspath + sourceSets.client.output
+    }
+}
+
+loom {
+    mods {
+        "ultima-clienttest" {
+            sourceSet sourceSets.clienttest
+        }
+    }
+    runs {
+        clientGametest {
+            client()
+            name = "Ultima client test"
+            source sourceSets.clienttest
+            ideConfigGenerated(false)
+            runDir "run/clienttest"
+            vmArg "-Dfabric.client.gametest"
+            vmArg "-Dultima.clienttest.label=${project.findProperty('ultima.clienttest.label') ?: 'unlabelled'}"
+            vmArg "-Dultima.clienttest.out=${projectDir}/build/clienttest"
+        }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -254,7 +285,7 @@ test {
 
 // The harness is not part of the jar, so compile it with every build to keep it from rotting.
 tasks.named("check") {
-    dependsOn tasks.named("scenarioClasses")
+    dependsOn tasks.named("scenarioClasses"), tasks.named("clienttestClasses")
 }
 
 tasks.register("regressionTest") {
