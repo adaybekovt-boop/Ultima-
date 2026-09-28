@@ -3,6 +3,7 @@ package dev.ultima.cache.tags;
 import dev.ultima.Ultima;
 import dev.ultima.cache.CacheMetrics;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
 import dev.ultima.failopen.FailOpenGuard;
 import java.util.List;
 import java.util.Optional;
@@ -53,6 +54,7 @@ public final class TagBitsetRuntime {
             Registries.BIOME);
 
     private static final AtomicInteger GENERATION = new AtomicInteger();
+    private static final int MODULE_INDEX = UltimaModules.indexOf("tag_bitsets");
     private static volatile @Nullable TagBitsetIndex snapshot;
 
     private TagBitsetRuntime() {
@@ -60,7 +62,7 @@ public final class TagBitsetRuntime {
 
     public static boolean moduleEnabled() {
         try {
-            return UltimaConfig.get().isEnabled("tag_bitsets");
+            return UltimaConfig.get().isRuntimeEnabled(MODULE_INDEX);
         } catch (Throwable ignored) {
             return false;
         }

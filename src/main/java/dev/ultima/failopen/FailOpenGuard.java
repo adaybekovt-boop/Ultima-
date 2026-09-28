@@ -39,6 +39,8 @@ public final class FailOpenGuard {
         private final ConcurrentHashMap<Object, Integer> consecutive = new ConcurrentHashMap<>();
         private final Set<Object> tripped = ConcurrentHashMap.newKeySet();
         private volatile boolean overflow;
+        // Set before any case is tripped or overflow is raised; never cleared outside tests.
+        private volatile boolean anyTripped;
 
         Module(final String key, final String loggerName) {
             this.key = key;
@@ -58,6 +60,17 @@ public final class FailOpenGuard {
             this.consecutive.clear();
             this.tripped.clear();
             this.overflow = false;
+            this.anyTripped = false;
+        }
+
+        private void trip(final Object caseId) {
+            this.anyTripped = true;
+            this.tripped.add(caseId);
+        }
+
+        private void raiseOverflow() {
+            this.anyTripped = true;
+            this.overflow = true;
         }
     }
 
@@ -82,9 +95,11 @@ public final class FailOpenGuard {
     }
 
     public static void maybeThrowForTest(final Module module, final Object caseId) {
-        Module armedModule = testFaultModule;
+        if (testFaultModule != module) {
+            return;
+        }
         Object armedCase = testFaultCase;
-        if (armedModule == module && armedCase != null && armedCase.equals(caseId)) {
+        if (armedCase != null && armedCase.equals(caseId)) {
             testFaultModule = null;
             testFaultCase = null;
             throw new IllegalStateException("ultima " + module.key() + " test fault for " + caseId);
@@ -103,13 +118,12 @@ public final class FailOpenGuard {
     }
 
     public static boolean isTripped(final Module module, final Object caseId) {
-        if (caseId == null) {
+        if (caseId == null || !module.anyTripped) {
             return false;
         }
         if (module.tripped.contains(caseId)) {
             return true;
         }
-        // overflow is false on the healthy path, so the consecutive map is not touched.
         return module.overflow && !module.consecutive.containsKey(caseId);
     }
 
@@ -215,19 +229,19 @@ public final class FailOpenGuard {
         }
         if (!module.consecutive.containsKey(caseId) && module.consecutive.size() >= MAX_CONSECUTIVE_CASES) {
             if (module.tripped.size() < MAX_TRIPPED_CASES) {
-                module.tripped.add(caseId);
+                module.trip(caseId);
             } else {
-                module.overflow = true;
+                module.raiseOverflow();
             }
             return;
         }
         int consecutive = module.consecutive.merge(caseId, 1, FailOpenGuard::saturate);
         if (consecutive >= CIRCUIT_BREAKER_THRESHOLD) {
             if (module.tripped.size() < MAX_TRIPPED_CASES) {
-                module.tripped.add(caseId);
+                module.trip(caseId);
             } else {
                 module.consecutive.remove(caseId);
-                module.overflow = true;
+                module.raiseOverflow();
             }
         }
     }

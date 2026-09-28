@@ -7,7 +7,8 @@
 # release comparison; that mode force-enables experimental opt-in modules.
 #
 # Both sides receive identical JVM flags, program args, camera path, resolution, and recorder
-# overhead. Only ultima.properties module states differ (client_benchmark stays on for both).
+# overhead. Only ultima.properties module states differ (client_benchmark and terrain_metrics
+# stay on for both).
 #
 # Environment:
 #   GAME_DIR           Optional Minecraft game directory (Windows paths are converted)
@@ -121,7 +122,7 @@ fi
   for entry in "${MODULE_ENTRIES[@]}"; do
     key="${entry%%=*}"
     default_state="${entry#*=}"
-    if [[ "$key" == client_benchmark ]]; then
+    if [[ "$key" == client_benchmark || "$key" == terrain_metrics ]]; then
       state=true
     else
       case "$MODE" in

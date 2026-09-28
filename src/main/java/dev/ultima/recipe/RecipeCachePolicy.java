@@ -119,10 +119,15 @@ public final class RecipeCachePolicy {
         return true;
     }
 
+    /**
+     * A type without a plan had no recipes at the last {@code apply}, or no {@code apply} has run
+     * yet. Its vanilla scan is already trivial, so it bypasses the cache instead of trusting a miss
+     * that a recipe map replaced outside {@code apply} could invalidate.
+     */
     public boolean shouldBypassCache(final RecipeType<?> type, final RecipeInput input) {
         TypePlan plan = this.plans.get(type);
         if (plan == null) {
-            return false;
+            return true;
         }
         return plan.mapExtendingPresent && RecipeMatchKeys.containsFilledMap(input);
     }
@@ -136,12 +141,9 @@ public final class RecipeCachePolicy {
             final RecipeType<?> type,
             final RecipeInput input,
             final Optional<? extends RecipeHolder<?>> result) {
-        if (result == null || shouldBypassCache(type, input)) {
-            return false;
-        }
         TypePlan plan = this.plans.get(type);
-        if (plan == null) {
-            return result.isEmpty();
+        if (result == null || plan == null || shouldBypassCache(type, input)) {
+            return false;
         }
         if (result.isEmpty()) {
             return plan.fullyPure;

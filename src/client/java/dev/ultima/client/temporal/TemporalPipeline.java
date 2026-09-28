@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
 import dev.ultima.temporal.TemporalMode;
 import dev.ultima.temporal.TemporalResetReason;
 import dev.ultima.temporal.TemporalSettings;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class TemporalPipeline {
     private static final Logger LOGGER = LoggerFactory.getLogger("ultima-temporal");
+    private static final int MODULE_INDEX = UltimaModules.indexOf("temporal");
     private static final TemporalPipeline INSTANCE = new TemporalPipeline();
     private static final double CAMERA_CUT_BLOCKS = 32.0;
     private static final float FOV_DISCONTINUITY_DEGREES = 5.0F;
@@ -177,7 +179,7 @@ public final class TemporalPipeline {
     }
 
     public boolean moduleEnabled() {
-        return UltimaConfig.get().isEnabled("temporal");
+        return UltimaConfig.get().isRuntimeEnabled(MODULE_INDEX);
     }
 
     private void applyRequestedMode() {

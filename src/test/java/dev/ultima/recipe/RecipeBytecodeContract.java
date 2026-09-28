@@ -1,62 +1,69 @@
 package dev.ultima.recipe;
 
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Map;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.util.Textifier;
+import org.objectweb.asm.util.TraceMethodVisitor;
 
 /**
  * Pins the 26.2 {@code matches} bytecode Ultima's allowlist assumes, and the reload order that
  * publishes tags before {@code RecipeManager.finalizeRecipeLoading}.
+ *
+ * <p>Hashes cover the symbolic instruction listing, not raw class bytes: Loom {@code genSources}
+ * rewrites the project's Minecraft jar with line maps and a reordered constant pool, which changes
+ * raw {@code Code} bytes without changing a single instruction.
  */
 final class RecipeBytecodeContract {
+    private static final int LEVEL_SLOT = 2;
+
     private RecipeBytecodeContract() {
     }
 
     static void run() throws Exception {
         Map<String, String> typedMatches = Map.of(
                 "net/minecraft/world/item/crafting/ShapedRecipe.class#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z",
-                "5ff5211619d66c503893d01208daf964401a5840bb667256590d36529d343939",
+                "6f6be9398d8d2a630043ac5a84713d7fccf357ba4c3d4d8990e7dfc9108eb433",
                 "net/minecraft/world/item/crafting/ShapelessRecipe.class#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z",
-                "30eab18db5ee41b30461383458e1cfbb0338904d85d38812e6e026b73ae3deef",
+                "990bf238d1cc062dbecf8ff0981a3bdebc9365e3b69b72d22b4f4415dad2fe8b",
                 "net/minecraft/world/item/crafting/RepairItemRecipe.class#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z",
-                "acf9356c7ecde739dc7c93eb669ce89a40ffd5e197203a4a35f92c458bfc7e91",
+                "d8ebb802752de4bcce76cf917fe7fa28f76cc39486017a76f4ca601b9ff2fdb9",
                 "net/minecraft/world/item/crafting/SingleItemRecipe.class#matches(Lnet/minecraft/world/item/crafting/SingleRecipeInput;Lnet/minecraft/world/level/Level;)Z",
-                "848544d22021ced11d6eb8468dc5f7ef62964931eda3259a3404ad0298d3b037",
+                "20948bffe06a32331d2308908c86901507dcdf7a207b28a9af82d2e06150f9a1",
                 "net/minecraft/world/item/crafting/SmithingRecipe.class#matches(Lnet/minecraft/world/item/crafting/SmithingRecipeInput;Lnet/minecraft/world/level/Level;)Z",
-                "89e011535b33defa633ef6591187c3a4c6ccfc53e80e3f11c627564b8cf97592",
+                "fbde029bdf571abcd8239f93782c41f3d16821ae539a43f7a5668ec1eae1c160",
                 "net/minecraft/world/item/crafting/TransmuteRecipe.class#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z",
-                "9d3d21c66aacdbc03e4f47cc69c178ae6ffa3bc001016601df1463ae53a9800d",
+                "2ce79daebc1ea5c932004154460d49f259e0fef3e54401d0a9c03781f0db6db2",
                 "net/minecraft/world/item/crafting/Ingredient.class#test(Lnet/minecraft/world/item/ItemStack;)Z",
-                "f6790b23a3ae5320d306fe87e001e3a6671da357e6797f946d3f62b6189f6692");
+                "bb476df8a53b629c5099ff39a8c4bde050303c3f4ecfe4593093669f69210428");
         for (Map.Entry<String, String> entry : typedMatches.entrySet()) {
-            int split = entry.getKey().indexOf('#');
-            String resource = entry.getKey().substring(0, split);
-            String method = entry.getKey().substring(split + 1);
-            int desc = method.indexOf('(');
-            CodeView code = codeAttribute(resource, method.substring(0, desc), method.substring(desc));
-            String hash = sha256(code.attribute());
+            MethodNode method = method(entry.getKey());
+            String hash = instructionHash(method);
             if (!entry.getValue().equals(hash)) {
                 throw new AssertionError(entry.getKey() + " bytecode drifted: " + hash);
             }
-            if (count(code.body(), (byte) 0x2c) != 0) {
+            if (readsSlot(method, LEVEL_SLOT)) {
                 throw new AssertionError(entry.getKey() + " reads the Level local");
             }
         }
 
-        CodeView map = codeAttribute(
-                "net/minecraft/world/item/crafting/MapExtendingRecipe.class",
-                "matches",
-                "(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z");
-        if (count(map.body(), (byte) 0x2c) == 0) {
+        MethodNode map = method(
+                "net/minecraft/world/item/crafting/MapExtendingRecipe.class#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z");
+        if (!readsSlot(map, LEVEL_SLOT)) {
             throw new AssertionError("MapExtendingRecipe.matches no longer reads Level");
         }
-        if (!"3aa50a74a43010092ff40277f020a412ea3505ca5ba0ba73507a65bc7154c68f".equals(sha256(map.attribute()))) {
+        if (!"e5914ed7eff9fad5ad32d043701d296ac03d73374a1ad2d0ce26921b20f2e2ad".equals(instructionHash(map))) {
             throw new AssertionError("MapExtendingRecipe.matches bytecode drifted");
         }
 
@@ -92,8 +99,42 @@ final class RecipeBytecodeContract {
 
     private static ClassNode node(final String resource) throws Exception {
         ClassNode node = new ClassNode();
-        new ClassReader(bytes(resource)).accept(node, 0);
+        new ClassReader(bytes(resource)).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         return node;
+    }
+
+    private static MethodNode method(final String key) throws Exception {
+        int split = key.indexOf('#');
+        String resource = key.substring(0, split);
+        String signature = key.substring(split + 1);
+        int desc = signature.indexOf('(');
+        String name = signature.substring(0, desc);
+        String descriptor = signature.substring(desc);
+        for (MethodNode method : node(resource).methods) {
+            if (name.equals(method.name) && descriptor.equals(method.desc)) {
+                return method;
+            }
+        }
+        throw new AssertionError("missing " + key);
+    }
+
+    private static String instructionHash(final MethodNode method) throws Exception {
+        Textifier text = new Textifier();
+        method.accept(new TraceMethodVisitor(text));
+        StringWriter listing = new StringWriter();
+        text.print(new PrintWriter(listing));
+        return HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(listing.toString().getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Reference load of {@code slot}, including the wide {@code aload <n>} form. */
+    private static boolean readsSlot(final MethodNode method, final int slot) {
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof VarInsnNode variable && variable.getOpcode() == Opcodes.ALOAD && variable.var == slot) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static byte[] bytes(final String resource) throws Exception {
@@ -103,106 +144,5 @@ final class RecipeBytecodeContract {
             }
             return in.readAllBytes();
         }
-    }
-
-    private static CodeView codeAttribute(final String resource, final String name, final String descriptor)
-            throws Exception {
-        byte[] data = bytes(resource);
-        int index = 8;
-        int count = u2(data, index);
-        index += 2;
-        String[] utf8 = new String[count];
-        int cursor = 1;
-        while (cursor < count) {
-            int tag = data[index++] & 0xff;
-            switch (tag) {
-                case 1 -> {
-                    int length = u2(data, index);
-                    index += 2;
-                    utf8[cursor] = new String(data, index, length, java.nio.charset.StandardCharsets.UTF_8);
-                    index += length;
-                }
-                case 7, 8, 16, 19, 20 -> index += 2;
-                case 3, 4, 9, 10, 11, 12, 17, 18 -> index += 4;
-                case 5, 6 -> {
-                    index += 8;
-                    cursor++;
-                }
-                case 15 -> index += 3;
-                default -> throw new AssertionError("bad class tag " + tag);
-            }
-            cursor++;
-        }
-        index += 2;
-        index += 2;
-        index += 2;
-        int interfaces = u2(data, index);
-        index += 2 + 2 * interfaces;
-        int fields = u2(data, index);
-        index += 2;
-        for (int field = 0; field < fields; field++) {
-            index += 6;
-            int attributes = u2(data, index);
-            index += 2;
-            for (int attribute = 0; attribute < attributes; attribute++) {
-                index += 2;
-                int length = u4(data, index);
-                index += 4 + length;
-            }
-        }
-        int methods = u2(data, index);
-        index += 2;
-        for (int method = 0; method < methods; method++) {
-            index += 2;
-            int nameIndex = u2(data, index);
-            index += 2;
-            int descIndex = u2(data, index);
-            index += 2;
-            int attributes = u2(data, index);
-            index += 2;
-            boolean match = name.equals(utf8[nameIndex]) && descriptor.equals(utf8[descIndex]);
-            for (int attribute = 0; attribute < attributes; attribute++) {
-                int attributeName = u2(data, index);
-                index += 2;
-                int length = u4(data, index);
-                index += 4;
-                if (match && "Code".equals(utf8[attributeName])) {
-                    int codeLength = u4(data, index + 4);
-                    return new CodeView(
-                            java.util.Arrays.copyOfRange(data, index, index + length),
-                            java.util.Arrays.copyOfRange(data, index + 8, index + 8 + codeLength));
-                }
-                index += length;
-            }
-        }
-        throw new AssertionError("missing " + resource + " " + name + descriptor);
-    }
-
-    private static int u2(final byte[] data, final int index) {
-        return ((data[index] & 0xff) << 8) | (data[index + 1] & 0xff);
-    }
-
-    private static int u4(final byte[] data, final int index) {
-        return ((data[index] & 0xff) << 24)
-                | ((data[index + 1] & 0xff) << 16)
-                | ((data[index + 2] & 0xff) << 8)
-                | (data[index + 3] & 0xff);
-    }
-
-    private static int count(final byte[] data, final byte value) {
-        int found = 0;
-        for (byte current : data) {
-            if (current == value) {
-                found++;
-            }
-        }
-        return found;
-    }
-
-    private static String sha256(final byte[] data) throws Exception {
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
-    }
-
-    private record CodeView(byte[] attribute, byte[] body) {
     }
 }

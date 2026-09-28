@@ -511,8 +511,10 @@ def test_module_classification() -> None:
         raise SystemExit("retained_terrain must remain opt-in")
     if defaults.get("client_benchmark") is not False:
         raise SystemExit("client_benchmark must remain opt-in instrumentation")
-    if defaults.get("terrain_metrics") is not True:
-        raise SystemExit("terrain_metrics must remain default-on instrumentation")
+    if defaults.get("terrain_metrics") is not False:
+        raise SystemExit("terrain_metrics must stay default-off instrumentation")
+    if defaults.get("temporal") is not False:
+        raise SystemExit("temporal must stay default-off until a backend consumes the history")
     if defaults.get("server_metrics") is not False:
         raise SystemExit("server_metrics must stay default-off instrumentation")
     if killer_scenario_gate({
@@ -538,7 +540,7 @@ def test_module_classification() -> None:
             for key in SHIPPED_DEFAULT_KEYS_MUST_INCLUDE
         ] + [
             {"key": "client_benchmark", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
-            {"key": "terrain_metrics", "enabled": True, "enabledByDefault": True, "moduleClass": "instrumentation"},
+            {"key": "terrain_metrics", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
             {"key": "retained_terrain", "enabled": False, "enabledByDefault": False, "moduleClass": "opt_in_experiment"},
         ],
         "abProtocol": {"requestedRole": "default"},

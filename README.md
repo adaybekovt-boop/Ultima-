@@ -53,9 +53,7 @@ Simulation:
 - `supporting_block_shape_skip`
 - `full_cube_move`
 
-Instrumentation / client contract:
-- `terrain_metrics`
-- `temporal`
+Client UI:
 - `settings_ui`
 
 ### Default OFF
@@ -79,10 +77,16 @@ Client renderer / mesher experiments:
 - `iris_shader_frontend_artifact_cache`
 - `cross_pipeline_admission_broker`
 - `render_warmup_system`
+- `temporal` (Native passthrough only; no backend consumes the history yet)
 
-Instrumentation:
+Instrumentation (no effect on gameplay or pixels; `scripts/bench-client.sh` turns on
+`client_benchmark` and `terrain_metrics` for both A/B sides):
 - `server_metrics`
 - `client_benchmark`
+- `terrain_metrics`
+
+Existing `config/ultima.properties` files keep their explicit `terrain_metrics=true` /
+`temporal=true` lines; only fresh configs get the new defaults.
 
 ### Auto-disable policy
 

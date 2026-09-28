@@ -49,6 +49,7 @@ public final class RecipeMatchCacheTest {
         testVanillaClassPolicy();
         testPinnedVanillaShape();
         testProductionPrefixStore();
+        testUnplannedTypeFailsClosed();
         testSmithingKeyIgnoresCount();
         testTableStaysBounded();
         RecipeBytecodeContract.run();
@@ -322,6 +323,37 @@ public final class RecipeMatchCacheTest {
                 "tag publication must drop the stored holder");
         assertTrue(policy.mayStore(RecipeType.CRAFTING, input, Optional.of(safe)),
                 "dropping lookups must keep the purity plan");
+    }
+
+    private static void testUnplannedTypeFailsClosed() {
+        MinecraftTestItems.ensureBootstrapped("unplanned recipe type");
+        RecipeHolder<?> safe = holder("planned", new RepairItemRecipe());
+        SingleRecipeInput input = new SingleRecipeInput(MinecraftTestItems.dirt());
+
+        assertTrue(RecipeCachePolicy.EMPTY.shouldBypassCache(RecipeType.CRAFTING, input),
+                "before the first apply every type bypasses the cache");
+        assertFalse(RecipeCachePolicy.EMPTY.mayStore(RecipeType.CRAFTING, input, Optional.empty()),
+                "a miss must not be stored before the first apply");
+        assertFalse(RecipeCachePolicy.EMPTY.mayStore(RecipeType.CRAFTING, input, Optional.of(safe)),
+                "a hit must not be stored before the first apply");
+
+        RecipeCachePolicy policy = RecipeCachePolicy.inspect(RecipeMap.create(List.of(safe)));
+        assertFalse(policy.shouldBypassCache(RecipeType.CRAFTING, input), "a planned pure type uses the cache");
+        assertTrue(policy.shouldBypassCache(RecipeType.SMELTING, input), "a type without recipes bypasses");
+        assertFalse(policy.mayStore(RecipeType.SMELTING, input, Optional.empty()),
+                "a type without a plan must not store a miss");
+
+        RecipeFirstMatchCache cache = new RecipeFirstMatchCache();
+        cache.storeUnchecked(RecipeType.CRAFTING, input, Optional.empty());
+        assertTrue(cache.lookupUnchecked(RecipeType.CRAFTING, input, false) == null,
+                "a miss offered before the first apply stays a vanilla scan");
+        cache.onRecipesReplaced(policy);
+        cache.storeUnchecked(RecipeType.SMELTING, input, Optional.empty());
+        assertTrue(cache.lookupUnchecked(RecipeType.SMELTING, input, false) == null,
+                "an unplanned type runs vanilla");
+        cache.storeUnchecked(RecipeType.CRAFTING, input, Optional.empty());
+        assertEquals(Optional.empty(), cache.lookupUnchecked(RecipeType.CRAFTING, input, false),
+                "a planned exact-pure type still caches its miss");
     }
 
     private static void testSmithingKeyIgnoresCount() {

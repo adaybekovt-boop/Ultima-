@@ -31,14 +31,14 @@ final class MergedModuleContractTest {
         expectedDefaults.put("container_slot_mask", false);
         expectedDefaults.put("entity_query_early_out", false);
         expectedDefaults.put("client_benchmark", false);
-        expectedDefaults.put("terrain_metrics", true);
+        expectedDefaults.put("terrain_metrics", false);
         expectedDefaults.put("retained_terrain", false);
         expectedDefaults.put("render_snapshot", false);
         expectedDefaults.put("java_mesher", false);
         expectedDefaults.put("mesher_fast_path", false);
         expectedDefaults.put("section_task_queue", false);
         expectedDefaults.put("rgss_endpoint", false);
-        expectedDefaults.put("temporal", true);
+        expectedDefaults.put("temporal", false);
         expectedDefaults.put("fsr_upscaling", false);
         expectedDefaults.put("settings_ui", true);
         expectedDefaults.put("iris_shader_frontend_artifact_cache", false);
