@@ -164,12 +164,6 @@ jobs:
           done
           exit "$status"
 
-      - name: Text pictures of two world screenshots, for reading a failure from the log
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: python3 scripts/dump-thumbnails.py build/clienttest/baseline/03_world_point1.png build/clienttest/baseline/03_world_point2.png
-
       - name: Upload client test outputs
         if: always()
         uses: actions/upload-artifact@v4

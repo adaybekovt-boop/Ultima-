@@ -91,7 +91,7 @@ def main(argv: list[str]) -> int:
     failures: list[str] = []
     for missing in sorted((names_a ^ names_b) | (names_a ^ names_c)):
         failures.append(f"{missing} is not present in every run")
-    print(f"{'image':<32} {'A vs B':>9} {'noise':>9} {'B outside noise':>16} {'worst':>6}")
+    rows: list[str] = []
     for name in sorted(names_a & names_b & names_c):
         a, b = load(args.dir_a / name), load(args.dir_b / name)
         if a.shape != b.shape:
@@ -101,6 +101,7 @@ def main(argv: list[str]) -> int:
         worst = int(abs(a - b).max())
         noise_fraction = 0.0
         effective = raw
+        noise = None
         if args.control:
             c = load(args.control / name)
             if c.shape != a.shape:
@@ -109,28 +110,32 @@ def main(argv: list[str]) -> int:
             noise = dilate(changed(a, c, args.channel_tolerance), args.dilate)
             noise_fraction = float(noise.mean())
             effective = raw & ~noise
-            if noise_fraction > 0:
-                print(f"    noise between the two identical runs ({noise_fraction * 100:.2f}% of the image):")
-                print(ascii_map(noise))
         fraction = float(effective.mean())
         ignored = any(fnmatch.fnmatch(name, pattern) for pattern in args.ignore)
-        print(f"{name:<32} {raw.mean() * 100:>8.4f}% {noise_fraction * 100:>8.4f}% {fraction * 100:>15.4f}% {worst:>6}"
-              + ("  (ignored)" if ignored else ""))
-        if fraction > 0:
-            print("    changed outside the noise:" if args.control else "    changed:")
-            print(ascii_map(effective))
-        if ignored:
-            continue
-        if fraction > args.max_changed_fraction:
-            failures.append(f"{name}: {fraction * 100:.4f}% of the pixels changed outside the noise (limit {args.max_changed_fraction * 100:.4f}%)")
-        if args.control and noise_fraction > args.max_unstable:
-            failures.append(f"{name}: {noise_fraction * 100:.2f}% of the image is noise between two identical runs (limit {args.max_unstable * 100:.2f}%)")
+        problems = []
+        if not ignored and fraction > args.max_changed_fraction:
+            problems.append(f"{fraction * 100:.4f}% of the pixels changed outside the noise (limit {args.max_changed_fraction * 100:.4f}%)")
+        if not ignored and args.control and noise_fraction > args.max_unstable:
+            problems.append(f"{noise_fraction * 100:.2f}% of the image is noise between two identical runs (limit {args.max_unstable * 100:.2f}%)")
+        verdict = "ignored" if ignored else ("FAIL" if problems else "ok")
+        rows.append(f"{name:<32} {raw.mean() * 100:>8.4f}% {noise_fraction * 100:>8.4f}% {fraction * 100:>15.4f}% {worst:>6}  {verdict}")
+        failures.extend(f"{name}: {problem}" for problem in problems)
+        if problems:
+            if noise is not None and noise_fraction > 0:
+                print(f"{name}: noise between the two identical runs ({noise_fraction * 100:.2f}% of the image):")
+                print(ascii_map(noise))
+            if fraction > 0:
+                print(f"{name}: changed outside the noise:" if args.control else f"{name}: changed:")
+                print(ascii_map(effective))
     if not (names_a & names_b):
         failures.append("no screenshots to compare")
+    print(f"\n{'image':<32} {'A vs B':>9} {'noise':>9} {'B outside noise':>16} {'worst':>6}")
+    for row in rows:
+        print(row)
     if failures:
-        print("\nSCREENSHOT COMPARISON FAILED", file=sys.stderr)
+        print("\nSCREENSHOT COMPARISON FAILED")
         for failure in failures:
-            print("  " + failure, file=sys.stderr)
+            print("  " + failure)
         return 1
     print("\nScreenshots match.")
     return 0
