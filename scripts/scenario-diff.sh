@@ -35,6 +35,7 @@ online-mode=false
 view-distance=4
 simulation-distance=4
 max-tick-time=-1
+pause-when-empty-seconds=0
 spawn-protection=0
 enable-status=false
 sync-chunk-writes=false
@@ -58,13 +59,16 @@ run_label() {
   write_module_config "$value"
   local status=0
   # A hung server must fail the run, not the whole CI job: cap each run and keep its log.
-  timeout "${SCENARIO_RUN_TIMEOUT:-420}" \
+  timeout "${SCENARIO_RUN_TIMEOUT:-240}" \
     ./gradlew runScenarioServer -Pultima.scenario.label="$label" --console=plain || status=$?
   mkdir -p "$OUT_DIR/logs"
   cp "$RUN_DIR/logs/latest.log" "$OUT_DIR/logs/$label.log" 2>/dev/null || true
   if [[ $status -ne 0 || ! -f "$OUT_DIR/$label.summary.txt" ]]; then
-    echo "scenario run $label failed (exit $status) or produced no summary; tail of the server log:" >&2
-    tail -n 60 "$RUN_DIR/logs/latest.log" >&2 || true
+    echo "scenario run $label failed (exit $status) or produced no summary" >&2
+    echo "--- mods and harness lines of the server log:" >&2
+    grep -nE "Loading [0-9]+ mods|ultima-scenarios|Scenario|ERROR|Exception|Caused by" "$RUN_DIR/logs/latest.log" | head -40 >&2 || true
+    echo "--- tail of the server log:" >&2
+    tail -n 25 "$RUN_DIR/logs/latest.log" >&2 || true
     exit 1
   fi
 }
