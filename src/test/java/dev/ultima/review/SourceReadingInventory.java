@@ -57,10 +57,21 @@ public final class SourceReadingInventory {
                             + "JavaExec. Counter/percentile/command-tree cases call production helpers."),
             new Entry(
                     "dev.ultima.review.VanillaClientHostingChecks",
-                    "fabric.mod.json, mixin json, compiled classes for forbidden network tokens",
+                    "fabric.mod.json, mixin json, compiled classes for forbidden network tokens, "
+                            + "src/main Java text for client-class references outside comments and strings",
                     Kind.WIRING,
                     "Hosting contract is configuration plus compiled references. Scanning class files "
-                            + "for Fabric networking APIs is the check, not a substitute for a LAN join."),
+                            + "for Fabric networking APIs is the check, not a substitute for a LAN join. "
+                            + "The source scan proves the text of src/main never names a client class; it "
+                            + "cannot see a class loaded reflectively by a computed name."),
+            new Entry(
+                    "dev.ultima.review.LocalizationChecks",
+                    "lang JSON files and the ultima.* translation-key string literals in src/client",
+                    Kind.WIRING,
+                    "The English text is compared with the Java classes that own it, so the file cannot "
+                            + "drift silently. The key-literal scan only finds full literals; keys built from "
+                            + "a prefix are covered by the en_us key-set equality. A screen that renders wrong "
+                            + "is not caught: that needs a client launch."),
             new Entry(
                     "dev.ultima.review.RetainedFoundationChecks",
                     "GLSL shader sources (gl_DrawID ban, gl_BaseInstanceARB, Mojang import)",

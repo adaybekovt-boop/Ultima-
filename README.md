@@ -1,148 +1,122 @@
 # Ultima
 
-Performance mod for Minecraft Java Edition 26.2 (Fabric). Ultima ships measured,
-behaviour-preserving optimizations to server/client simulation and an opt-in
-renderer/mesher stack, plus instrumentation for deciding what to optimize next.
+Optimization mod for Minecraft Java Edition 26.2 (Fabric). It trims server-side simulation work
+for everyone on a server, and ships optional client render modules for players who use the
+vanilla renderer. Guests join with an ordinary vanilla client: they install nothing.
 
-## Vanilla guests on an Ultima host
+Ultima makes **no performance claim it has not measured**. The results for each release, with
+the commit, hardware and raw data, are in [`BENCHMARKS.md`](BENCHMARKS.md). Where a module has no
+measurement there, treat it as unproven.
 
-Install Ultima on **your** dedicated server or on the Fabric client you use to
-Open to LAN. Friends can join with ordinary vanilla Minecraft 26.2 — they do
-**not** install Ultima.
+## Who it is for
 
-- Client-only render modules run only on the machine that has the mod.
-- Simulation modules run on the server and apply to every connected player automatically.
+| You run | What Ultima does |
+|---|---|
+| A dedicated server, without Lithium | Turns on six collision and entity-lookup optimizations by default. They run where the world is simulated, so every connected player benefits. |
+| Singleplayer with Open to LAN | The same, for the world you host. Friends join with a vanilla client. |
+| The vanilla renderer on your own client | Optional render modules, all off by default. |
+| Sodium + Iris + Lithium | Nothing to gain. Every overlapping module switches itself off, and what is left is a settings screen. Ultima will not stack on top of those mods, and it does not claim to. |
 
-See [`SERVER_HOSTING.md`](SERVER_HOSTING.md) for the handshake audit and hosting scenarios.
+## Requirements
 
-## What is already wired
+- Minecraft 26.2 and Java 25
+- Fabric Loader 0.19.3 or newer
+- Fabric API 0.156.0+26.2 or newer
+- Optional: Mod Menu, for a settings entry
 
-- Fabric Loom + Fabric API
-- Java 25
-- GitHub Codespaces devcontainer
-- Gradle wrapper 9.5.1
-- Automatic Minecraft source generation
-- Local export of vanilla source to `.agent/vanilla-src` for AI-agent search
-- GitHub Actions build/regression checks
-- `AGENTS.md` operating contract for coding agents
-- Strict ignore rules so generated Minecraft source never gets committed
+## Install
 
-## Commands
+1. Download `ultima-<version>.jar` from the [Releases](https://github.com/adaybekovt-boop/Ultima-/releases)
+   page. Do not use the `-sources` jar.
+2. Put it in the `mods` folder next to Fabric API.
+
+**Dedicated server:** install it on the server only. Players do not need Fabric or Ultima.
+
+**Open to LAN:** install it on the client that hosts the world. Guests need nothing.
+
+**Client render modules:** install it on your own client. They run only on the machine that has
+the mod and never affect other players.
+
+Details of what a vanilla guest does and does not see are in
+[`docs/SERVER_HOSTING.md`](docs/SERVER_HOSTING.md).
+
+## Compatibility with Sodium, Iris and Lithium
+
+Ultima checks which mods are loaded and switches off what would overlap. Nothing needs
+configuring, and Ultima never adds `breaks` entries for other mods.
+
+- **Lithium, Canary, Radium** replace the hot collision and entity code Ultima also touches. All
+  collision, entity-query, hopper, tag, state-property and slot-mask modules turn off.
+  `recipe_match_cache` stays available because Lithium has no equivalent.
+- **Sodium, Iris, Canvas** replace terrain rendering. The terrain and mesher modules turn off.
+  `fsr_upscaling` is decided separately: Canvas turns it off, Sodium alone is allowed, and Iris
+  turns it off because Iris has no official hook after its final shader pass.
+- The settings screen shows why a module is off, for example "Disabled: Sodium detected".
+
+## Modules
+
+Every module is listed in the in-game settings screen and in `config/ultima.properties`.
+"Restart" applies to all of them: Mixins are chosen at launch, so a change needs a game restart.
+
+### On by default
+
+| Module | Side | Turns off with |
+|---|---|---|
+| `entity_section_lookup` | both | Lithium family |
+| `block_collision_shape` | both | Lithium family |
+| `collision_shell_skip` (needs `cursor_step`) | both | Lithium family |
+| `supporting_block_shape_skip` | both | Lithium family |
+| `full_cube_move` | both | Lithium family |
+| `cursor_step` | both | Lithium family |
+| `settings_ui` (title-screen button) | client | nothing |
+
+### Opt-in simulation
+
+`blockentity_sleeping`, `tag_bitsets`, `state_property_cache`, `container_slot_mask` and
+`entity_query_early_out` turn off with the Lithium family. `recipe_match_cache` does not.
+
+### Opt-in client rendering
+
+`retained_terrain`, `java_mesher`, `mesher_fast_path`, `render_snapshot`, `section_task_queue`
+and `rgss_endpoint` turn off with Sodium, Iris or Canvas. `fsr_upscaling` is the AMD FSR1
+spatial upscaler with a quality preset; see [`docs/FSR_UPSCALING.md`](docs/FSR_UPSCALING.md).
+
+### Experimental companions
+
+`iris_shader_frontend_artifact_cache`, `cross_pipeline_admission_broker` and
+`render_warmup_system` target Sodium + Iris setups. They are opt-in prototypes and are not part of
+what 1.0 promises.
+
+### Instrumentation
+
+`server_metrics`, `client_benchmark` and `terrain_metrics` only record numbers. They do not
+change gameplay or pixels. `server_metrics` powers `/ultima profile`
+([`docs/SERVER_TELEMETRY.md`](docs/SERVER_TELEMETRY.md)).
+
+## Settings
+
+- **In game:** the Ultima button on the title screen, Mod Menu, or `/ultima config` on the client.
+- **File:** `config/ultima.properties`, one `module_key=true|false` line per module. Keys of
+  modules that no longer exist are ignored.
+- **Commands:** `/ultima config` opens the screen on a client and prints the config path on a
+  server. `/ultima debug compatibility` lists every module with its state and the reason, and
+  writes the full JSON report to the log. `/ultima profile [seconds]` (operators, needs
+  `server_metrics`) records a short server trace.
+
+The settings screen is available in English and Russian.
+
+## Building from source
 
 ```bash
-bash scripts/bootstrap.sh
-./gradlew test
-bash scripts/check.sh
-bash scripts/mixin-smoke.sh
+./gradlew build
 ```
 
-`./gradlew test` is the canonical regression aggregate. `./gradlew forensicRegressionTest` remains a local JavaExec for the same merged checkpoint and is not a second CI path.
+Needs JDK 25. The mod jar is `build/libs/ultima-<version>.jar`. Contributor notes, the test
+suites and the CI layout are in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
-Built mod JARs appear in `build/libs/`.
+## More
 
-## Module defaults after the multi-branch integration
-
-Ultima's modules are configured in `config/ultima.properties`.
-
-### Default ON
-
-Simulation:
-- `cursor_step`
-- `entity_section_lookup`
-- `block_collision_shape`
-- `collision_shell_skip`
-- `supporting_block_shape_skip`
-- `full_cube_move`
-
-Client UI:
-- `settings_ui`
-
-### Default OFF
-
-Simulation experiments:
-- `blockentity_sleeping`
-- `recipe_match_cache`
-- `tag_bitsets`
-- `state_property_cache`
-- `container_slot_mask`
-- `entity_query_early_out`
-
-Client renderer / mesher experiments:
-- `retained_terrain`
-- `render_snapshot`
-- `java_mesher`
-- `mesher_fast_path`
-- `section_task_queue`
-- `rgss_endpoint`
-- `fsr_upscaling`
-- `iris_shader_frontend_artifact_cache`
-- `cross_pipeline_admission_broker`
-- `render_warmup_system`
-
-Instrumentation (no effect on gameplay or pixels; `scripts/bench-client.sh` turns on
-`client_benchmark` and `terrain_metrics` for both A/B sides):
-- `server_metrics`
-- `client_benchmark`
-- `terrain_metrics`
-
-Existing `config/ultima.properties` files keep their explicit `terrain_metrics=true` line;
-only fresh configs get the new defaults. Keys of removed modules (for example the old
-`temporal=true`) are ignored.
-
-### Auto-disable policy
-
-`Lithium`, `Canary`, and `Radium` disable the overlapping collision/entity and new
-simulation optimizations, including `cursor_step`, hopper sleeping, slot masks,
-entity-query early-outs, tag bitsets, and the state-property cache. Lithium 0.25.3
-replaces the hot collision iterators and does not call `Cursor3D`. `recipe_match_cache`
-deliberately remains compatible because Lithium has no equivalent first-match recipe
-lookup cache.
-
-`Sodium`, `Iris`, and `Canvas` disable Ultima's geometry renderer integrations
-(`retained_terrain`, `mesher_fast_path`, and the other terrain/mesher modules).
-`fsr_upscaling` is separate: Canvas still auto-disables it; Sodium-only is allowed;
-Iris (with or without Sodium) stays off for a specific capability reason — no
-official post-final hook and no external control of Iris internal resolution —
-not the old blanket `incompatible_mod`.
-
-The settings screen exposes all 27 registered modules under Rendering, Simulation,
-Experimental Killer Modules, or Advanced. Every toggle that changes Mixins uses the
-restart-required apply policy.
-
-## Current validation status
-
-`scripts/check.sh` builds the current source and runs the named JavaExec regression suites,
-including compiled-annotation/vanilla-bytecode checks for constructor `HEAD` legality, Mixin
-priorities, duplicate accessors, current `@At` targets, and per-method redirect contracts.
-These suites are not JUnit and do not pretend to be a live game launch. A dedicated-server smoke
-and client/LAN/shader/hardware checks are reported separately whenever they are actually run.
-
-## Historical benchmark provenance
-
-The opt-in `retained_terrain` foundation has a historical RTX 3090 A/B result from the
-`ultima-foundation-final-2.6.1` release (roughly 150 commits before the current source):
-
-- average FPS: 301.36 → 394.14, **+30.8%**
-- 1% low: 77.79 → 84.26, **+8.3%**
-- terrain CPU total: **−42.9%**
-
-Those measurements belong only to the retained-foundation provenance chain documented in the
-[`ultima-foundation-final-2.6.1` release](https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1).
-They are **not** a current-whole-mod performance or stability claim. `retained_terrain` is default
-off and is disabled with Sodium, Iris, or Canvas.
-The new modules remain default off until their separate runtime/hardware validation is done.
-
-`mesher_fast_path` Phase 3.2 includes weighted vanilla unit cubes while preserving vanilla
-seed-based variant selection; see `MESHER_FAST_PATH.md`. FSR1 details are in
-`FSR_UPSCALING.md`, server telemetry in `SERVER_TELEMETRY.md`.
-
-The three default-off Sodium/Iris/Lithium companion prototypes are documented in
-[`docs/KILLER_MODULES_IMPLEMENTATION.md`](docs/KILLER_MODULES_IMPLEMENTATION.md). Their balanced,
-tick-replayed A/B procedure and claim boundaries are in
-[`docs/KILLER_MODULES_BENCHMARK.md`](docs/KILLER_MODULES_BENCHMARK.md).
-
-The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
-
-## Important
-
-The generated Minecraft sources under `.agent/` are local reference material only and are ignored by Git. Do not commit or redistribute them.
+- [`CHANGELOG.md`](CHANGELOG.md): what changed in each release
+- [`BENCHMARKS.md`](BENCHMARKS.md): measurements and the rule used to decide defaults
+- [`docs/`](docs): design notes and the provenance history
+- [Issues](https://github.com/adaybekovt-boop/Ultima-/issues)
