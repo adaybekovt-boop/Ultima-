@@ -49,7 +49,7 @@ public final class SettingsScreenLogicTest {
         assertTrue(UltimaSettingsCatalog.unknownCatalogKeys().isEmpty(),
                 "catalog must not invent modules: " + UltimaSettingsCatalog.unknownCatalogKeys());
         assertEquals((long) UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
-        assertEquals(24L, UltimaModules.all().size(), "merged module count");
+        assertEquals(27L, UltimaModules.all().size(), "merged module count");
 
         assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
                 "fsr_upscaling is Rendering");
@@ -69,6 +69,14 @@ public final class SettingsScreenLogicTest {
                 "server_metrics is Advanced instrumentation");
         assertTrue(UltimaSettingsCatalog.require("settings_ui").category() == SettingsCategory.ADVANCED,
                 "settings_ui is Advanced client UI");
+        for (String key : List.of(
+                "iris_shader_frontend_artifact_cache",
+                "cross_pipeline_admission_broker",
+                "render_warmup_system")) {
+            assertTrue(UltimaSettingsCatalog.require(key).category() == SettingsCategory.KILLER_MODULES,
+                    key + " is an Experimental Killer Modules row");
+            assertTrue(!UltimaModules.byKey(key).enabledByDefault(), key + " remains opt-in");
+        }
 
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(!spec.displayName().equals(spec.key()), spec.key() + " must have a player-facing name");
@@ -79,6 +87,7 @@ public final class SettingsScreenLogicTest {
     private static void testCategoriesAndApplyPolicies() {
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(12L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
+        assertEquals(3L, UltimaSettingsCatalog.inCategory(SettingsCategory.KILLER_MODULES).size(), "killer count");
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,

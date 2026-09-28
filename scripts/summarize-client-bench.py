@@ -23,6 +23,11 @@ METRICS = (
     ("averageFrameTimeMs", "Average frame time ms", False),
     ("p95FrameTimeMs", "P95 frame time ms", False),
     ("p99FrameTimeMs", "P99 frame time ms", False),
+    ("p999FrameTimeMs", "P99.9 frame time ms", False),
+    ("shaderReloadLastMs", "Shader reload wall ms", False),
+    ("brokerP99FirstVisibleProxyMs", "P99 request-to-renderable proxy ms", False),
+    ("brokerTaskThroughput", "Sodium task completions/s", True),
+    ("warmupP99FirstUseFrameMs", "P99 first-use frame ms", False),
 )
 
 T_CRIT_95 = {
@@ -72,7 +77,22 @@ def pct_delta(off: float, on: float, higher_is_better: bool) -> float:
 
 def load_json(path: Path) -> dict:
     with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    reload = data.get("shaderReload") or {}
+    if reload.get("lastNs") is not None and reload.get("reloads", 0) > 0:
+        data["shaderReloadLastMs"] = reload["lastNs"] / 1_000_000.0
+    killer = data.get("killerModules") or {}
+    broker = killer.get("admissionBroker") or {}
+    if broker.get("firstVisibleProxySampleCount", 0) > 0:
+        data["brokerP99FirstVisibleProxyMs"] = (
+            broker["p99RequestToFirstVisibleProxyNs"] / 1_000_000.0
+        )
+    if broker.get("taskCompletions", 0) > 0:
+        data["brokerTaskThroughput"] = broker["taskCompletionThroughputPerSecond"]
+    warmup = killer.get("renderWarmup") or {}
+    if warmup.get("p99FirstUseFrameNs", 0) > 0:
+        data["warmupP99FirstUseFrameMs"] = warmup["p99FirstUseFrameNs"] / 1_000_000.0
+    return data
 
 
 PAIR_RE = re.compile(r"(?P<prefix>.*pair)(?P<pair>\d+)_(?P<side>off|on)\.json$", re.I)
@@ -114,6 +134,60 @@ def experimental_on(data: dict) -> bool:
     return role == "enabled"
 
 
+CRITICAL_ENV = (
+    "ultimaGitSha",
+    "minecraft",
+    "fabricLoader",
+    "fabricApi",
+    "java",
+    "os",
+    "cpu",
+    "gpuName",
+    "gpuDriver",
+    "framebufferWidth",
+    "framebufferHeight",
+    "renderDistance",
+    "simulationDistance",
+    "vsync",
+    "shaderPack",
+    "mods",
+)
+
+
+def enabled_module_keys(data: dict) -> set[str]:
+    return {str(module.get("key")) for module in data.get("modules") or [] if module.get("enabled")}
+
+
+def varied_key_set(data: dict) -> set[str]:
+    raw = (data.get("abProtocol") or {}).get("variedKeys") or []
+    if isinstance(raw, str):
+        return {part.strip() for part in raw.split(",") if part.strip()}
+    return {str(part) for part in raw}
+
+
+def critical_mismatches(off: dict, on: dict) -> list[str]:
+    """Refuse a comparison whose machine, game, or non-varied config differs."""
+    reasons: list[str] = []
+    left = off.get("environment")
+    right = on.get("environment")
+    if left is None and right is None:
+        pass
+    elif not isinstance(left, dict) or not isinstance(right, dict):
+        reasons.append("environment")
+    else:
+        for key in CRITICAL_ENV:
+            if left.get(key) != right.get(key):
+                reasons.append("environment." + key)
+    if "modules" in off or "modules" in on:
+        if ("modules" in off) != ("modules" in on):
+            reasons.append("modules")
+        else:
+            extra = (enabled_module_keys(off) ^ enabled_module_keys(on)) - varied_key_set(off) - varied_key_set(on)
+            if extra:
+                reasons.append("ultimaConfig:" + ",".join(sorted(extra)))
+    return reasons
+
+
 def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
     report: dict = {"pairs": [], "metrics": {}, "warnings": []}
     if any(experimental_on(on) for _, _, on in pairs):
@@ -134,6 +208,10 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
                 "chunkMatrixCopiesAvoided": on.get("chunkMatrixCopiesAvoided"),
                 "chunkLayerArraysAvoided": on.get("chunkLayerArraysAvoided"),
                 "sectionDirtyWritesAvoided": on.get("sectionDirtyWritesAvoided"),
+            },
+            "killerModules": {
+                "off": off.get("killerModules") or {},
+                "on": on.get("killerModules") or {},
             },
         }
         deltas = {}
@@ -165,6 +243,9 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
                 "firstSampleLiveCommands": on_terrain.get("firstSampleLiveCommands"),
                 "lastSampleLiveCommands": on_terrain.get("lastSampleLiveCommands"),
             }
+        guardrails = killer_guardrails(off, on)
+        if guardrails:
+            entry["guardrails"] = guardrails
         report["pairs"].append(entry)
 
     for metric, label, higher in METRICS:
@@ -208,8 +289,82 @@ def summarize_pairs(pairs: list[tuple[int, dict, dict]]) -> dict:
     return report
 
 
+def killer_guardrails(off: dict, on: dict) -> list[str]:
+    failures: list[str] = []
+    off_killer = off.get("killerModules") or {}
+    on_killer = on.get("killerModules") or {}
+    for name in ("artifactCache", "admissionBroker", "renderWarmup"):
+        state = on_killer.get(name) or {}
+        if state.get("failedOpen"):
+            failures.append(f"{name} failed open: {state.get('failureReason', 'unknown')}")
+
+    off_broker = off_killer.get("admissionBroker") or {}
+    on_broker = on_killer.get("admissionBroker") or {}
+    gate = killer_scenario_gate(on_killer)
+    if gate not in ("PASS", "NOT_APPLICABLE"):
+        failures.append(f"killer scenario gate {gate}")
+    if on_broker.get("changesScheduling") and off_broker.get("available"):
+        off_latency = off_broker.get("p99RequestToFirstVisibleProxyNs")
+        on_latency = on_broker.get("p99RequestToFirstVisibleProxyNs")
+        if positive_regression(off_latency, on_latency, 0.10):
+            failures.append("broker p99 request-to-renderable proxy regressed by more than 10%")
+        off_holes = off_broker.get("visibleHoleProxyMaximum")
+        on_holes = on_broker.get("visibleHoleProxyMaximum")
+        if positive_regression(off_holes, on_holes, 0.10):
+            failures.append("broker maximum initial-build backlog proxy regressed by more than 10%")
+        off_throughput = off_broker.get("taskCompletionThroughputPerSecond")
+        on_throughput = on_broker.get("taskCompletionThroughputPerSecond")
+        if negative_regression(off_throughput, on_throughput, 0.05):
+            failures.append("broker Sodium task completion throughput fell by more than 5%")
+    return failures
+
+
+def killer_scenario_gate(on_killer: dict) -> str:
+    """Mirror dev.ultima.benchmark.KillerBenchmarkGates. Empty work is not a pass."""
+    cache = on_killer.get("artifactCache") or {}
+    broker = on_killer.get("admissionBroker") or {}
+    warmup = on_killer.get("renderWarmup") or {}
+    if cache.get("available"):
+        hits = cache.get("hits") or 0
+        # Lifetime reloads include startup. Only reloads inside the sample window count.
+        sample_reloads = cache.get("sampleReloads")
+        if not isinstance(sample_reloads, int) or isinstance(sample_reloads, bool) or hits <= 0 or sample_reloads <= 0:
+            return "INVALID"
+    if broker.get("available") and not broker.get("changesScheduling"):
+        if broker.get("requestedMode") in ("control", "static"):
+            return "NOT_APPLICABLE"
+    if warmup.get("available"):
+        warmed = warmup.get("warmupItems") or 0
+        if warmed <= 0 or warmup.get("activeWarmup") is False:
+            return "NOT_APPLICABLE"
+    return "PASS"
+
+
+def positive_regression(baseline, candidate, threshold: float) -> bool:
+    return (
+        isinstance(baseline, (int, float))
+        and isinstance(candidate, (int, float))
+        and baseline > 0
+        and candidate > baseline * (1.0 + threshold)
+    )
+
+
+def negative_regression(baseline, candidate, threshold: float) -> bool:
+    return (
+        isinstance(baseline, (int, float))
+        and isinstance(candidate, (int, float))
+        and baseline > 0
+        and candidate < baseline * (1.0 - threshold)
+    )
+
+
 def format_report(report: dict) -> str:
-    lines = ["Ultima client A/B summary", "Primary comparison: disabled vs default", ""]
+    lines = [
+        "Ultima client A/B summary",
+        "Paired comparison: recorded OFF versus ON roles",
+        "Release-default baseline remains disabled versus default",
+        "",
+    ]
     for warning in report["warnings"]:
         lines.append(f"WARNING: {warning}")
     if report["warnings"]:
@@ -225,6 +380,40 @@ def format_report(report: dict) -> str:
             lines.append(f"  {label}: {off:.4f} -> {on:.4f} ({delta:+.2f}%)")
         if pair.get("outlier"):
             lines.append(f"  OUTLIER: {pair['outlier']}")
+        killer = pair.get("killerModules") or {}
+        off_killer = killer.get("off") or {}
+        on_killer = killer.get("on") or {}
+        on_cache = on_killer.get("artifactCache") or {}
+        if on_cache.get("available"):
+            lines.append(
+                "  Artifact cache: "
+                f"hits={_fmt(on_cache.get('hits'))} misses={_fmt(on_cache.get('misses'))} "
+                f"verifyMismatch={_fmt(on_cache.get('verifyMismatches'))} "
+                f"reloadWallNs={_fmt(on_cache.get('reloadWallNs'))}"
+            )
+        off_broker = off_killer.get("admissionBroker") or {}
+        on_broker = on_killer.get("admissionBroker") or {}
+        if on_broker.get("available"):
+            lines.append(
+                "  Broker trace/control: "
+                f"{off_broker.get('mode', 'off')} -> {on_broker.get('mode', 'off')}; "
+                f"p99 visibility proxy ns={_fmt(off_broker.get('p99RequestToFirstVisibleProxyNs'))}"
+                f" -> {_fmt(on_broker.get('p99RequestToFirstVisibleProxyNs'))}; "
+                f"throughput/s={_fmt(off_broker.get('taskCompletionThroughputPerSecond'))}"
+                f" -> {_fmt(on_broker.get('taskCompletionThroughputPerSecond'))}"
+            )
+        off_warmup = off_killer.get("renderWarmup") or {}
+        on_warmup = on_killer.get("renderWarmup") or {}
+        if on_warmup.get("available"):
+            lines.append(
+                "  Warmup profile/warm: "
+                f"{off_warmup.get('mode', 'off')} -> {on_warmup.get('mode', 'off')}; "
+                f"hitches={_fmt(off_warmup.get('firstUseHitchesBefore'))}"
+                f" -> {_fmt(on_warmup.get('firstUseHitchesAfter'))}; "
+                f"items={_fmt(on_warmup.get('warmupItems'))}"
+            )
+        for failure in pair.get("guardrails", []):
+            lines.append(f"  GUARDRAIL FAILED: {failure}")
         terrain = pair.get("terrain")
         if terrain:
             lines.append(
@@ -376,10 +565,28 @@ def test_module_classification() -> None:
         raise SystemExit("retained_terrain must remain opt-in")
     if defaults.get("client_benchmark") is not False:
         raise SystemExit("client_benchmark must remain opt-in instrumentation")
-    if defaults.get("terrain_metrics") is not True:
-        raise SystemExit("terrain_metrics must remain default-on instrumentation")
-    if defaults.get("server_metrics") is not True:
-        raise SystemExit("server_metrics must remain default-on instrumentation")
+    if defaults.get("terrain_metrics") is not False:
+        raise SystemExit("terrain_metrics must stay default-off instrumentation")
+    if defaults.get("temporal") is not False:
+        raise SystemExit("temporal must stay default-off until a backend consumes the history")
+    if defaults.get("server_metrics") is not False:
+        raise SystemExit("server_metrics must stay default-off instrumentation")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 4, "reloads": 9, "sampleReloads": 0}
+    }) != "INVALID":
+        raise SystemExit("lifetime reloads must not pass the artifact gate")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 4, "reloads": 9}
+    }) != "INVALID":
+        raise SystemExit("a missing in-sample reload counter must not pass")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 0, "sampleReloads": 1}
+    }) != "INVALID":
+        raise SystemExit("zero artifact hits must not pass")
+    if killer_scenario_gate({
+            "artifactCache": {"available": True, "hits": 2, "sampleReloads": 1}
+    }) != "PASS":
+        raise SystemExit("an in-sample reload with hits must pass the artifact gate")
 
     default_on = {
         "modules": [
@@ -387,7 +594,7 @@ def test_module_classification() -> None:
             for key in SHIPPED_DEFAULT_KEYS_MUST_INCLUDE
         ] + [
             {"key": "client_benchmark", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
-            {"key": "terrain_metrics", "enabled": True, "enabledByDefault": True, "moduleClass": "instrumentation"},
+            {"key": "terrain_metrics", "enabled": True, "enabledByDefault": False, "moduleClass": "instrumentation"},
             {"key": "retained_terrain", "enabled": False, "enabledByDefault": False, "moduleClass": "opt_in_experiment"},
         ],
         "abProtocol": {"requestedRole": "default"},
@@ -418,6 +625,56 @@ def test_module_classification() -> None:
     }
     if experimental_on(stale_hardcoded):
         raise SystemExit("shipped defaults without moduleClass must not be treated as experimental")
+    test_environment_refusal()
+
+
+def test_environment_refusal() -> None:
+    environment = {key: "same" for key in CRITICAL_ENV}
+    environment["framebufferWidth"] = 1280
+    environment["framebufferHeight"] = 720
+    environment["renderDistance"] = 12
+    environment["simulationDistance"] = 12
+    environment["vsync"] = False
+    environment["mods"] = ["fabric-api", "ultima"]
+    base = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": True},
+            {"key": "recipe_match_cache", "enabled": False},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    changed_gpu = {
+        "environment": dict(environment, gpuName="other"),
+        "modules": base["modules"],
+        "abProtocol": base["abProtocol"],
+    }
+    if not any(reason == "environment.gpuName" for reason in critical_mismatches(base, changed_gpu)):
+        raise SystemExit("a GPU mismatch must be refused")
+    if critical_mismatches(base, base):
+        raise SystemExit("an identical environment must compare")
+    other_module = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": True},
+            {"key": "recipe_match_cache", "enabled": True},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    if not any(reason.startswith("ultimaConfig:") for reason in critical_mismatches(base, other_module)):
+        raise SystemExit("a module outside variedKeys must be refused")
+    allowed = {
+        "environment": environment,
+        "modules": [
+            {"key": "cursor_step", "enabled": False},
+            {"key": "recipe_match_cache", "enabled": False},
+        ],
+        "abProtocol": {"variedKeys": ["cursor_step"]},
+    }
+    if critical_mismatches(base, allowed):
+        raise SystemExit("the declared A/B module must remain comparable")
+    if critical_mismatches(RTX3090_FIXTURES[0][1], RTX3090_FIXTURES[0][2]):
+        raise SystemExit("legacy fixtures without an environment block must stay comparable")
 
 
 def main(argv: list[str]) -> int:
@@ -451,6 +708,10 @@ def main(argv: list[str]) -> int:
         if "off" not in sides or "on" not in sides:
             print(f"pair {pair} is missing off or on JSON", file=sys.stderr)
             return 2
+        mismatches = critical_mismatches(sides["off"], sides["on"])
+        if mismatches:
+            print(f"pair {pair} refused: " + ", ".join(mismatches), file=sys.stderr)
+            return 3
         pairs.append((pair, sides["off"], sides["on"]))
     print(format_report(summarize_pairs(pairs)), end="")
     return 0

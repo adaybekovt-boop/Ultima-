@@ -35,7 +35,6 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.core.BlockPos.MutableBlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
@@ -159,7 +158,7 @@ public final class HybridSectionMesher {
                             fluidCalls++;
                             fluidRenderer.tesselate(view, pos, fluidOutput, blockState, fluidState);
                         }
-                        if (blockState.getRenderShape() != RenderShape.MODEL) {
+                        if (!BlockRenderFlags.model(flags)) {
                             fallbackBlocks++;
                             MesherMetrics.recordDecision(FastPathCriteria.Result.fallback(FastPathCriteria.Reason.NOT_MODEL));
                             continue;

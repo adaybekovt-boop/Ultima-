@@ -29,6 +29,15 @@ public final class RecipeFirstMatchCache {
     }
 
     /**
+     * Drops stored holders after vanilla publishes registry tags. The purity plan built at
+     * {@code apply} stays; only lookup entries are cleared, so a hit taken before
+     * {@code HolderSet.Named.bind} cannot outlive tag publication.
+     */
+    public void dropLookups() {
+        this.table.invalidate();
+    }
+
+    /**
      * @return cached first-match, or {@code null} if the caller must run vanilla
      */
     public @Nullable Optional<RecipeHolder<?>> lookup(
@@ -70,11 +79,11 @@ public final class RecipeFirstMatchCache {
             recordFallback(input, recordTelemetry);
             return null;
         }
-        if (!this.table.contains(key)) {
+        Optional<RecipeHolder<?>> hit = this.table.get(key);
+        if (hit == null) {
             recordMiss(input, recordTelemetry);
             return null;
         }
-        Optional<RecipeHolder<?>> hit = this.table.get(key);
         recordHit(input, recordTelemetry);
         return hit;
     }
@@ -84,7 +93,7 @@ public final class RecipeFirstMatchCache {
      */
     public void storeUnchecked(
             final RecipeType<?> type, final RecipeInput input, final Optional<? extends RecipeHolder<?>> result) {
-        if (input.isEmpty() || this.policy.shouldBypassCache(type, input)) {
+        if (input.isEmpty() || !this.policy.mayStore(type, input, result)) {
             return;
         }
         Object key = RecipeMatchKeys.keyFor(type, input);

@@ -46,6 +46,7 @@
     "tag_bitsets.MappedRegistryMixin",
     "state_property_cache.WalkNodeEvaluatorMixin",
     "state_property_cache.BlockStateBaseMixin",
+    "state_property_cache.BlockStateBaseAccessor",
     "state_property_cache.FluidStateMixin",
     "state_property_cache.MappedRegistryMixin",
     "container_slot_mask.CompoundContainerMixin",

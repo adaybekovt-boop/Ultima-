@@ -1,5 +1,6 @@
 package dev.ultima.review;
 
+import dev.ultima.config.LoadedModCache;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaModules;
 import dev.ultima.phys.OffsetCubeVoxelShape;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -38,9 +40,12 @@ public final class ForensicRegressionTest {
         testEntitySectionOrder();
         testCursorCarryBounds();
         testCursorCarry();
+        testCursorOriginAndLargeBoxes();
+        testDefaultSilProfile();
         testInteriorCursorAndIndex();
         testInteriorRequiresCarryEligibility();
         testConfigParsingAndDependencies();
+        testRuntimeModuleFlags();
         testOffsetCubeMatchesVanillaMove();
         testPackedSectionVisitOrder();
         testSectionVisibilityBits();
@@ -182,11 +187,106 @@ public final class ForensicRegressionTest {
         }
     }
 
+    private static void testCursorOriginAndLargeBoxes() {
+        int[][] boxes = {{1, 1, 1}, {1, 8, 1}, {8, 1, 1}, {2, 3, 5}, {40, 3, 40}};
+        int[] origins = {0, -64, -30_000_000, 29_999_999};
+        for (int[] box : boxes) {
+            assertTrue(CursorMath.canUseCarry(box[0], box[1], box[2]), "edge box must stay eligible");
+            for (int origin : origins) {
+                CursorModel vanilla = new CursorModel(box[0], box[1], box[2], origin, origin - 3, origin + 7);
+                CursorModel carried = new CursorModel(box[0], box[1], box[2], origin, origin - 3, origin + 7);
+                int steps = 0;
+                while (vanilla.advanceVanilla()) {
+                    assertTrue(carried.advanceCarried(), "carried cursor ended early");
+                    if (vanilla.nextX() != carried.nextX()
+                            || vanilla.nextY() != carried.nextY()
+                            || vanilla.nextZ() != carried.nextZ()
+                            || vanilla.index != carried.index) {
+                        throw new AssertionError("origin cursor mismatch at " + vanilla.positionAndIndex());
+                    }
+                    steps++;
+                }
+                assertFalse(carried.advanceCarried(), "carried cursor emitted an extra position");
+                assertEquals((long) box[0] * box[1] * box[2], steps, "visit count");
+            }
+        }
+    }
+
+    private static void testDefaultSilProfile() {
+        Map<String, Boolean> requested = new LinkedHashMap<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            requested.put(module.key(), module.enabledByDefault());
+        }
+        Set<String> loaded = Set.of("sodium", "iris", "lithium");
+        LoadedModCache.runWithProbeForTest(loaded::contains, () -> {
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            List<String> enabled = new ArrayList<>();
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                if (config.isEnabled(module.key())) {
+                    enabled.add(module.key());
+                }
+            }
+            assertTrue(enabled.isEmpty() || enabled.equals(List.of("settings_ui")),
+                    "S+I+L default enabled mixins must be empty or title-screen UI only, got " + enabled);
+            assertTrue("incompatible_mod".equals(config.resolve("cursor_step").reason()),
+                    "cursor_step must auto-disable beside Lithium");
+            assertFalse(config.isEnabled("recipe_match_cache"), "recipe cache stays off");
+            assertFalse(config.isEnabled("server_metrics"), "server metrics stay off");
+            assertFalse(config.isEnabled("iris_shader_frontend_artifact_cache"), "artifact cache stays off");
+            assertFalse(config.isEnabled("cross_pipeline_admission_broker"), "broker stays off");
+            assertFalse(config.isEnabled("render_warmup_system"), "warmup stays off");
+            assertFalse(config.isEnabled("client_benchmark"), "benchmark stays off");
+            assertFalse(config.isEnabled("terrain_metrics"), "terrain metrics auto-disable on Sodium/Iris");
+        });
+    }
+
     private static void testCursorCarryBounds() {
         assertTrue(CursorMath.canUseCarry(1, 1, Integer.MAX_VALUE), "largest non-wrapping cursor");
         assertFalse(CursorMath.canUseCarry(2, 1, Integer.MAX_VALUE), "overflowing cursor must use vanilla");
         assertFalse(CursorMath.canUseCarry(0, 2, 2), "zero width must preserve vanilla divide-by-zero");
         assertFalse(CursorMath.canUseCarry(-1, 2, 2), "inverted bounds must preserve vanilla behavior");
+        assertFalse(CursorMath.canUseCarry(2, 2, 0), "zero depth must preserve vanilla behavior");
+        assertFalse(CursorMath.canUseCarry(2, 2, Integer.MIN_VALUE), "negative depth must preserve vanilla behavior");
+
+        int max = Integer.MAX_VALUE;
+        assertTrue(CursorMath.canUseCarry(max, 1, 1), "width-only max volume");
+        assertTrue(CursorMath.canUseCarry(1, max, 1), "height-only max volume");
+        assertFalse(CursorMath.canUseCarry(max, max, 1), "max*max area must use vanilla");
+        assertFalse(CursorMath.canUseCarry(max, max, max), "max^3 volume must use vanilla");
+        assertFalse(CursorMath.canUseCarry(max, 1, 2), "max*2 volume must use vanilla");
+        // 2^21 cubed is exactly 2^63, which wraps a signed long to Long.MIN_VALUE.
+        assertFalse(CursorMath.canUseCarry(1 << 21, 1 << 21, 1 << 21), "2^63 volume must not wrap to eligible");
+        assertFalse(CursorMath.canUseCarry(1 << 22, 1 << 22, 1 << 22), "2^66 volume must not wrap to eligible");
+        assertTrue(CursorMath.canUseCarry(1 << 10, 1 << 10, (1 << 11) - 1), "just below 2^31 stays eligible");
+        assertFalse(CursorMath.canUseCarry(1 << 10, 1 << 10, 1 << 11), "exactly 2^31 volume must use vanilla");
+        assertTrue(CursorMath.canUseCarry(46_340, 46_340, 1), "largest square area below 2^31");
+        assertFalse(CursorMath.canUseCarry(46_341, 46_341, 1), "first square area above 2^31");
+
+        Random random = new Random(0x43555253L);
+        java.math.BigInteger limit = java.math.BigInteger.valueOf(Integer.MAX_VALUE);
+        for (int trial = 0; trial < 200_000; trial++) {
+            int width = randomCursorDimension(random);
+            int height = randomCursorDimension(random);
+            int depth = randomCursorDimension(random);
+            boolean expected = width > 0 && height > 0 && depth > 0
+                    && java.math.BigInteger.valueOf(width)
+                            .multiply(java.math.BigInteger.valueOf(height))
+                            .multiply(java.math.BigInteger.valueOf(depth))
+                            .compareTo(limit) <= 0;
+            if (CursorMath.canUseCarry(width, height, depth) != expected) {
+                throw new AssertionError("canUseCarry mismatch for " + width + "x" + height + "x" + depth);
+            }
+        }
+    }
+
+    private static int randomCursorDimension(final Random random) {
+        return switch (random.nextInt(5)) {
+            case 0 -> random.nextInt(-4, 64);
+            case 1 -> 1 << random.nextInt(31);
+            case 2 -> Integer.MAX_VALUE - random.nextInt(4);
+            case 3 -> random.nextInt(1, 1 << 22);
+            default -> random.nextInt();
+        };
     }
 
     private static void testInteriorCursorAndIndex() {
@@ -231,6 +331,111 @@ public final class ForensicRegressionTest {
         assertTrue(CursorMath.canUseCarry(3, 3, 3), "ordinary collision cursor must remain eligible");
     }
 
+    private static void testRuntimeModuleFlags() {
+        int tags = UltimaModules.indexOf("tag_bitsets");
+        int state = UltimaModules.indexOf("state_property_cache");
+        int shell = UltimaModules.indexOf("collision_shell_skip");
+        int cursor = UltimaModules.indexOf("cursor_step");
+        assertTrue(tags >= 0 && state >= 0 && shell >= 0 && cursor >= 0, "module indexes resolve");
+        assertEquals(-1L, UltimaModules.indexOf("misspelled_module"), "unknown module index");
+        for (int i = 0; i < UltimaModules.all().size(); i++) {
+            assertEquals(i, UltimaModules.indexOf(UltimaModules.all().get(i).key()), "indexOf matches all() order");
+        }
+
+        LoadedModCache.runWithProbeForTest(id -> false, () -> {
+            Map<String, Boolean> requested = new LinkedHashMap<>();
+            requested.put("tag_bitsets", true);
+            requested.put("state_property_cache", false);
+            requested.put("cursor_step", true);
+            requested.put("collision_shell_skip", true);
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            assertTrue(config.isRuntimeEnabled(tags), "launch-enabled module is runtime-enabled");
+            assertFalse(config.isRuntimeEnabled(state), "launch-disabled module is runtime-disabled");
+            assertTrue(config.isRuntimeEnabled(shell), "dependency satisfied at launch");
+            assertFalse(config.isRuntimeEnabled(-1), "unknown index fails closed");
+            assertFalse(config.isRuntimeEnabled(UltimaModules.all().size()), "out-of-range index fails closed");
+
+            config.setRequested("tag_bitsets", false);
+            assertFalse(config.isRuntimeEnabled(tags), "UI disable stops runtime work immediately");
+            assertFalse(config.isEnabled("tag_bitsets"), "UI shows the live requested state");
+            assertTrue(config.wasEnabledAtLaunch("tag_bitsets"), "launch state is unchanged");
+            assertTrue(config.hasPendingRestart("tag_bitsets"), "disable is a pending restart");
+            config.setRequested("tag_bitsets", true);
+            assertTrue(config.isRuntimeEnabled(tags), "re-enable restores the launched module");
+            assertFalse(config.hasPendingRestart("tag_bitsets"), "round trip clears pending restart");
+
+            config.setRequested("state_property_cache", true);
+            assertTrue(config.isEnabled("state_property_cache"), "UI resolves the new request");
+            assertTrue(config.hasPendingRestart("state_property_cache"), "enable without Mixins waits for restart");
+            assertFalse(config.isRuntimeEnabled(state), "runtime code without applied Mixins stays off");
+
+            config.setRequested("cursor_step", false);
+            assertFalse(config.isRuntimeEnabled(cursor), "dependency disabled");
+            assertFalse(config.isRuntimeEnabled(shell), "dependent follows its live dependency");
+            assertTrue("dependency_disabled".equals(config.resolve("collision_shell_skip").reason()),
+                    "UI reason still comes from live resolution");
+        });
+
+        LoadedModCache.runWithProbeForTest("lithium"::equals, () -> {
+            Map<String, Boolean> requested = new LinkedHashMap<>();
+            requested.put("tag_bitsets", true);
+            requested.put("cursor_step", true);
+            UltimaConfig config = UltimaConfig.createForTests(requested);
+            assertFalse(config.isRuntimeEnabled(tags), "Lithium auto-disable reaches the runtime flag");
+            assertFalse(config.isRuntimeEnabled(cursor), "cursor_step stays off beside Lithium");
+            config.setRequested("tag_bitsets", true);
+            assertFalse(config.isRuntimeEnabled(tags), "re-request cannot bypass the incompatibility");
+        });
+
+        List<String> common = new ArrayList<>();
+        for (UltimaModules.Module module : UltimaModules.all()) {
+            if (!module.clientOnly()) {
+                common.add(module.key());
+            }
+        }
+        Random random = new Random(0x464C4147L);
+        for (int trial = 0; trial < 300; trial++) {
+            Set<String> loaded = random.nextBoolean() ? Set.of("lithium") : Set.of();
+            LoadedModCache.runWithProbeForTest(loaded::contains, () -> {
+                Map<String, Boolean> requested = new LinkedHashMap<>();
+                for (String key : common) {
+                    requested.put(key, random.nextBoolean());
+                }
+                UltimaConfig config = UltimaConfig.createForTests(requested);
+                for (int step = 0; step < 12; step++) {
+                    for (String key : common) {
+                        boolean expected = config.wasEnabledAtLaunch(key) && config.isEnabled(key);
+                        if (config.isRuntimeEnabled(UltimaModules.indexOf(key)) != expected) {
+                            throw new AssertionError("runtime flag mismatch for " + key + " at step " + step);
+                        }
+                    }
+                    config.setRequested(common.get(random.nextInt(common.size())), random.nextBoolean());
+                }
+            });
+        }
+
+        LoadedModCache.runWithProbeForTest(id -> false, () -> {
+            UltimaConfig config = UltimaConfig.createForTests(Map.of("tag_bitsets", true));
+            java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
+            if (!(threads instanceof com.sun.management.ThreadMXBean allocation)
+                    || !allocation.isThreadAllocatedMemorySupported()) {
+                return;
+            }
+            allocation.setThreadAllocatedMemoryEnabled(true);
+            long thread = Thread.currentThread().threadId();
+            int hits = 0;
+            long before = allocation.getThreadAllocatedBytes(thread);
+            for (int i = 0; i < 1_000_000; i++) {
+                if (config.isRuntimeEnabled(tags)) {
+                    hits++;
+                }
+            }
+            long allocated = allocation.getThreadAllocatedBytes(thread) - before;
+            assertEquals(1_000_000L, hits, "runtime flag answers every probe");
+            assertTrue(allocated < 64 * 1024, "runtime flag probes must not allocate, got " + allocated + " bytes");
+        });
+    }
+
     private static void testConfigParsingAndDependencies() {
         try {
             Method parseBoolean = UltimaConfig.class.getDeclaredMethod("parseBoolean", String.class);
@@ -260,14 +465,14 @@ public final class ForensicRegressionTest {
             assertTrue(defaults.get("full_cube_move"), "full-cube move replacement is default-on");
             assertTrue(defaults.get("cursor_step"), "cursor step remains enabled by default");
             assertFalse(defaults.get("client_benchmark"), "benchmark instrumentation must remain opt-in");
-            assertTrue(defaults.get("terrain_metrics"), "terrain metrics are default-on for the client");
+            assertFalse(defaults.get("terrain_metrics"), "terrain metrics have no consumer outside the benchmark and stay opt-in");
             assertFalse(defaults.get("retained_terrain"), "retained terrain must remain opt-in");
             assertFalse(defaults.get("render_snapshot"), "render snapshots must remain opt-in");
             assertFalse(defaults.get("java_mesher"), "java mesher must remain opt-in");
             assertFalse(defaults.get("mesher_fast_path"), "mesher fast path must remain opt-in");
             assertFalse(defaults.get("section_task_queue"), "section task queue must remain opt-in");
             assertFalse(defaults.get("rgss_endpoint"), "RGSS endpoint experiment must remain opt-in");
-            assertTrue(defaults.get("temporal"), "temporal Native passthrough is default-on for the client");
+            assertFalse(defaults.get("temporal"), "temporal has no pixel-changing backend and stays opt-in");
             assertTrue(
                     UltimaModules.byKey("temporal").incompatibleMods().contains("sodium"),
                     "temporal must declare Sodium incompatibility");
@@ -300,7 +505,10 @@ public final class ForensicRegressionTest {
                     "supporting-block skip must declare Lithium incompatibility");
             assertTrue(
                     UltimaModules.byKey("full_cube_move").incompatibleMods().contains("lithium"),
-                    "full-cube move must declare Lithium incompatibility");
+                    "full cube move overlaps Lithium");
+            assertTrue(
+                    UltimaModules.byKey("cursor_step").incompatibleMods().contains("lithium"),
+                    "cursor step overlaps Lithium's collision sweepers");
 
             UltimaConfig dependencyConfig = constructor.newInstance(modules);
             UltimaConfig.ResolvedModule shell = dependencyConfig.resolve("collision_shell_skip");
@@ -328,12 +536,21 @@ public final class ForensicRegressionTest {
                     "retained terrain remains inactive, not " + retainedReason);
             String temporalReason = defaultConfig.resolve("temporal").reason();
             assertTrue(
-                    "enabled".equals(temporalReason) || "not_client_environment".equals(temporalReason),
-                    "temporal Native passthrough default is on in a client environment, not " + temporalReason);
+                    "disabled_by_default".equals(temporalReason) || "not_client_environment".equals(temporalReason),
+                    "temporal Native passthrough remains inactive by default, not " + temporalReason);
             String metricsReason = defaultConfig.resolve("terrain_metrics").reason();
             assertTrue(
-                    "enabled".equals(metricsReason) || "not_client_environment".equals(metricsReason),
-                    "terrain metrics default is on in a client environment, not " + metricsReason);
+                    "disabled_by_default".equals(metricsReason) || "not_client_environment".equals(metricsReason),
+                    "terrain metrics remain inactive by default, not " + metricsReason);
+            for (UltimaModules.Module module : UltimaModules.all()) {
+                if (UltimaModules.isInstrumentation(module.key()) || "temporal".equals(module.key())) {
+                    assertFalse(module.enabledByDefault(), module.key() + " must not run without opt-in");
+                    String reason = defaultConfig.resolve(module.key()).reason();
+                    assertTrue(
+                            "disabled_by_default".equals(reason) || "not_client_environment".equals(reason),
+                            module.key() + " must be inactive in the default profile, not " + reason);
+                }
+            }
             assertTrue("enabled".equals(defaultConfig.resolve("entity_section_lookup").reason()),
                     "entity section lookup is enabled by default");
             assertTrue("enabled".equals(defaultConfig.resolve("cursor_step").reason()),
@@ -617,11 +834,40 @@ public final class ForensicRegressionTest {
         private boolean interiorStarted;
         private boolean interiorExhausted;
 
+        private final int originX;
+        private final int originY;
+        private final int originZ;
+
         private CursorModel(final int width, final int height, final int depth) {
+            this(width, height, depth, 0, 0, 0);
+        }
+
+        private CursorModel(
+                final int width,
+                final int height,
+                final int depth,
+                final int originX,
+                final int originY,
+                final int originZ) {
             this.width = width;
             this.height = height;
             this.depth = depth;
+            this.originX = originX;
+            this.originY = originY;
+            this.originZ = originZ;
             this.end = width * height * depth;
+        }
+
+        private int nextX() {
+            return this.originX + this.x;
+        }
+
+        private int nextY() {
+            return this.originY + this.y;
+        }
+
+        private int nextZ() {
+            return this.originZ + this.z;
         }
 
         private boolean advanceVanilla() {

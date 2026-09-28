@@ -4,6 +4,7 @@ import dev.ultima.Ultima;
 import dev.ultima.cache.CacheMetrics;
 import dev.ultima.cache.VanillaClassGuard;
 import dev.ultima.config.UltimaConfig;
+import dev.ultima.config.UltimaModules;
 import dev.ultima.failopen.FailOpenGuard;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.fabricmc.fabric.api.registry.LandPathTypeRegistry;
@@ -58,6 +59,7 @@ public final class StatePropertyRuntime {
     public static final CacheMetrics METRICS = new CacheMetrics();
 
     private static final AtomicInteger GENERATION = new AtomicInteger();
+    private static final int MODULE_INDEX = UltimaModules.indexOf("state_property_cache");
 
     private static volatile int[] blockTable = new int[0];
     private static volatile int[] fluidTable = new int[0];
@@ -68,7 +70,7 @@ public final class StatePropertyRuntime {
 
     public static boolean moduleEnabled() {
         try {
-            return UltimaConfig.get().isEnabled("state_property_cache");
+            return UltimaConfig.get().isRuntimeEnabled(MODULE_INDEX);
         } catch (Throwable ignored) {
             return false;
         }
@@ -177,10 +179,7 @@ public final class StatePropertyRuntime {
     }
 
     public static boolean mayCacheRedstoneConductor(final BlockState state) {
-        return moduleEnabled()
-                && state != null
-                && VanillaClassGuard.isVanillaType(state.getBlock())
-                && !state.getBlock().hasDynamicShape();
+        return moduleEnabled() && RedstoneConductorPurity.allows(state);
     }
 
     public static void noteUncacheableRedstoneConductor(final BlockState state) {

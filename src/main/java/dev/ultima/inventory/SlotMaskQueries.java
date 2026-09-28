@@ -1,7 +1,6 @@
 package dev.ultima.inventory;
 
 import dev.ultima.failopen.FailOpenGuard;
-import java.util.Arrays;
 import java.util.function.IntConsumer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
@@ -126,28 +125,49 @@ public final class SlotMaskQueries {
         int leftSize = left.getContainerSize();
         NonEmptySlotMask leftMask = SlotMaskTracker.of(left);
         NonEmptySlotMask rightMask = SlotMaskTracker.of(right);
-        int[] filtered = new int[slots.length];
         int n = 0;
         for (int slot : slots) {
             boolean occupied = slot < leftSize
                     ? leftMask.hintedOccupied(slot)
                     : rightMask.hintedOccupied(slot - leftSize);
             if (occupied) {
-                filtered[n++] = slot;
+                n++;
             }
         }
-        return n == slots.length ? slots : Arrays.copyOf(filtered, n);
+        if (n == slots.length) {
+            return slots;
+        }
+        int[] filtered = new int[n];
+        int cursor = 0;
+        for (int slot : slots) {
+            boolean occupied = slot < leftSize
+                    ? leftMask.hintedOccupied(slot)
+                    : rightMask.hintedOccupied(slot - leftSize);
+            if (occupied) {
+                filtered[cursor++] = slot;
+            }
+        }
+        return filtered;
     }
 
     private static int[] filterByHint(final NonEmptySlotMask mask, final int[] slots) {
-        int[] filtered = new int[slots.length];
         int n = 0;
         for (int slot : slots) {
             if (mask.hintedOccupied(slot)) {
-                filtered[n++] = slot;
+                n++;
             }
         }
-        return n == slots.length ? slots : Arrays.copyOf(filtered, n);
+        if (n == slots.length) {
+            return slots;
+        }
+        int[] filtered = new int[n];
+        int cursor = 0;
+        for (int slot : slots) {
+            if (mask.hintedOccupied(slot)) {
+                filtered[cursor++] = slot;
+            }
+        }
+        return filtered;
     }
 
     private static boolean forEachOccupiedCompound(final CompoundContainer compound, final IntConsumer visitor) {

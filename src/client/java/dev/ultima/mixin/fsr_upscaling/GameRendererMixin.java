@@ -1,5 +1,7 @@
 package dev.ultima.mixin.fsr_upscaling;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import dev.ultima.client.fsr.FsrUpscaling;
 import dev.ultima.config.UltimaConfig;
@@ -19,7 +21,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -48,26 +49,26 @@ public abstract class GameRendererMixin {
     @Invoker("tryTakeScreenshotIfNeeded")
     abstract void ultima$tryTakeScreenshotIfNeeded();
 
-    @Redirect(
+    @WrapOperation(
             method = "render",
             at = @At(
                     value = "FIELD",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;mainRenderTarget:Lcom/mojang/blaze3d/pipeline/RenderTarget;",
                     opcode = Opcodes.GETFIELD),
             require = 1)
-    private RenderTarget ultimaFsrRedirectMainTargetInRender(final GameRenderer self) {
-        return FsrUpscaling.get().resolveWorldTarget(this.mainRenderTarget);
+    private RenderTarget ultimaFsrRedirectMainTargetInRender(final GameRenderer self, final Operation<RenderTarget> original) {
+        return FsrUpscaling.get().resolveWorldTarget(original.call(self));
     }
 
-    @Redirect(
+    @WrapOperation(
             method = "renderLevel",
             at = @At(
                     value = "FIELD",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;mainRenderTarget:Lcom/mojang/blaze3d/pipeline/RenderTarget;",
                     opcode = Opcodes.GETFIELD),
             require = 1)
-    private RenderTarget ultimaFsrRedirectMainTargetInRenderLevel(final GameRenderer self) {
-        return FsrUpscaling.get().resolveWorldTarget(this.mainRenderTarget);
+    private RenderTarget ultimaFsrRedirectMainTargetInRenderLevel(final GameRenderer self, final Operation<RenderTarget> original) {
+        return FsrUpscaling.get().resolveWorldTarget(original.call(self));
     }
 
     @Inject(method = "mainRenderTarget", at = @At("HEAD"), cancellable = true)
@@ -100,17 +101,17 @@ public abstract class GameRendererMixin {
         }
     }
 
-    @Redirect(
+    @WrapOperation(
             method = "render",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;tryTakeScreenshotIfNeeded()V"))
-    private void ultimaFsrDeferWorldIconScreenshot(final GameRenderer self) {
+    private void ultimaFsrDeferWorldIconScreenshot(final GameRenderer self, final Operation<Void> original) {
         if (FsrUpscaling.get().shouldDeferWorldIconScreenshot()) {
             FsrUpscaling.get().markWorldIconScreenshotPending();
             return;
         }
-        this.ultima$tryTakeScreenshotIfNeeded();
+        original.call(self);
     }
 
     @Inject(

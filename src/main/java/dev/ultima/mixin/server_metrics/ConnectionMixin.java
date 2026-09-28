@@ -27,6 +27,10 @@ public abstract class ConnectionMixin {
         if (this.receiving != PacketFlow.SERVERBOUND || this.channel == null || !this.channel.isOpen()) {
             return;
         }
+        io.netty.channel.EventLoop loop = this.channel.eventLoop();
+        if (loop == null || !loop.inEventLoop()) {
+            return;
+        }
         try {
             ChannelOutboundBuffer outbound = this.channel.unsafe().outboundBuffer();
             if (outbound != null) {

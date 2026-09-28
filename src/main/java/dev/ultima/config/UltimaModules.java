@@ -93,12 +93,17 @@ public final class UltimaModules {
                     false),
             new Module("cursor_step", true,
                     "Step the block iteration cursor by carrying an increment instead of dividing a running "
-                            + "index by the volume's width and height at every position."),
-            new Module("server_metrics", true,
-                    "Cheap always-on server subsystem timers and counters, plus opt-in /ultima profile tracing. "
-                            + "Does not change gameplay. Used to decide what to optimize next, not an optimization. "
-                            + "Expected cost: two nanoTime calls and one atomic add per instrumented phase, no "
-                            + "allocations on the always-on path."),
+                            + "index by the volume's width and height at every position. Automatically disabled "
+                            + "when Lithium or a Lithium fork is loaded: their default collision mixins replace "
+                            + "the entity-movement, noCollision, supporting-block, and free-position iterators "
+                            + "with a chunk-aware sweeper that does not call Cursor3D.",
+                    List.of(),
+                    LITHIUM_FAMILY,
+                    false),
+            new Module("server_metrics", false,
+                    "Opt-in server subsystem timers and counters, plus /ultima profile tracing. "
+                            + "Instrumentation, not an optimization. Mixins are skipped when this module is off. "
+                            + "Enable it only while measuring."),
             new Module("blockentity_sleeping", false,
                     "Event-driven HopperBlockEntity sleeping: skip tryMoveItems when every vanilla mutation "
                             + "has a synchronous wake channel. Proof-of-correctness prototype, default off. "
@@ -110,9 +115,13 @@ public final class UltimaModules {
             new Module("recipe_match_cache", false,
                     "Opt-in first-match cache for crafting, furnace/blast/smoker, and brewing lookups. "
                             + "Stores the RecipeHolder (or brewing mix) vanilla's ordered scan would return first "
-                            + "for an identical input. Full invalidation on recipe reload. Special/impure recipes "
-                            + "fall back to vanilla. Lithium is not auto-disabled: it has no recipe-lookup cache "
-                            + "(only furnace/brewing block-entity sleeping). Default off."),
+                            + "for an identical input, and only for an exact allowlisted class whose instance fields "
+                            + "still match pinned 26.2 and that has no mixin-merged method. A hit is stored only "
+                            + "for holders before the first unsafe recipe. A miss is stored only when the whole "
+                            + "type is exact-pure. Lookups are dropped again at RecipeManager.finalizeRecipeLoading, "
+                            + "which vanilla calls after static tag publication. Unknown recipes bypass. "
+                            + "Lithium is not auto-disabled: it has no recipe-lookup cache "
+                            + "(only furnace/brewing block-entity sleeping). Default off. Not a measured speedup."),
             new Module("tag_bitsets", false,
                     "After tag bind/reload, answer Holder.is(TagKey) with a compact raw-id bitset. Unknown "
                             + "tags and out-of-range ids fall back to vanilla contains(). Default off. "
@@ -151,9 +160,11 @@ public final class UltimaModules {
             Module.client("client_benchmark", false,
                     "Record reproducible client frame-time distributions when explicitly requested.",
                     List.of()),
-            Module.client("terrain_metrics", true,
+            Module.client("terrain_metrics", false,
                     "Record independent terrain prepare/submit CPU, draw counts, and rebuild/upload counters. "
-                            + "Does not change rendering. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                            + "Does not change rendering. Default off: only the client benchmark reads these "
+                            + "counters, and the benchmark harness enables them on both A/B sides. "
+                            + "Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("retained_terrain", false,
                     "Experimental retained opaque terrain: section metadata table, persistent command slots, "
@@ -186,10 +197,11 @@ public final class UltimaModules {
                     "Experimental RGSS endpoint specialization. Reject unless GPU frame time improves by at least "
                             + "3% in an RGSS-limited workload. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
-            Module.client("temporal", true,
+            Module.client("temporal", false,
                     "Backend-neutral temporal frame contract with Native passthrough. Captures current/previous "
                             + "view-projection, depth/color views, and history-reset events. Does not change pixels. "
-                            + "DLSS/FSR backends are not implemented. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
+                            + "DLSS/FSR backends are not implemented, so it stays default off until a backend "
+                            + "consumes the history. Automatically disabled when Sodium, Iris, or Canvas is loaded.",
                     RENDERER_FAMILY),
             Module.client("fsr_upscaling", false,
                     "Optional FSR1 spatial upscaling (EASU + RCAS). Renders the world at an internal resolution "
@@ -198,6 +210,20 @@ public final class UltimaModules {
                             + "Iris (with or without Sodium) is disabled with a specific capability reason: no "
                             + "official post-final hook and no external control of Iris internal resolution.",
                     FSR_UNCONDITIONAL_INCOMPATIBLE),
+            Module.client("iris_shader_frontend_artifact_cache", false,
+                    "Persistent L2 cache for deterministic Iris CPU shader-transform artifacts. Keeps Iris' normal "
+                            + "driver compile/link path and fails closed on an unknown Iris build. Experimental and "
+                            + "disabled by default until warm-cache A/B validation is complete.",
+                    List.of()),
+            Module.client("cross_pipeline_admission_broker", false,
+                    "Observer for frame, Sodium queue, upload, server, and GC pressure. Does not defer or cancel "
+                            + "Sodium section tasks: 0.9.2 has no safe partial-budget API. Experimental, default off, "
+                            + "and pending runtime validation.",
+                    List.of()),
+            Module.client("render_warmup_system", false,
+                    "Profiler-only first-use instrumentation. No warmup adapter is active. Iris, GeckoLib, and "
+                            + "ModernFix are not warmed. Experimental, default off, and pending runtime validation.",
+                    List.of()),
             Module.client("settings_ui", true,
                     "Title-screen Ultima settings button when Mod Menu is not installed. Client UI only; "
                             + "does not change networking or world simulation. Disable to hide the button; "
@@ -218,6 +244,19 @@ public final class UltimaModules {
             }
         }
         return null;
+    }
+
+    /**
+     * @return position of the module in {@link #all()}, or {@code -1} for an unknown key. Hot paths
+     *         resolve this once into a constant for {@link UltimaConfig#isRuntimeEnabled(int)}.
+     */
+    public static int indexOf(final String key) {
+        for (int i = 0; i < ALL.size(); i++) {
+            if (ALL.get(i).key().equals(key)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public static boolean isInstrumentation(final String key) {

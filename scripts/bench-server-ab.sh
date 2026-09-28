@@ -33,6 +33,7 @@ for (( pair = 1; pair <= PAIRS; pair++ )); do
 done
 
 echo "===== ${PREFIX} ${PAIRS} pairs ====="
+python3 scripts/compare-server-bench-state.py ${PREFIX}
 PREFIX="$PREFIX" python3 - <<'PY'
 import glob, os, re, statistics
 prefix = os.environ.get("PREFIX", "server")
@@ -70,7 +71,26 @@ for pre, n in pairs:
     offs.append(off)
     ons.append(on)
     deltas.append(delta)
-    print(f"{pre}{n:d}  {off:6.2f}  {on:6.2f}  {delta:+6.2f}%  cows off={kills.get((pre,n,'off'))} on={kills.get((pre,n,'on'))}")
+    off_killed = kills.get((pre, n, "off"))
+    on_killed = kills.get((pre, n, "on"))
+    if off_killed != on_killed:
+        raise SystemExit(f"pair {n} killed entity count differs: off={off_killed} on={on_killed}")
+    print(f"{pre}{n:d}  {off:6.2f}  {on:6.2f}  {delta:+6.2f}%  cows off={off_killed} on={on_killed}")
+
+def percentile(values, fraction):
+    ordered = sorted(values)
+    index = (len(ordered) - 1) * fraction
+    lo = int(index)
+    hi = min(lo + 1, len(ordered) - 1)
+    weight = index - lo
+    return ordered[lo] * (1.0 - weight) + ordered[hi] * weight
+
 if deltas:
-    print(f"mean off {statistics.mean(offs):.3f} ms  on {statistics.mean(ons):.3f} ms  paired {statistics.mean(deltas):+.2f}%")
+    spread = statistics.pstdev(deltas) if len(deltas) > 1 else 0.0
+    print(
+        f"n={len(deltas)} mean off {statistics.mean(offs):.3f} ms  on {statistics.mean(ons):.3f} ms  "
+        f"paired {statistics.mean(deltas):+.2f}%  median {percentile(deltas, 0.50):+.2f}%  "
+        f"p95 {percentile(deltas, 0.95):+.2f}%  p99 {percentile(deltas, 0.99):+.2f}%  sd {spread:.2f}"
+    )
+    print("These are dedicated-server tick samples, not an FPS claim.")
 PY

@@ -39,6 +39,7 @@ public final class UltimaConfig {
     private FsrSettings fsrSettings;
     private final Map<String, Boolean> launchRequested;
     private final Map<String, Boolean> launchEnabled;
+    private volatile boolean[] runtimeEnabled;
 
     private UltimaConfig(final Map<String, Boolean> modules) {
         this(modules, FsrSettings.defaults());
@@ -55,6 +56,7 @@ public final class UltimaConfig {
         }
         this.launchRequested = Map.copyOf(requested);
         this.launchEnabled = Map.copyOf(enabled);
+        this.runtimeEnabled = this.resolveRuntimeFlags();
     }
 
     public FsrSettings fsrSettings() {
@@ -103,6 +105,7 @@ public final class UltimaConfig {
                 || hasLoadedIncompatibility(definition)
                 || FsrCompatibility.blocks(module)
                 || !Boolean.TRUE.equals(this.modules.get(module))
+                || !KillerModuleCompatibility.isSupported(module)
                 || !resolving.add(module)) {
             return false;
         }
@@ -117,6 +120,31 @@ public final class UltimaConfig {
         } finally {
             resolving.remove(module);
         }
+    }
+
+    /**
+     * Hot-path gate for code that runs behind a module's Mixins. True only when the module was
+     * enabled at launch (its Mixins are applied) and the live config still resolves it as enabled,
+     * so turning a module off in the settings UI still stops its runtime work immediately.
+     *
+     * <p>O(1) and allocation-free: the flags are resolved in the constructor and again on every
+     * {@link #setRequested}, never per probe.
+     *
+     * @param moduleIndex {@link UltimaModules#indexOf} of the module
+     */
+    public boolean isRuntimeEnabled(final int moduleIndex) {
+        boolean[] flags = this.runtimeEnabled;
+        return moduleIndex >= 0 && moduleIndex < flags.length && flags[moduleIndex];
+    }
+
+    private boolean[] resolveRuntimeFlags() {
+        List<UltimaModules.Module> all = UltimaModules.all();
+        boolean[] flags = new boolean[all.size()];
+        for (int i = 0; i < flags.length; i++) {
+            String key = all.get(i).key();
+            flags[i] = this.wasEnabledAtLaunch(key) && this.isEnabled(key);
+        }
+        return flags;
     }
 
     public int enabledModuleCount() {
@@ -159,6 +187,7 @@ public final class UltimaConfig {
             return false;
         }
         this.modules.put(module, requested);
+        this.runtimeEnabled = this.resolveRuntimeFlags();
         return true;
     }
 
@@ -268,6 +297,10 @@ public final class UltimaConfig {
             reason = "incompatible_mod";
             detail = "Disabled because incompatible mod(s) are loaded: "
                     + String.join(", ", loadedIncompatible) + ".";
+        } else if (requested && !KillerModuleCompatibility.isSupported(module)) {
+            KillerModuleCompatibility.AdapterState adapter = KillerModuleCompatibility.state(module);
+            reason = "adapter_" + adapter.state();
+            detail = adapter.detail();
         } else if (requested && FsrCompatibility.blocks(module)) {
             FsrCompatibility.DisableReason fsr = FsrCompatibility.current();
             reason = fsr.configReason();
@@ -495,7 +528,21 @@ public final class UltimaConfig {
     }
 
     private static boolean hasLoadedIncompatibility(final UltimaModules.Module module) {
-        return !loadedIncompatibleMods(module).isEmpty();
+        for (String modId : module.incompatibleMods()) {
+            if (LoadedModCache.isLoaded(modId)) {
+                return true;
+            }
+        }
+        return targetsRendererFamily(module) && RendererFamilyEvidence.conflicts();
+    }
+
+    private static boolean targetsRendererFamily(final UltimaModules.Module module) {
+        for (String modId : module.incompatibleMods()) {
+            if (RendererFamilyEvidence.KNOWN_IDS.contains(modId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<String> loadedIncompatibleMods(final UltimaModules.Module module) {

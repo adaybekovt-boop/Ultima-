@@ -7,6 +7,7 @@ import dev.ultima.recipe.RecipeFirstMatchCache;
 import java.util.Optional;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeInput;
 import net.minecraft.world.item.crafting.RecipeManager;
@@ -40,6 +41,15 @@ public abstract class RecipeManagerMixin {
     private void ultimaInvalidateRecipeCache(
             final RecipeMap recipes, final ResourceManager manager, final ProfilerFiller profiler, final CallbackInfo ci) {
         RecipeCacheDoors.onRecipesReplaced(this.ultimaRecipeCache, this.recipes);
+    }
+
+    /**
+     * Vanilla calls this after {@code ReloadableServerResources.updateComponentsAndStaticRegistryTags}.
+     * Listeners between {@code apply} and that bind can observe unbound tags; those hits must not survive.
+     */
+    @Inject(method = "finalizeRecipeLoading", at = @At("HEAD"))
+    private void ultimaDropLookupsAfterTagBind(final FeatureFlagSet enabledFeatures, final CallbackInfo ci) {
+        this.ultimaRecipeCache.dropLookups();
     }
 
     @WrapMethod(

@@ -28,14 +28,11 @@ public final class SourceReadingInventory {
     static final List<Entry> ENTRIES = List.of(
             new Entry(
                     "dev.ultima.failopen.Wave2FailOpenTest",
-                    "recipe/tag/state/slot-mask/entity-query Mixin + helper sources",
+                    "compiled recipe/tag/state/slot-mask/entity-query classes via ASM",
                     Kind.WIRING,
-                    "DANGEROUS in round 3: grepped Mixins while a test copy (mixinGetRecipeFor) claimed "
-                            + "production fail-open coverage. Round 4 recipe/brewing behavior is "
-                            + "RecipeCacheDoors (the Mixin body). Slot-mask occupancy behavior is "
-                            + "SlotMaskQueries.filterOccupiedPreservingOrder. Remaining greps only require "
-                            + "Mixins to call those helpers, or keep a local catch door on tag/state/"
-                            + "entity-query Mixins that this round did not rewrite. Not a live Mixin apply."),
+                    "Bytecode contracts require Mixins to call RecipeCacheDoors, SlotMaskQueries, or "
+                            + "FailOpenGuard. Behavioral proof is the door tests in the same class. "
+                            + "Not a live Mixin apply."),
             new Entry(
                     "dev.ultima.review.SlotMaskEntityQueryTest",
                     "VanillaInventoryMutationSources strings + Mixin method names via reflection",
@@ -54,23 +51,16 @@ public final class SourceReadingInventory {
                             + "Mesh equivalence cases are behavioral. Hardware FPS is not measured here."),
             new Entry(
                     "dev.ultima.review.ServerTelemetryChecks",
-                    "server_metrics Mixin require=0 on Lithium-fragile INVOKE targets",
+                    "generated profile JSON plus compiled server_metrics mixin annotations",
                     Kind.WIRING,
-                    "require=0 is a Mixin apply contract; Lithium is not loaded in JavaExec. Cannot prove "
-                            + "the inject still matches at runtime without a Lithium game test. Counter/"
-                            + "percentile/gating cases are separate runtime checks."),
+                    "require=0 is read from compiled @Inject annotations. Lithium is not loaded in "
+                            + "JavaExec. Counter/percentile/command-tree cases call production helpers."),
             new Entry(
                     "dev.ultima.review.VanillaClientHostingChecks",
-                    "fabric.mod.json, mixin json, Java sources for forbidden network tokens",
+                    "fabric.mod.json, mixin json, compiled classes for forbidden network tokens",
                     Kind.WIRING,
-                    "Hosting contract is configuration: no custom packets, side-split Mixins. Scanning "
-                            + "sources for Fabric networking APIs is the check, not a substitute for a LAN join."),
-            new Entry(
-                    "dev.ultima.sleeping.HopperSleepEquivalenceTest",
-                    "Ultima.java SERVER_STOPPED / UNLOAD registration",
-                    Kind.WIRING,
-                    "clearAll/clearLevel behavior is tested. Fabric event registration cannot be fired "
-                            + "without a server. Source read only confirms onInitialize still subscribes."),
+                    "Hosting contract is configuration plus compiled references. Scanning class files "
+                            + "for Fabric networking APIs is the check, not a substitute for a LAN join."),
             new Entry(
                     "dev.ultima.review.RetainedFoundationChecks",
                     "GLSL shader sources (gl_DrawID ban, gl_BaseInstanceARB, Mojang import)",

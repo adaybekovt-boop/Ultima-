@@ -10,8 +10,9 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A hit returns the exact value stored from a previous vanilla scan for that key. Overflow
  * clears the table rather than evicting an arbitrary entry that could be mistaken for a live
- * result. {@link #invalidate()} bumps the generation token so stale last-hit state cannot be
- * reused across {@code /reload}.
+ * result. A hit does not reorder entries, so the lookup stays a hash get. {@link #invalidate()}
+ * bumps the generation token so stale last-hit state cannot be reused across {@code /reload}
+ * or tag publication.
  *
  * @param <K> lookup key (must include reload generation or live in a table that is cleared on reload)
  * @param <V> first vanilla result for that key

@@ -7,6 +7,7 @@ package dev.ultima.config.settings;
 public enum SettingsCategory {
     RENDERING("Rendering"),
     SIMULATION("Simulation"),
+    KILLER_MODULES("Experimental Killer Modules"),
     ADVANCED("Advanced");
 
     private final String displayName;
