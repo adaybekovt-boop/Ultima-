@@ -23,7 +23,7 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         "192 110 -160 135 25",
         "-240 100 288 270 15"
     };
-    private static final int TELEPORT_SETTLE_TICKS = 20;
+    private static final int TELEPORT_SETTLE_TICKS = 240;
     private static final int FRAME_SETTLE_TICKS = 5;
 
     @Override
@@ -49,6 +49,8 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
 
         try (TestSingleplayerContext world = context.worldBuilder().create()) {
             TestServerContext server = world.getServer();
+            // A spectator neither falls nor takes damage, so every point is a still camera.
+            server.runCommand("gamemode spectator");
             server.runCommand("gamerule advance_time false");
             server.runCommand("time set noon");
             server.runCommand("weather clear");
