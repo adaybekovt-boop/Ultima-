@@ -18,12 +18,33 @@ import net.minecraft.client.gui.screens.TitleScreen;
  * module sets are compared by scripts/compare-screenshots.py.
  */
 public final class UltimaClientGameTest implements FabricClientGameTest {
-    private static final String[] CAMERA_POINTS = {
-        "0 90 0 0 20",
-        "192 110 -160 135 25",
-        "-240 100 288 270 15"
+    /** Floor block, then the block on top of it, one strip of 16 blocks per row of the arrangement. */
+    private static final String[][] STRIPS = {
+        {"minecraft:stone", null},
+        {"minecraft:oak_planks", "minecraft:oak_fence"},
+        {"minecraft:mossy_cobblestone", "minecraft:cobblestone_wall"},
+        {"minecraft:sand", "minecraft:cactus"},
+        {"minecraft:oak_log[axis=x]", null},
+        {"minecraft:glass", null},
+        {"minecraft:oak_leaves[persistent=true]", null},
+        {"minecraft:oak_stairs[facing=east,half=bottom]", null},
+        {"minecraft:oak_slab[type=top]", null},
+        {"minecraft:glowstone", null},
+        {"minecraft:packed_ice", null},
+        {"minecraft:red_wool", "minecraft:white_carpet"}
     };
-    private static final int SETTLE_TICKS = 240;
+    /**
+     * The flat world has no terrain, so the test builds a small arrangement that crosses chunk and section borders.
+     * It has no water, fire or torches: their animations and particles are random or depend on the tick count, and
+     * would make two identical runs differ.
+     */
+    private static final String[] CAMERA_POINTS = {
+        "0 -50 -18 0 30",
+        "22 -50 0 90 30",
+        "-15 -46 15 225 30"
+    };
+    private static final int TELEPORT_SETTLE_TICKS = 240;
+    private static final int FRAME_SETTLE_TICKS = 5;
 
     @Override
     public void runTest(final ClientGameTestContext context) {
@@ -38,7 +59,8 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         context.waitTicks(5);
         shoot(context, shots, "02_settings_rendering");
         for (String category : new String[] {"simulation", "killer_modules", "advanced"}) {
-            context.clickScreenButton("ultima.category." + category);
+            // Category buttons are found by translation key; a button that is not translatable is skipped.
+            context.tryClickScreenButton("ultima.category." + category);
             context.waitTicks(3);
             shoot(context, shots, "02_settings_" + category);
         }
@@ -47,14 +69,36 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
 
         try (TestSingleplayerContext world = context.worldBuilder().create()) {
             TestServerContext server = world.getServer();
+            // A spectator neither falls nor takes damage, so every point is a still camera.
+            server.runCommand("gamemode spectator");
             server.runCommand("gamerule advance_time false");
+            server.runCommand("gamerule random_tick_speed 0");
             server.runCommand("time set noon");
             server.runCommand("weather clear");
+            buildArrangement(server);
             int index = 0;
             for (String point : CAMERA_POINTS) {
                 server.runCommand("tp @p " + point);
-                context.waitTicks(SETTLE_TICKS);
+                context.waitTicks(TELEPORT_SETTLE_TICKS);
+                world.getConnection().waitForChunksRender();
+                context.waitTicks(FRAME_SETTLE_TICKS);
                 shoot(context, shots, "03_world_point" + (++index));
+            }
+        }
+    }
+
+    private static void buildArrangement(final TestServerContext server) {
+        int z = -6;
+        for (String[] strip : STRIPS) {
+            server.runCommand("fill -8 -60 " + z + " 7 -60 " + z + " " + strip[0]);
+            if (strip[1] != null) {
+                server.runCommand("fill -8 -59 " + z + " 7 -59 " + z + " " + strip[1]);
+            }
+            z++;
+        }
+        for (int x : new int[] {-8, 7}) {
+            for (int pillarZ : new int[] {-6, 5}) {
+                server.runCommand("fill " + x + " -60 " + pillarZ + " " + x + " -46 " + pillarZ + " minecraft:stone_bricks");
             }
         }
     }

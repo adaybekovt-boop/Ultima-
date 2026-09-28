@@ -98,6 +98,7 @@ def main(argv: list[str]) -> int:
         if run["missing_palette"]:
             print(f"note: {run_label} skipped names missing in this Minecraft version: {run['missing_palette']}")
 
+    (directory / "differential.status").write_text(("failed" if failures else "passed") + "\n")
     if failures:
         print("\nSCENARIO DIFFERENTIAL FAILED", file=sys.stderr)
         for failure in failures:

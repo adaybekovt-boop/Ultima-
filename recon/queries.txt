@@ -1,4 +1,0 @@
-# round 3e
-sh javap -p -constants -cp "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" net.fabricmc.fabric.impl.client.gametest.TestSystemProperties
-sh unzip -p "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" net/fabricmc/fabric/impl/client/gametest/FabricClientGameTestRunner.class | strings | grep -iE "gametest|entrypoint" | head -20
-sh unzip -p "$(find $HOME/.gradle -name 'fabric-client-gametest-api-v1*.jar' | head -1)" fabric.mod.json | head -40
