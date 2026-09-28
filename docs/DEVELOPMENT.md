@@ -23,7 +23,12 @@ bash scripts/bootstrap.sh     # genSources + build; exports vanilla sources to .
 ./gradlew test                # the canonical regression aggregate (CanonicalRegressionTest)
 bash scripts/check.sh         # build + regression + benchmark-script self-tests + A/B dry run
 bash scripts/mixin-smoke.sh   # headless runServer that force-loads every common Mixin target
+bash scripts/scenario-diff.sh # real server, modules off / off / on, digests must match
+bash scripts/client-test.sh baseline   # real client under xvfb or on a desktop, saves screenshots
 ```
+
+What each runtime check proves and how to add one: [`RUNTIME_TESTS.md`](RUNTIME_TESTS.md).
+Measuring speed is a separate job: [`BENCHMARKING.md`](BENCHMARKING.md).
 
 `./gradlew test` runs the merged regression checkpoint once. The specialised `JavaExec` tasks
 (`forensicRegressionTest`, `recipeMatchCacheTest`, ...) stay available locally and are not a
@@ -41,6 +46,11 @@ ignored by Git. Do not commit or redistribute them.
 - `src/client`: render, mesher, FSR and settings-screen code, plus the client Mixins.
 - `src/test`: the regression suites, the synthetic mesher kernel and its oracles, and the
   test-only fixtures. Nothing in here ships in the mod jar.
+- `src/scenario`: the world scenarios and benchmark workloads that run on a real dedicated
+  server as their own Loom mod (`ultima-scenarios`). Not in the jar, inert unless a run sets
+  `-Dultima.scenario.label`.
+- `src/clienttest`: the client game test that drives the real client (`ultima-clienttest`).
+  Not in the jar either.
 - Every Mixin lives in a package named after its module key
   (`dev.ultima.mixin.<module_key>`); `UltimaMixinPlugin` uses that to skip the Mixins of a
   disabled module.
@@ -55,13 +65,23 @@ has different keys or placeholders. To add a language, add `<code>.json` and lis
 
 ## Continuous integration
 
-`.github/workflows/ultima-ci-validation.yml` runs `scripts/check.sh` on Linux and Windows and
-the Mixin smoke on Linux for every pull request and every push to `main`.
-`.github/workflows/release.yml` builds and publishes a GitHub Release when a `v*` tag is pushed;
-the jar version comes from the tag.
+`.github/workflows/ultima-ci-validation.yml` runs for every pull request and every push to `main`:
+
+| Job | What runs |
+|---|---|
+| `check` (Linux, Windows) | `scripts/check.sh`; on Linux also the Mixin smoke |
+| `runtime` | the differential scenarios and the Lithium check on a real dedicated server |
+| `client` | the real client under xvfb and Mesa software rendering: every module off, off again as a control, shipped defaults, mesher modules on; screenshots must match |
+| `client compat` | the real client with Mod Menu, Lithium, Sodium and Sodium + Iris next to Ultima |
+
+`.github/workflows/release.yml` verifies and publishes a GitHub Release when a `v*` tag is
+pushed (build, tests, Mixin smoke, differential scenarios, Lithium check); the jar version
+comes from the tag.
 
 ## Related documents
 
+- [`RUNTIME_TESTS.md`](RUNTIME_TESTS.md): differential scenarios, client test, compatibility runs
+- [`BENCHMARKING.md`](BENCHMARKING.md): A/B method, statistics, how a module earns its default
 - [`FSR_UPSCALING.md`](FSR_UPSCALING.md): FSR1 module design and policy
 - [`MESHER_FAST_PATH.md`](MESHER_FAST_PATH.md): hybrid mesher and what its tests do and do not prove
 - [`SERVER_HOSTING.md`](SERVER_HOSTING.md): vanilla-guest handshake audit

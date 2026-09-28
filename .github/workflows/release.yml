@@ -53,6 +53,16 @@ jobs:
         timeout-minutes: 20
         run: bash scripts/mixin-smoke.sh
 
+      - name: Differential scenarios on a real server
+        shell: bash
+        timeout-minutes: 25
+        run: bash scripts/scenario-diff.sh
+
+      - name: Compatibility with Lithium
+        shell: bash
+        timeout-minutes: 15
+        run: bash scripts/compat-server.sh lithium
+
       - name: Verify the release jar
         shell: bash
         run: |
@@ -111,4 +121,5 @@ jobs:
             build/libs/*.jar
             build/reports/**
             build/test-results/**
+            build/scenarios/**
             run/logs/latest.log
