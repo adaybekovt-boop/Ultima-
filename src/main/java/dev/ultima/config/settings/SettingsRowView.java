@@ -25,6 +25,8 @@ public record SettingsRowView(
         String statusDetail,
         String playerFacingStatus,
         boolean pendingRestart) {
+    public static final String PENDING_LINE = "Pending: restart the game to apply this change.";
+
     public static SettingsRowView from(final ModuleSettingSpec spec, final UltimaConfig config) {
         UltimaConfig.ResolvedModule resolved = config.resolve(spec.key());
         boolean locked = ModuleDisableMessages.isHardLock(resolved);
@@ -58,7 +60,7 @@ public record SettingsRowView(
             lines.add(this.playerFacingStatus);
         }
         if (this.pendingRestart) {
-            lines.add("Pending: restart the game to apply this change.");
+            lines.add(PENDING_LINE);
         }
         return String.join("\n", lines);
     }

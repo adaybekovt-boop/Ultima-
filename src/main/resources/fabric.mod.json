@@ -3,7 +3,16 @@
   "id": "ultima",
   "version": "${version}",
   "name": "Ultima",
-  "description": "Compatibility-first Minecraft performance mod. Install on a dedicated or integrated server so guests can join with a vanilla client; render modules stay client-only.",
+  "description": "Server-first Minecraft performance mod. Install on a dedicated or integrated server so guests can join with a vanilla client; render modules are optional and client-only. Modules that overlap Sodium, Iris or Lithium switch themselves off.",
+  "authors": [
+    "adaybekovt-boop"
+  ],
+  "contact": {
+    "homepage": "https://github.com/adaybekovt-boop/Ultima-",
+    "sources": "https://github.com/adaybekovt-boop/Ultima-",
+    "issues": "https://github.com/adaybekovt-boop/Ultima-/issues"
+  },
+  "icon": "assets/ultima/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["dev.ultima.Ultima"],

@@ -21,6 +21,12 @@ public record FsrPresetRowView(
         String displayName,
         String tooltip) {
     public static final String LABEL = "FSR quality";
+    /** Arguments: properties key, restart warning, default RCAS sharpness in stops. */
+    public static final String TOOLTIP_TEMPLATE =
+            "AMD FSR1 quality: Ultra Quality 1.3x, Quality 1.5x, Balanced 1.7x, "
+                    + "Performance 2.0x, Ultra Performance 3.0x. Writes %1$s in ultima.properties. "
+                    + "FSR Mixins still apply after a game restart. %2$s RCAS sharpness stays at the "
+                    + "default %3$s stops; there is no sharpness slider in this menu yet.";
 
     public static FsrPresetRowView from(final UltimaConfig config, final SettingsCategory category) {
         SettingsRowView module = SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), config);
@@ -40,13 +46,10 @@ public record FsrPresetRowView(
     }
 
     private static String tooltipText() {
-        return "AMD FSR1 quality: Ultra Quality 1.3x, Quality 1.5x, Balanced 1.7x, "
-                + "Performance 2.0x, Ultra Performance 3.0x. Writes "
-                + FsrSettings.PRESET_KEY
-                + " in ultima.properties. FSR Mixins still apply after a game restart. "
-                + ApplyPolicy.RESTART_GAME.warning()
-                + " RCAS sharpness stays at the default "
-                + FsrSettings.DEFAULT_SHARPNESS_STOPS
-                + " stops; there is no sharpness slider in this menu yet.";
+        return String.format(
+                TOOLTIP_TEMPLATE,
+                FsrSettings.PRESET_KEY,
+                ApplyPolicy.RESTART_GAME.warning(),
+                FsrSettings.DEFAULT_SHARPNESS_STOPS);
     }
 }

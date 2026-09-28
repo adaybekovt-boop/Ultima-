@@ -116,7 +116,7 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
                     .withStyle(ChatFormatting.GOLD));
         }
 
-        this.settingsList.addHeader(Component.literal(this.controller.category().displayName()));
+        this.settingsList.addHeader(SettingsText.category(this.controller.category()));
         for (SettingsRowView row : this.controller.rows()) {
             this.settingsList.addBig(this.moduleButton(row));
             if ("fsr_upscaling".equals(row.key())) {
@@ -134,7 +134,7 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
 
     private Button categoryButton(final SettingsCategory category) {
         boolean selected = this.controller.category() == category;
-        Button button = Button.builder(Component.literal(category.displayName()), unused -> {
+        Button button = Button.builder(SettingsText.category(category), unused -> {
                     this.controller.setCategory(category);
                     this.populateList(false);
                 })
@@ -145,19 +145,18 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
     }
 
     private CycleButton<Boolean> moduleButton(final SettingsRowView row) {
-        String tooltipText = row.fullTooltip();
-        if (KillerModuleCompatibility.isKillerModule(row.key())) {
-            tooltipText += "\n" + KillerModuleDiagnostics.uiStatus(row, this.controller.config());
-        }
-        final String tooltip = tooltipText;
+        String diagnostics = KillerModuleCompatibility.isKillerModule(row.key())
+                ? KillerModuleDiagnostics.uiStatus(row, this.controller.config())
+                : null;
+        final Component tooltip = SettingsText.moduleTooltip(row, this.controller.config(), diagnostics);
         CycleButton<Boolean> button = CycleButton.onOffBuilder(row.displayOn())
-                .withTooltip(value -> Tooltip.create(Component.literal(tooltip)))
+                .withTooltip(value -> Tooltip.create(tooltip))
                 .create(
                         0,
                         0,
                         310,
                         20,
-                        Component.literal(row.displayName()),
+                        SettingsText.moduleName(row.key()),
                         (cycle, value) -> {
                             if (!this.controller.setRequested(row.key(), value)) {
                                 cycle.setValue(row.displayOn());
@@ -172,9 +171,9 @@ public final class UltimaConfigScreen extends OptionsSubScreen {
 
     private CycleButton<FsrQualityPreset> fsrPresetButton(final FsrPresetRowView row) {
         CycleButton<FsrQualityPreset> button = CycleButton
-                .builder((FsrQualityPreset preset) -> Component.literal(preset.displayName()), row.preset())
+                .builder(SettingsText::fsrPresetName, row.preset())
                 .withValues(FsrPresetRowView.values())
-                .withTooltip(value -> Tooltip.create(Component.literal(row.tooltip())))
+                .withTooltip(value -> Tooltip.create(SettingsText.fsrPresetTooltip()))
                 .create(
                         0,
                         0,

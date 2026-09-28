@@ -20,4 +20,9 @@ public enum ApplyPolicy {
     public String warning() {
         return this.warning;
     }
+
+    /** @return stable lower-case id used in translation keys, e.g. {@code restart_game} */
+    public String key() {
+        return this.name().toLowerCase(java.util.Locale.ROOT);
+    }
 }

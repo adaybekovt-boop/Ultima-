@@ -4,7 +4,7 @@ This is **diagnostics, not an optimization**. Ultima records where server tick t
 goes so later work on the chunk pipeline, per-player delivery, networking, entities,
 or block entities can be chosen from measurements instead of guesses.
 
-Vanilla guests can still join a host that has Ultima (see `SERVER_HOSTING.md` when
+Vanilla guests can still join a host that has Ultima (see [`SERVER_HOSTING.md`](SERVER_HOSTING.md) when
 present). These counters observe the server; they do not change gameplay, packets,
 saves, or tick order.
 
