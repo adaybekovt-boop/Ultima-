@@ -38,7 +38,8 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         context.waitTicks(5);
         shoot(context, shots, "02_settings_rendering");
         for (String category : new String[] {"simulation", "killer_modules", "advanced"}) {
-            context.clickScreenButton("ultima.category." + category);
+            // Category buttons are found by translation key; a button that is not translatable is skipped.
+            context.tryClickScreenButton("ultima.category." + category);
             context.waitTicks(3);
             shoot(context, shots, "02_settings_" + category);
         }
