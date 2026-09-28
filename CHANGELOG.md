@@ -15,6 +15,13 @@ client. Everything else is opt-in. **No FPS or TPS improvement is claimed for th
   the reason a module is off now come from language files.
 - Mod icon, author and contact links in the mod metadata.
 - A release workflow: pushing a `v*` tag builds the jar, checks it and publishes a GitHub Release.
+- Runtime tests against the real game, run in CI for every change: five world scenarios on a
+  dedicated server with the simulation modules off, off again and on must produce identical
+  results; the real client starts with the modules on and with Mod Menu, Lithium, Sodium and
+  Sodium + Iris installed and renders the same test scene as with every module off (details in
+  [`docs/RUNTIME_TESTS.md`](docs/RUNTIME_TESTS.md)).
+- Per-module A/B benchmark tooling with a stated statistical method
+  ([`docs/BENCHMARKING.md`](docs/BENCHMARKING.md)). It has not been run on real hardware yet.
 
 ### Changed
 
@@ -46,3 +53,6 @@ client. Everything else is opt-in. **No FPS or TPS improvement is claimed for th
 
 - The client render modules and FSR upscaling are opt-in and have not been benchmarked for this
   release. Treat them as experimental.
+- The client test renders in software (Mesa) at 854×480 and compares pixels within a tolerance.
+  It says nothing about real GPUs, Iris shader packs, Canvas, or LAN and dedicated-server play
+  with a vanilla guest; those are checked by hand.
