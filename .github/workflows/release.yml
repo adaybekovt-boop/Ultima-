@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ultima-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive version from the tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH[-prerelease]" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Gradle reads ORG_GRADLE_PROJECT_* as project properties, overriding gradle.properties.
+          echo "ORG_GRADLE_PROJECT_mod_version=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Canonical verification
+        shell: bash
+        run: bash scripts/check.sh
+
+      - name: Common Mixin apply smoke
+        shell: bash
+        timeout-minutes: 20
+        run: bash scripts/mixin-smoke.sh
+
+      - name: Differential scenarios on a real server
+        shell: bash
+        timeout-minutes: 25
+        run: bash scripts/scenario-diff.sh
+
+      - name: Compatibility with Lithium
+        shell: bash
+        timeout-minutes: 15
+        run: bash scripts/compat-server.sh lithium
+
+      - name: Verify the release jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="build/libs/ultima-${VERSION}.jar"
+          test -f "$JAR" || { echo "missing $JAR"; ls -la build/libs; exit 1; }
+          unzip -p "$JAR" fabric.mod.json | python3 -c '
+          import json, os, sys
+          mod = json.load(sys.stdin)
+          assert mod["version"] == os.environ["VERSION"], (mod["version"], os.environ["VERSION"])
+          assert mod["id"] == "ultima"
+          print("fabric.mod.json version", mod["version"])
+          '
+          unzip -l "$JAR" | grep -q 'assets/ultima/icon.png'
+          unzip -l "$JAR" | grep -q 'assets/ultima/lang/ru_ru.json'
+          echo "JAR=$JAR" >> "$GITHUB_ENV"
+
+      - name: Extract release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -v v="$VERSION" '
+            $0 ~ "^## " v "( |$)" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md | sed '/^---[[:space:]]*$/d' > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md has no '## $VERSION' section" >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FLAGS=()
+          if [[ "$VERSION" == *-* ]]; then
+            FLAGS+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "$JAR" \
+            --title "Ultima $VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            "${FLAGS[@]}"
+
+      - name: Upload build reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultima-release-${{ github.ref_name }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            build/libs/*.jar
+            build/reports/**
+            build/test-results/**
+            build/scenarios/**
+            run/logs/latest.log

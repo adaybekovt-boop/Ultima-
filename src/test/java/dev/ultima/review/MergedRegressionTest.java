@@ -28,6 +28,7 @@ public final class MergedRegressionTest {
         VanillaClientHostingChecks.run();
         FsrUpscalingChecks.run();
         SettingsScreenLogicTest.run();
+        LocalizationChecks.run();
         ServerTelemetryChecks.run();
         HopperSleepEquivalenceTest.run();
         RecipeMatchCacheTest.main(new String[0]);

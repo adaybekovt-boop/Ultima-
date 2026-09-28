@@ -25,8 +25,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Higher than {@code temporal}'s GameRenderer mixin (900) so {@code resize} observes
- * native size after temporal has recorded {@code FRAMEBUFFER_RESIZE}.
+ * Priority 1100 runs after default-priority GameRenderer mixins from other mods; the value is
+ * pinned by {@code MixinBytecodeChecks} so the ordering cannot drift silently.
  */
 @Mixin(value = GameRenderer.class, priority = 1100)
 public abstract class GameRendererMixin {

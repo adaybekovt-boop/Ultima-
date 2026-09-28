@@ -567,8 +567,6 @@ def test_module_classification() -> None:
         raise SystemExit("client_benchmark must remain opt-in instrumentation")
     if defaults.get("terrain_metrics") is not False:
         raise SystemExit("terrain_metrics must stay default-off instrumentation")
-    if defaults.get("temporal") is not False:
-        raise SystemExit("temporal must stay default-off until a backend consumes the history")
     if defaults.get("server_metrics") is not False:
         raise SystemExit("server_metrics must stay default-off instrumentation")
     if killer_scenario_gate({

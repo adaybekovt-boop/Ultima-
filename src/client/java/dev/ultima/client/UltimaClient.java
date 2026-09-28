@@ -1,7 +1,6 @@
 package dev.ultima.client;
 
 import dev.ultima.client.command.UltimaClientCommands;
-import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.fsr.FsrIrisCapabilities;
 import dev.ultima.fsr.FsrLatencyContract;
@@ -18,9 +17,6 @@ public final class UltimaClient implements ClientModInitializer {
                 "Ultima client initialized with {} of {} modules enabled in this environment.",
                 UltimaConfig.get().enabledModuleCount(),
                 UltimaConfig.get().knownModuleCount());
-        if (UltimaConfig.get().isEnabled("temporal")) {
-            TemporalPipeline.get().initialize();
-        }
         if (UltimaConfig.get().isRequested("fsr_upscaling")) {
             var fsr = UltimaConfig.get().resolve("fsr_upscaling");
             var settings = UltimaConfig.get().fsrSettings().resolved();

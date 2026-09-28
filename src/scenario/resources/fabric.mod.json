@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "ultima-scenarios",
+  "version": "1.0.0",
+  "name": "Ultima scenarios",
+  "description": "Development-only runtime harness. Runs deterministic world scenarios on a real server and writes state digests. Inert unless -Dultima.scenario.label is set; never shipped in the Ultima jar.",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["dev.ultima.scenario.ScenarioMod"]
+  },
+  "depends": {
+    "ultima": "*",
+    "fabric-api": "*",
+    "minecraft": "*"
+  }
+}

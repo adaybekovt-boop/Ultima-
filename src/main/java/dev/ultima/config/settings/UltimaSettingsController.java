@@ -11,8 +11,8 @@ import dev.ultima.fsr.FsrQualityPreset;
  * Screen/command logic over {@link UltimaConfig}. Toggles write the existing
  * {@code ultima.properties} map; they do not invent a second store.
  *
- * <p>FSR quality is a sub-control of {@code fsr_upscaling}, not a TemporalMode
- * entry. Disable reasons still come from {@link UltimaConfig#resolve(String)}.
+ * <p>FSR quality is a sub-control of {@code fsr_upscaling}. Disable reasons still come from
+ * {@link UltimaConfig#resolve(String)}.
  */
 public final class UltimaSettingsController {
     private final UltimaConfig config;

@@ -19,4 +19,9 @@ public enum SettingsCategory {
     public String displayName() {
         return this.displayName;
     }
+
+    /** @return stable lower-case id used in translation keys, e.g. {@code killer_modules} */
+    public String key() {
+        return this.name().toLowerCase(java.util.Locale.ROOT);
+    }
 }

@@ -13,7 +13,6 @@ import dev.ultima.config.settings.UltimaSettingsController;
 import dev.ultima.fsr.FsrCompatibility;
 import dev.ultima.fsr.FsrQualityPreset;
 import dev.ultima.fsr.FsrSettings;
-import dev.ultima.temporal.TemporalMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +29,7 @@ public final class SettingsScreenLogicTest {
     public static void run() {
         testCatalogCoversEveryModule();
         testCategoriesAndApplyPolicies();
-        testFsrIsIndependentOfTemporalMode();
+        testFsrRowUsesResolveReason();
         testDisableReasons();
         testFsrRendererDisableReason();
         testLockedConflictRow();
@@ -49,7 +48,7 @@ public final class SettingsScreenLogicTest {
         assertTrue(UltimaSettingsCatalog.unknownCatalogKeys().isEmpty(),
                 "catalog must not invent modules: " + UltimaSettingsCatalog.unknownCatalogKeys());
         assertEquals((long) UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
-        assertEquals(27L, UltimaModules.all().size(), "merged module count");
+        assertEquals(26L, UltimaModules.all().size(), "merged module count");
 
         assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
                 "fsr_upscaling is Rendering");
@@ -88,7 +87,7 @@ public final class SettingsScreenLogicTest {
         assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.RENDERING).size(), "rendering count");
         assertEquals(12L, UltimaSettingsCatalog.inCategory(SettingsCategory.SIMULATION).size(), "simulation count");
         assertEquals(3L, UltimaSettingsCatalog.inCategory(SettingsCategory.KILLER_MODULES).size(), "killer count");
-        assertEquals(6L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
+        assertEquals(5L, UltimaSettingsCatalog.inCategory(SettingsCategory.ADVANCED).size(), "advanced count");
         for (var spec : UltimaSettingsCatalog.all()) {
             assertTrue(spec.applyPolicy() == ApplyPolicy.RESTART_GAME,
                     spec.key() + " Mixins apply at launch, so the UI must warn about a restart");
@@ -101,18 +100,7 @@ public final class SettingsScreenLogicTest {
                 "FSR tooltip names Canvas");
     }
 
-    private static void testFsrIsIndependentOfTemporalMode() {
-        assertTrue(!TemporalMode.FSR_QUALITY.isSupported(), "TemporalMode.FSR_* stays unsupported");
-        assertTrue(!TemporalMode.FSR_BALANCED.isSupported(), "TemporalMode.FSR_BALANCED stays unsupported");
-        assertTrue(!TemporalMode.FSR_PERFORMANCE.isSupported(), "TemporalMode.FSR_PERFORMANCE stays unsupported");
-        assertTrue(!TemporalMode.DLSS_QUALITY.isSupported(), "TemporalMode.DLSS_* stays unsupported");
-        assertTrue(TemporalMode.NATIVE.isSupported(), "Native passthrough remains supported");
-        for (TemporalMode mode : TemporalMode.values()) {
-            assertTrue(UltimaSettingsCatalog.byKey(mode.name()) == null,
-                    "catalog must not add TemporalMode." + mode.name() + " as a row");
-            assertTrue(UltimaSettingsCatalog.byKey(mode.displayName()) == null,
-                    "catalog must not add TemporalMode display name " + mode.displayName());
-        }
+    private static void testFsrRowUsesResolveReason() {
         UltimaConfig config = defaults();
         SettingsRowView fsr = SettingsRowView.from(UltimaSettingsCatalog.require("fsr_upscaling"), config);
         assertTrue(fsr.statusReason().equals(config.resolve("fsr_upscaling").reason()),
@@ -248,7 +236,7 @@ public final class SettingsScreenLogicTest {
     private static void testUnknownToggleRejected() {
         UltimaSettingsController controller = new UltimaSettingsController(defaults());
         assertTrue(!controller.setRequested("not_a_module", false), "unknown keys cannot be written");
-        assertTrue(!controller.setRequested("FSR_QUALITY", true), "TemporalMode names cannot be written");
+        assertTrue(!controller.setRequested("FSR_QUALITY", true), "FSR preset names cannot be written as module keys");
     }
 
     private static void testPendingRestartAndDependency() {

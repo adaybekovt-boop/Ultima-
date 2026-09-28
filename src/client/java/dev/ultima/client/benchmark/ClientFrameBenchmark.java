@@ -8,7 +8,6 @@ import dev.ultima.client.diagnostics.KillerModuleDiagnostics;
 import dev.ultima.client.metrics.TerrainFrameMetrics;
 import dev.ultima.client.renderer.retained.RetainedVisibilityDebug;
 import dev.ultima.client.renderer.retained.RetainedCompactionDebug;
-import dev.ultima.client.temporal.TemporalPipeline;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.UltimaConfig.ResolvedModule;
 import dev.ultima.meshing.MesherMetrics;
@@ -421,8 +420,6 @@ public final class ClientFrameBenchmark {
         BenchmarkJson.comma(json);
         appendTerrainMetrics(json);
         BenchmarkJson.comma(json);
-        appendTemporalMetrics(json);
-        BenchmarkJson.comma(json);
         MesherMetrics.snapshot().appendJson(json);
         BenchmarkJson.comma(json);
         appendTimingAndJvmMetrics(json);
@@ -737,34 +734,6 @@ public final class ClientFrameBenchmark {
         }
         int liveDelta = Math.abs(lastLive - Math.max(0, firstLive));
         return lastTotal > first && liveDelta * 4 < (lastTotal - first);
-    }
-
-    private static void appendTemporalMetrics(final StringBuilder json) {
-        boolean enabled = UltimaConfig.get().isEnabled("temporal");
-        TemporalPipeline pipeline = TemporalPipeline.get();
-        var frame = pipeline.frame();
-        json.append("  \"temporalMetrics\": {\n")
-                .append("    \"moduleEnabled\": ").append(enabled).append(",\n")
-                .append("    \"requestedMode\": ").append(BenchmarkJson.quote(pipeline.settings().requested().name())).append(",\n")
-                .append("    \"resolvedMode\": ").append(BenchmarkJson.quote(pipeline.settings().resolved().name())).append(",\n")
-                .append("    \"requestedUnsupported\": ").append(pipeline.settings().requestedUnsupported()).append(",\n")
-                .append("    \"nativePassthrough\": ").append(pipeline.settings().resolved().isNative()).append(",\n")
-                .append("    \"renderWidth\": ").append(frame.renderWidth).append(",\n")
-                .append("    \"renderHeight\": ").append(frame.renderHeight).append(",\n")
-                .append("    \"outputWidth\": ").append(frame.outputWidth).append(",\n")
-                .append("    \"outputHeight\": ").append(frame.outputHeight).append(",\n")
-                .append("    \"renderEqualsOutput\": ").append(
-                        frame.renderWidth == frame.outputWidth && frame.renderHeight == frame.outputHeight).append(",\n")
-                .append("    \"jitterX\": ").append(frame.currentJitterX).append(",\n")
-                .append("    \"jitterY\": ").append(frame.currentJitterY).append(",\n")
-                .append("    \"frameIndex\": ").append(frame.frameIndex).append(",\n")
-                .append("    \"resetCount\": ").append(pipeline.resetCount()).append(",\n")
-                .append("    \"lastResetReason\": ").append(BenchmarkJson.quote(
-                        pipeline.lastResetReason() == null ? "" : pipeline.lastResetReason().name())).append(",\n")
-                .append("    \"motionVectorPlan\": ").append(BenchmarkJson.quote(frame.motionVectorPlan.name())).append(",\n")
-                .append("    \"evaluatedThisFrame\": ").append(frame.evaluatedThisFrame).append(",\n")
-                .append("    \"failedOpen\": ").append(pipeline.isFailedOpen()).append("\n")
-                .append("  }");
     }
 
     private static void appendTimingAndJvmMetrics(final StringBuilder json) {

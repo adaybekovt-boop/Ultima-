@@ -15,6 +15,7 @@ import dev.ultima.meshing.MesherCircuitBreaker;
 import dev.ultima.meshing.MesherSectionFailOpen;
 import dev.ultima.meshing.MesherWorldFixtures;
 import dev.ultima.meshing.FastPathCubeMesher;
+import dev.ultima.meshing.FixtureAdmission;
 import dev.ultima.meshing.MeshEquivalence;
 import dev.ultima.meshing.SnapshotFlagHotPath;
 import dev.ultima.meshing.MeshVisit;
@@ -678,7 +679,7 @@ final class MesherFastPathChecks {
     }
 
     private static void expectCriteria(final int stateId, final boolean fast, final FastPathCriteria.Reason reason) {
-        FastPathCriteria.Result result = FastPathCriteria.fromFixtureState(stateId);
+        FastPathCriteria.Result result = FixtureAdmission.fromFixtureState(stateId);
         if (result.fastPath() != fast || result.reason() != reason) {
             throw new AssertionError("criteria for " + stateId + ": expected fast=" + fast + " reason=" + reason
                     + " got " + result);
@@ -839,7 +840,7 @@ final class MesherFastPathChecks {
         if (!BlockRenderFlags.translucent(SectionFixtures.flags(SectionFixtures.TRANSPARENT))) {
             throw new AssertionError("glass fixture flags must carry TRANSLUCENT");
         }
-        if (FastPathCriteria.fromFlags(SectionFixtures.flags(SectionFixtures.TRANSPARENT)).fastPath()) {
+        if (FixtureAdmission.fromFlags(SectionFixtures.flags(SectionFixtures.TRANSPARENT)).fastPath()) {
             throw new AssertionError("fromFlags must reject translucent glass");
         }
         int[][][] states = SectionFixtures.emptyHalo();

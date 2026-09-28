@@ -241,7 +241,6 @@ public final class RetainedTerrainRenderer {
         }
         record.meshId = meshId;
         record.visibleThisFrame = true;
-        record.temporalFlags = RetainedSectionRecord.FLAG_STATIC_WORLD_TRANSFORM;
         this.captureLayer(record, dispatcher, mesh, ChunkSectionLayer.SOLID, meshId);
         this.captureLayer(record, dispatcher, mesh, ChunkSectionLayer.CUTOUT, meshId);
     }
