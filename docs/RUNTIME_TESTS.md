@@ -47,7 +47,7 @@ bash scripts/client-test.sh baseline                      # every module off
 bash scripts/client-test.sh mesher java_mesher,mesher_fast_path,render_snapshot,section_task_queue
 bash scripts/client-test.sh defaults                      # the shipped defaults
 python3 scripts/compare-screenshots.py build/clienttest/baseline build/clienttest/mesher \
-  --control build/clienttest/control --channel-tolerance 4 --max-changed-fraction 0.0025 \
+  --control build/clienttest/control --channel-tolerance 1 --max-changed-fraction 0.005 \
   --ignore '01_title.png' '02_settings_*'
 ```
 
@@ -63,26 +63,29 @@ Without a display it runs under `xvfb` with Mesa software rendering (CI installs
 needs no GPU; on a desktop it opens a window. Pixels are only comparable between runs on the
 same machine and graphics stack.
 
-The screenshot comparison is not bit-exact, and this is why:
+How the screenshots are compared (`scripts/compare-screenshots.py`):
 
-- Two runs with the same modules still differ in a few percent of the frame (the spectator
-  hint, sparse rasterization differences). The comparer takes a **control** run (every module off
-  again), treats the pixels where baseline and control differ as noise (dilated by two pixels),
-  fails if more than 10 % of an image is noise, and compares the candidate with the baseline
-  everywhere else.
-- Colour differences of up to four levels per channel are ignored, and up to 0.25 % of the
-  pixels may differ. A missing or wrong face, a wrong texture or a lighting bug changes far more
-  than that.
-- The title screen (animated panorama) and the settings screens (they show the toggle states
-  that the runs deliberately change) are listed but not compared.
+- Two runs with the same modules render the arrangement pixel for pixel alike: the spectator
+  camera removes the arm, falling and hand sway, and clouds, water, torches and random ticks are
+  out of the scene. A **control** run, every module off again, guards this: the pixels where
+  baseline and control differ are treated as noise (dilated by two pixels), excluded from the
+  comparison, and the run fails if more than 1 % of an image is noise. CI measures 0 %.
+- The shipped defaults and retained terrain must match the baseline with one colour level of
+  slack per channel. The mesher modules get a budget of 0.5 % of the pixels.
+- The title screen (animated panorama) and the settings screens (they show the toggle states that
+  the runs deliberately change) are listed but not compared.
+- Every difference that is not excluded is printed with a coarse map and its hot spots (tile
+  position, pixel count, colour before and after), because a bare percentage is hard to act on.
 
-CI measures 0 to 0.12 % of the pixels outside the noise for the shipped defaults, the mesher modules
-and retained terrain alike. The defaults only enable simulation modules and cannot touch rendering,
-so that residual is the environment's floor, not the modules.
+CI result on the mesher modules: 0.12 % of the pixels of the first camera position differ by up to
+15 levels of 255; the other two positions are identical to within four levels. With the control at
+0 % this is a real, deterministic difference between the mesher modules' output and vanilla's, not
+noise. It is inside the budget and has not been investigated; read the hot spots in the `client`
+job log before making `java_mesher` or `mesher_fast_path` default.
 
-What it proves: with the shipped defaults and with the mesher modules or retained terrain on, the
-arrangement renders the same as vanilla to within that tolerance, and the game reaches the
-settings screen and a world without a Mixin failure. What it does not prove: anything about a
+What it proves: with the shipped defaults or retained terrain on, the arrangement renders like
+vanilla; with the mesher modules on it renders like vanilla except for the residual above; and the
+game gets through the settings screen and a world without a Mixin failure. What it does not prove: anything about a
 real GPU, shaders (Iris), other resource packs, or motion. Those stay manual checks.
 
 ## Compatibility with other mods

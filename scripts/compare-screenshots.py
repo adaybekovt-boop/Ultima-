@@ -138,11 +138,10 @@ def main(argv: list[str]) -> int:
         verdict = "ignored" if ignored else ("FAIL" if problems else "ok")
         rows.append(f"{name:<32} {raw.mean() * 100:>8.4f}% {noise_fraction * 100:>8.4f}% {fraction * 100:>15.4f}% {worst:>6}  {verdict}")
         failures.extend(f"{name}: {problem}" for problem in problems)
-        if problems:
-            if fraction > 0:
-                print(f"{name}: changed outside the noise:" if args.control else f"{name}: changed:")
-                print(ascii_map(effective))
-                print("\n".join(hotspots(effective, a, b)))
+        if fraction > 0 and not ignored:
+            print(f"{name}: changed outside the noise:" if args.control else f"{name}: changed:")
+            print(ascii_map(effective))
+            print("\n".join(hotspots(effective, a, b)))
     if not (names_a & names_b):
         failures.append("no screenshots to compare")
     print(f"\n{'image':<32} {'A vs B':>9} {'noise':>9} {'B outside noise':>16} {'worst':>6}")
