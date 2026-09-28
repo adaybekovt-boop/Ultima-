@@ -73,7 +73,7 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         try (TestSingleplayerContext world = context.worldBuilder().create()) {
             TestServerContext server = world.getServer();
             // A spectator neither falls nor takes damage, so every point is a still camera.
-            server.runCommand("gamemode spectator");
+            server.runCommand("gamemode spectator @p");
             server.runCommand("gamerule advance_time false");
             server.runCommand("gamerule random_tick_speed 0");
             server.runCommand("time set noon");
