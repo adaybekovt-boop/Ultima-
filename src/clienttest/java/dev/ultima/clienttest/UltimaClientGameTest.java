@@ -28,12 +28,16 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
         {"minecraft:glass", null},
         {"minecraft:oak_leaves[persistent=true]", null},
         {"minecraft:oak_stairs[facing=east,half=bottom]", null},
-        {"minecraft:oak_slab[type=top]", "minecraft:torch"},
+        {"minecraft:oak_slab[type=top]", null},
         {"minecraft:glowstone", null},
         {"minecraft:packed_ice", null},
         {"minecraft:red_wool", "minecraft:white_carpet"}
     };
-    /** The flat world has no terrain, so the test builds a small arrangement that crosses chunk and section borders. */
+    /**
+     * The flat world has no terrain, so the test builds a small arrangement that crosses chunk and section borders.
+     * It has no water, fire or torches: their animations and particles are random or depend on the tick count, and
+     * would make two identical runs differ.
+     */
     private static final String[] CAMERA_POINTS = {
         "0 -50 -18 0 30",
         "22 -50 0 90 30",
@@ -97,8 +101,6 @@ public final class UltimaClientGameTest implements FabricClientGameTest {
                 server.runCommand("fill " + x + " -60 " + pillarZ + " " + x + " -46 " + pillarZ + " minecraft:stone_bricks");
             }
         }
-        server.runCommand("fill 9 -60 -7 15 -60 -1 minecraft:stone");
-        server.runCommand("fill 10 -60 -6 14 -60 -2 minecraft:water");
     }
 
     private static void shoot(final ClientGameTestContext context, final Path directory, final String name) {
