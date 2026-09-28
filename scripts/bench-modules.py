@@ -75,6 +75,7 @@ online-mode=false
 view-distance=8
 simulation-distance=8
 max-tick-time=-1
+pause-when-empty-seconds=0
 spawn-protection=0
 enable-status=false
 sync-chunk-writes=false
