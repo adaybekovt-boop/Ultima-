@@ -1,0 +1,285 @@
+# Development history
+
+Provenance notes moved out of the top-level README and CHANGELOG for the 1.0 release. Entries
+are historical: they describe the code as it was when they were written, including modules
+(such as `temporal`) that no longer exist. For what 1.0 contains, read the root `README.md` and
+`CHANGELOG.md`.
+
+---
+
+## Current validation status
+
+`scripts/check.sh` builds the current source and runs the named JavaExec regression suites,
+including compiled-annotation/vanilla-bytecode checks for constructor `HEAD` legality, Mixin
+priorities, duplicate accessors, current `@At` targets, and per-method redirect contracts.
+These suites are not JUnit and do not pretend to be a live game launch. A dedicated-server smoke
+and client/LAN/shader/hardware checks are reported separately whenever they are actually run.
+
+## Historical benchmark provenance
+
+The opt-in `retained_terrain` foundation has a historical RTX 3090 A/B result from the
+`ultima-foundation-final-2.6.1` release (roughly 150 commits before the current source):
+
+- average FPS: 301.36 → 394.14, **+30.8%**
+- 1% low: 77.79 → 84.26, **+8.3%**
+- terrain CPU total: **−42.9%**
+
+Those measurements belong only to the retained-foundation provenance chain documented in the
+[`ultima-foundation-final-2.6.1` release](https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1).
+They are **not** a current-whole-mod performance or stability claim. `retained_terrain` is default
+off and is disabled with Sodium, Iris, or Canvas.
+The new modules remain default off until their separate runtime/hardware validation is done.
+
+`mesher_fast_path` Phase 3.2 includes weighted vanilla unit cubes while preserving vanilla
+seed-based variant selection; see `MESHER_FAST_PATH.md`. FSR1 details are in
+`FSR_UPSCALING.md`, server telemetry in `SERVER_TELEMETRY.md`.
+
+The three default-off Sodium/Iris/Lithium companion prototypes are documented in
+[`docs/KILLER_MODULES_IMPLEMENTATION.md`](docs/KILLER_MODULES_IMPLEMENTATION.md). Their balanced,
+tick-replayed A/B procedure and claim boundaries are in
+[`docs/KILLER_MODULES_BENCHMARK.md`](docs/KILLER_MODULES_BENCHMARK.md).
+
+The production artifact is `build/libs/ultima-0.1.0.jar`; do not install the `-sources.jar`.
+
+## Local reference sources
+
+The generated Minecraft sources under `.agent/` are local reference material only and are ignored by Git. Do not commit or redistribute them.
+
+
+---
+
+## Changelog before 1.0
+
+## 2026-09-23 — reproducible build, regression aggregate, fail-closed opt-in fixes
+
+Started from `2d9fbe976de0e42ad10d7581f86314bf81c17f0e`. No FPS or TPS claim.
+
+- The Gradle 9.5.1 wrapper is the build path. Java compiles with toolchain 25 and `release` 25. `fabric-api` is `>=0.156.0+26.2`.
+- `./gradlew test` runs the merged regression checkpoint once. `./gradlew check` follows that test task.
+- `isRedstoneConductor` is cached only after a predicate proves it is constant and does not read the world. An unreadable predicate stays on vanilla.
+- Mesher circuit-breaker and retained-terrain GPU tables reset on world join/leave. Resource reload also resets the circuit breaker. Vanilla mesh buffers are not closed.
+- FSR `GameRenderer` hooks are MixinExtras `@WrapOperation`s. EASU and RCAS constant buffers are rewritten only when size or sharpness changes, and fail-open closes them.
+- Renderer conflicts are exact ids `sodium`, `iris`, and `canvas`, plus the canonical Sodium and Iris entry classes. An unknown fork id stays on vanilla.
+- `server_metrics` closes an unclosed phase on tick exit, does not store a zero sample for a phase that never opened, rate-limits lag lines, and reads the Netty outbound buffer only on the event loop.
+- Dedicated-server classloading is unchanged: no `net.minecraft.client` imports were added under `src/main`.
+
+---
+
+## 2026-08-19 — FSR / Iris capability gate
+
+`fsr_upscaling` is no longer on the same unconditional Sodium/Iris/Canvas
+auto-disable list as `retained_terrain` and `mesher_fast_path`. Those two
+modules are unchanged.
+
+FSR policy after this pass:
+
+- Canvas still auto-disables FSR (`incompatible_mod`).
+- Sodium-only is allowed again (existing `GameRenderer` world-pass hook).
+- Iris, including Sodium+Iris, still disables FSR, but the reason is
+  `no_safe_post_iris_integration_point`: IrisApi v0 on the Iris 26.2 branch
+  has no official hook after the shader `final` program, and Ultima cannot
+  set Iris internal render-target resolution. A native-res sharpen-only blit
+  is not shipped as upscaling.
+- Live Iris protection is the mixin plugin: `FsrCompatibility.blocks` disables
+  the module, so `UltimaMixinPlugin` never applies `fsr_upscaling` mixins
+  (including `GameRendererMixin`). `FsrRuntimeGate` in `beginWorldPass` is a
+  last-line refuse for tests; it does not run when Iris was present at mixin
+  apply time.
+
+No Iris FSR pass is inserted, so this revision adds no GPU time and no frame
+hold-back when Iris is loaded. Hardware timing of EASU+RCAS remains a manual
+vanilla/Sodium-only check; this pass does not invent milliseconds.
+
+---
+
+## 2026-08-19 — real multi-branch integration (#11–#20)
+
+Real integration pass over the previously unmerged performance branches. The merge history
+contains the original heads of PRs #11, #12, #13, #14, #15, #17, #19, and #20 as explicit
+ancestors. PR #18 is intentionally excluded: it is an independent earlier implementation of
+`container_slot_mask` + `entity_query_early_out`; #20 was selected as the sole implementation
+because it has broader audited mutation coverage, explicit hopper/furnace/compound/randomizable
+container hooks, multi-seed differential traces, wide-inventory coverage, and artificial bit
+corruption/rebuild checks.
+
+Shared conflict points were manually consolidated instead of accepting one branch's version:
+
+- `UltimaModules.java`: all 24 final modules, defaults, dependencies, client-side flags, and
+  incompatibility lists are represented once.
+- `ultima.mixins.json` / `ultima.client.mixins.json`: union of telemetry, hopper sleeping,
+  recipe cache, tag/state cache, slot-mask/entity-query, mesher, FSR, and existing renderer Mixins.
+- `Ultima.java`: server telemetry and registry-cache lifecycle initialization are both preserved.
+- `UltimaCommands.java`: config, compatibility diagnostics, and server profiling subcommands coexist.
+- settings catalog: every registered module has a Rendering, Simulation, or Advanced row and the
+  restart-required apply policy. The fallback title-screen button is restored as the gated `settings_ui` module.
+- regression entrypoint: branch-local hosting, FSR/settings, telemetry, hopper, recipe, tag/state,
+  slot/entity, mesher, and final module-contract suites are all invoked by the merged checkpoint;
+  recipe/tag/state/slot suites also have standalone Gradle tasks.
+
+Compatibility policy at the time of that integration (the FSR line below was superseded later
+the same day by the capability-gate entry above):
+
+- Lithium / Canary / Radium disable overlapping collision/entity modules plus
+  `blockentity_sleeping`, `tag_bitsets`, `state_property_cache`, `container_slot_mask`, and
+  `entity_query_early_out`.
+- `recipe_match_cache` deliberately remains compatible with Lithium-family mods because those mods
+  do not provide the same first-match recipe lookup cache.
+- Sodium / Iris / Canvas disable Ultima's geometry renderer integrations, including
+  `retained_terrain` and `mesher_fast_path`. Current FSR policy is the newer entry above:
+  Canvas blocks it, Sodium-only is allowed, and Iris blocks it for the documented capability reason.
+
+All newly merged optimization experiments remain default **OFF**. Existing proven/default modules
+remain unchanged. `server_metrics` is default-off instrumentation. This integration
+runs code-only Gradle/static validation; no `runClient`, `runServer`, LAN join, or hardware A/B is
+part of this pass, so it makes no new FPS or runtime-performance claim.
+
+---
+
+## Vanilla-client-compatible server hosting
+
+Audit and declaration pass so a host can run Ultima on a dedicated or
+integrated server while guests join with vanilla Minecraft 26.2 (no Ultima).
+
+- `fabric.mod.json`: `"environment": "*"` is unchanged (may load on host
+  client or dedicated server; it is not a both-sides-required handshake).
+  Mixin configs are now explicit objects: simulation `ultima.mixins.json` is
+  `"environment": "*"`, render `ultima.client.mixins.json` stays
+  `"environment": "client"`. Description states vanilla-client hosting.
+- Entrypoints were already correct: `main` → `dev.ultima.Ultima` (dedicated +
+  integrated server), `client` → `dev.ultima.client.UltimaClient` (Fabric
+  client-only slot). No dedicated-server-only entrypoint, so LAN Open-to-LAN
+  still loads simulation.
+- Network: no C2S/S2C channels, no Fabric optional/required payloads, no
+  custom registries, no Mod Protocol. Vanilla join is the default Fabric
+  case (protocol version only).
+- `VanillaClientHostingChecks` enforces the metadata/source contract from
+  the merged regression checkpoint.
+- User docs: `docs/SERVER_HOSTING.md` plus a README pointer, including the
+  dedicated-server and Open-to-LAN hardware scenarios (not run in this
+  session).
+
+---
+
+## mesher_fast_path Phase 3.2 (weighted unit-cube coverage)
+
+Expand the unit-cube fast path to vanilla 26.2 `WeightedVariants` whose
+every alternative is a proven 6-quad opaque cube (stone, dirt, deepslate,
+sand, …). Pick the alternative with `BlockState.getSeed(pos)` + vanilla
+`WeightedList.getRandomOrThrow` so UVs stay bit-identical. Multipart,
+grass overlay, fluids, and true non-cubes stay fallback. Cache was
+already keyed by `BlockState` identity (furnace/log variants were already
+distinct SingleVariant entries). Default remains **OFF**. **No FPS/GPU
+claim.** See `docs/MESHER_FAST_PATH.md`. The old retained-terrain GPU-time hypothesis was an
+agent report and is intentionally not part of the current working tree.
+
+## mesher_fast_path Phase 3.1 (hardware-ready prep)
+
+Section-level fail-open + BlockState circuit breaker, unified
+`FastPathCriteria` (glass/translucent always vanilla), lean production
+snapshot flags, expanded equivalence + realistic CPU datasets, coverage
+JSON, and a three-scene hardware runbook. Default remains **OFF**.
+**No FPS/GPU claim.** See `docs/MESHER_FAST_PATH.md`; the old agent-only hardware runbook is not
+part of the current working tree.
+
+## mesher_fast_path (draft, isolated from main / PR #3)
+
+Hybrid unit-cube mesher behind `mesher_fast_path=false`. Packed 18³ snapshot,
+cached vanilla cube quads, vanilla occlusion/lighting, vanilla fallback.
+Equivalence tests PASS. CPU meshing-time microbench only. **No FPS/GPU claim.**
+See `docs/MESHER_FAST_PATH.md`. The named JavaExec regression task and `gradlew build` passed on that branch.
+
+## Prompt #2.6.1 — retained foundation closed out: KEEP
+
+PR #7 closed the three remaining rework items opened by Prompt #2.5's provenance
+recovery: visual differences are explained by same-mode route variation (functional
+parity PASS), A2 visibility re-entry is same-frame (2 same-frame, 0 one-frame-late
+over 3,000 sampled frames), and bounded compaction is active and stable (37 triggers
+over an 18,000-frame smoke run, no unbounded growth, no errors).
+
+The six-pair counterbalanced chunk-flight A/B from SHA `6572f2e` remains the valid
+performance dataset (diagnostic-only commits since then do not alter the release path):
+
+- average FPS: 301.36 → 394.14, **+30.8%**, paired 95% CI +70.44…+115.13 FPS
+- 1% low: 77.79 → 84.26, **+8.3%**, CI +1.03…+11.92 FPS
+- terrain CPU total: 1,254,679 → 716,923 ns, **−42.9%**
+- P99 frame time: 9.151 → 7.748 ms
+- all 12 logs: 0 query-object errors, 0 `GL_INVALID_OPERATION`, 0 Mixin apply failures, 0 crashes
+
+**FOUNDATION VERDICT: KEEP.**
+
+Released as tag `ultima-foundation-final-2.6.1` at commit
+`55e7605cd0e8d9fb0a5e3d39a16daa8b5b2f9c79` (PR #7 merge commit):
+https://github.com/adaybekovt-boop/Ultima-/releases/tag/ultima-foundation-final-2.6.1
+
+That commit was main HEAD when this note was written. It is an ancestor of later `main`, not the current tip. The FPS figures in this section are historical measurements, not a claim about current `main`.
+
+`Tested SHA = Released SHA`: **YES** for the diagnostic/compaction code tree (merge SHA
+rebuilt, tree equals `858359f`). The six-pair FPS dataset SHA equals the released SHA:
+**NO** — that dataset was collected on ancestor `6572f2e`; the commits after it
+(`cf83913`, `858359f`) are opt-in diagnostics and do not change the default release path.
+
+PR #3 (lab, base `cursor/forensic-review-9efc`) and PR #4 (mesher fast path, base `main`)
+remain separate open drafts, isolated from `retained_terrain`, not merged, default off.
+
+---
+
+## Prompt #2.5 — provenance recovery (P0)
+
+The previous KEEP documentation referenced hardware-tested commit
+`4d518325d974c2e6b504208fe3d9262c8bbbfcb5`, but that object is not present in the
+remote repository. The released `main` tree also lacked the bounded hidden-command
+compaction described by Prompt #2.4.
+
+Until the recovered code is rebuilt and the exact released SHA is re-tested on real
+hardware, the previous chunk-flight numbers (**+27.85% average FPS**, **+12.87% 1% low**)
+are historical test results only and are **not a release-valid performance claim**.
+
+Recovery requirements:
+
+- restore the documented bounded compaction trigger: hidden/total > 50% or total > 4096
+  (only when hidden commands exist);
+- preserve live-command order and rewrite owner command indices;
+- replace the retained GPU command buffer transactionally between opaque render passes;
+- build and test the actual current HEAD, not hard-coded historical SHAs;
+- repeat the same real-hardware chunk-flight A/B on the exact final `main` SHA;
+- only then record `Tested commit == Released commit: YES`.
+
+PR #3 (`cursor/ultima-code-completion-lab-4423`) remains separate and must not be merged
+as part of this provenance recovery.
+
+---
+
+## main — PR #2 merged (historical KEEP report; provenance not yet closed)
+
+Foundation validation (Prompt #2.1–2.4) previously reported verdict **KEEP**.
+
+Merged branch: `cursor/forensic-review-9efc` (PR #2).
+PR #2 head: `ea94d594c6d45e7662675dc044792203971cc02d`.
+Reported hardware test commit: `4d518325d974c2e6b504208fe3d9262c8bbbfcb5` (**missing from remote repository**).
+
+**Not merged:** PR #3 (`cursor/ultima-code-completion-lab-4423`) remains a separate
+draft. Lab gates stay default off.
+
+### Historical real GPU A/B report — quarantined pending Prompt #2.5 retest
+
+| Scene | Previously reported result |
+|---|---|
+| Stationary | KEEP |
+| Yaw sweep | KEEP |
+| Chunk-flight (final / most demanding) | **+27.85% average FPS**, **+12.87% 1% low** |
+
+The same report stated that bounded command compaction stopped hidden-command growth,
+with 0 crashes, 0 errors and visual parity PASS. Because the tested commit cannot be
+traced to the released tree and that compaction was absent from merged `main`, these
+figures must not be advertised as released-code results until the exact final SHA is
+re-tested.
+
+### Dedicated-server (independent proven result)
+
+Entity-farm 6-pair A/B: **8.333 → 6.518 ms/tick (−21.78%)**. Integrated-server /
+hitch work, not a GPU FPS claim.
+
+### Defaults
+
+Shipped simulation modules stay default-on. `retained_terrain` stays opt-in
+(default off). Experimental lab modules from PR #3 are not in this tree.
