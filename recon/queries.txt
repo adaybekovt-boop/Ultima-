@@ -1,0 +1,7 @@
+# round 1: where are the jars and which gametest APIs exist
+jar minecraft*26.2*.jar
+jar fabric-gametest-api-v1*.jar
+jar fabric-client-gametest-api-v1*.jar
+jar fabric-lifecycle-events-v1*.jar
+sh ls ~/.gradle/caches 2>/dev/null | head -30
+sh find "$PWD/.gradle" -maxdepth 3 -type d | head -30
