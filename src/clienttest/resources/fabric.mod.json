@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "ultima-clienttest",
+  "version": "1.0.0",
+  "name": "Ultima client test",
+  "description": "Development-only client game test. Never shipped in the Ultima jar.",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["dev.ultima.clienttest.UltimaClientGameTest"]
+  },
+  "depends": {
+    "ultima": "*",
+    "fabric-api": "*",
+    "minecraft": "*"
+  }
+}
