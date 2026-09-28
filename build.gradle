@@ -58,6 +58,8 @@ loom {
         scenarioServer {
             server()
             name = "Ultima scenarios (server)"
+            // The scenario classes must be on this run's classpath, or Fabric never finds the mod.
+            source sourceSets.scenario
             ideConfigGenerated(false)
             runDir "run/scenarios"
             vmArg "-Dultima.scenario.label=${project.findProperty('ultima.scenario.label') ?: 'unlabelled'}"
