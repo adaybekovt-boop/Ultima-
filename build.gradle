@@ -21,6 +21,15 @@ repositories {
     }
 }
 
+// Development-only runtime harness (see scripts/scenario-diff.sh). It is a separate source set so
+// nothing from it can end up in the mod jar; the jar only packages main and client.
+sourceSets {
+    scenario {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
 loom {
     splitEnvironmentSourceSets()
 
@@ -46,12 +55,24 @@ loom {
                 vmArg "-Dultima.mixinSmoke=true"
             }
         }
+        scenarioServer {
+            server()
+            name = "Ultima scenarios (server)"
+            ideConfigGenerated(false)
+            runDir "run/scenarios"
+            vmArg "-Dultima.scenario.label=${project.findProperty('ultima.scenario.label') ?: 'unlabelled'}"
+            vmArg "-Dultima.scenario.out=${projectDir}/build/scenarios"
+            programArg "nogui"
+        }
     }
 
     mods {
         "ultima" {
             sourceSet sourceSets.main
             sourceSet sourceSets.client
+        }
+        "ultima-scenarios" {
+            sourceSet sourceSets.scenario
         }
     }
 }
@@ -227,6 +248,11 @@ test {
         showStandardStreams = true
         exceptionFormat = "full"
     }
+}
+
+// The harness is not part of the jar, so compile it with every build to keep it from rotting.
+tasks.named("check") {
+    dependsOn tasks.named("scenarioClasses")
 }
 
 tasks.register("regressionTest") {

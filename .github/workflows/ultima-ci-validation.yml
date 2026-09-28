@@ -57,6 +57,12 @@ jobs:
         timeout-minutes: 20
         run: bash scripts/mixin-smoke.sh
 
+      - name: Runtime scenario differential (real server)
+        if: runner.os == 'Linux'
+        shell: bash
+        timeout-minutes: 30
+        run: bash scripts/scenario-diff.sh
+
       - name: Recon (temporary, removed before merge)
         if: always() && runner.os == 'Linux'
         continue-on-error: true
@@ -75,3 +81,4 @@ jobs:
             build/reports/**
             build/test-results/**
             run/logs/latest.log
+            build/scenarios/**
