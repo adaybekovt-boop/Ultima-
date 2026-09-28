@@ -2,8 +2,11 @@ package dev.ultima.client.command;
 
 import dev.ultima.Ultima;
 import dev.ultima.client.settings.UltimaConfigScreen;
+import dev.ultima.client.diagnostics.KillerModuleDiagnostics;
 import dev.ultima.config.UltimaConfig;
 import dev.ultima.config.settings.UltimaCompatibilityReport;
+import java.io.IOException;
+import java.nio.file.Path;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -25,11 +28,14 @@ public final class UltimaClientCommands {
                         .then(ClientCommands.literal("config").executes(context -> openConfig(context.getSource())))
                         .then(ClientCommands.literal("debug")
                                 .then(ClientCommands.literal("compatibility")
-                                        .executes(context -> compatibility(context.getSource()))))));
+                                        .executes(context -> compatibility(context.getSource())))
+                                .then(ClientCommands.literal("killer-modules")
+                                        .executes(context -> killerModules(context.getSource()))))));
     }
 
     private static int help(final FabricClientCommandSource source) {
-        source.sendFeedback(Component.literal("Ultima commands: /ultima config, /ultima debug compatibility"));
+        source.sendFeedback(Component.literal(
+                "Ultima commands: /ultima config, /ultima debug compatibility, /ultima debug killer-modules"));
         return 1;
     }
 
@@ -53,5 +59,24 @@ public final class UltimaClientCommands {
         }
         source.sendFeedback(Component.literal("Full JSON written to the log."));
         return 1;
+    }
+
+    private static int killerModules(final FabricClientCommandSource source) {
+        UltimaConfig config = UltimaConfig.get();
+        for (String line : KillerModuleDiagnostics.chatSummary(config).split("\n")) {
+            if (!line.isBlank()) {
+                source.sendFeedback(Component.literal(line));
+            }
+        }
+        try {
+            Path output = KillerModuleDiagnostics.writeDefault(config);
+            source.sendFeedback(Component.literal("Diagnostics written to " + output.toAbsolutePath()));
+            return 1;
+        } catch (IOException | SecurityException exception) {
+            Ultima.LOGGER.warn("Could not write killer-module diagnostics", exception);
+            source.sendError(Component.literal(
+                    "Could not write killer-module diagnostics: " + exception.getClass().getSimpleName()));
+            return 0;
+        }
     }
 }

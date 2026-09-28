@@ -103,6 +103,7 @@ public final class UltimaConfig {
                 || hasLoadedIncompatibility(definition)
                 || FsrCompatibility.blocks(module)
                 || !Boolean.TRUE.equals(this.modules.get(module))
+                || !KillerModuleCompatibility.isSupported(module)
                 || !resolving.add(module)) {
             return false;
         }
@@ -268,6 +269,10 @@ public final class UltimaConfig {
             reason = "incompatible_mod";
             detail = "Disabled because incompatible mod(s) are loaded: "
                     + String.join(", ", loadedIncompatible) + ".";
+        } else if (requested && !KillerModuleCompatibility.isSupported(module)) {
+            KillerModuleCompatibility.AdapterState adapter = KillerModuleCompatibility.state(module);
+            reason = "adapter_" + adapter.state();
+            detail = adapter.detail();
         } else if (requested && FsrCompatibility.blocks(module)) {
             FsrCompatibility.DisableReason fsr = FsrCompatibility.current();
             reason = fsr.configReason();

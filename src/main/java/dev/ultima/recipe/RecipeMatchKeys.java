@@ -101,9 +101,10 @@ public final class RecipeMatchKeys {
 
     public record SmithingKey(RecipeType<?> type, CapturedStack template, CapturedStack base, CapturedStack addition, int hash) {
         public static SmithingKey from(final RecipeType<?> type, final SmithingRecipeInput input) {
-            CapturedStack template = CapturedStack.ofMatching(input.template());
-            CapturedStack base = CapturedStack.ofMatching(input.base());
-            CapturedStack addition = CapturedStack.ofMatching(input.addition());
+            // SmithingRecipe.matches only calls Ingredient.test, which ignores count.
+            CapturedStack template = CapturedStack.ofIdentity(input.template());
+            CapturedStack base = CapturedStack.ofIdentity(input.base());
+            CapturedStack addition = CapturedStack.ofIdentity(input.addition());
             int hash = 31 * System.identityHashCode(type) + template.hashCode();
             hash = 31 * hash + base.hashCode();
             hash = 31 * hash + addition.hashCode();

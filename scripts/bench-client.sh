@@ -13,13 +13,20 @@
 #   GAME_DIR           Optional Minecraft game directory (Windows paths are converted)
 #   WORLD              Optional save folder for --quickPlaySingleplayer
 #   WIDTH/HEIGHT       Window size (default 1280x720)
-#   WARMUP_FRAMES      Default 1200
-#   SAMPLE_FRAMES      Default 12000
+#   REPLAY_MODE        tick (primary) or frame (legacy diagnostics)
+#   WARMUP_TICKS       Default 200 in tick mode
+#   SAMPLE_TICKS       Default 1200 in tick mode
+#   WARMUP_FRAMES      Default 1200 for legacy frame mode
+#   SAMPLE_FRAMES      Default 12000 for legacy frame mode
 #   CAMERA_MODE        stationary (default), yaw_sweep, or chunk_flight
 #   CAMERA_X/Y/Z       Optional held/start position
 #   CAMERA_YAW/PITCH   Optional look angles
 #   CAMERA_YAW_PER_FRAME  Degrees per frame for yaw_sweep/chunk_flight (default 0.25)
 #   CAMERA_Z_PER_FRAME    Blocks per frame for chunk_flight (default 0.8)
+#   CAMERA_YAW_PER_TICK   Degrees per tick for primary replay (default 1.5)
+#   CAMERA_Z_PER_TICK     Blocks per tick for chunk_flight (default 4.8)
+#   BROKER_MODE          trace, control, or static when broker is enabled
+#   WARMUP_MODE          profile (instrument only) or warm (execute safe adapters)
 #   SCENE              Label recorded in JSON
 #   PAIR_LABEL         Label recorded in JSON
 #   FORCE_MODULES      Optional comma-separated key=value overrides written into
@@ -34,6 +41,9 @@ LABEL="${1:?usage: bench-client.sh <run-label> <disabled|default|enabled>}"
 MODE="${2:?usage: bench-client.sh <run-label> <disabled|default|enabled>}"
 WARMUP_FRAMES="${WARMUP_FRAMES:-1200}"
 SAMPLE_FRAMES="${SAMPLE_FRAMES:-12000}"
+WARMUP_TICKS="${WARMUP_TICKS:-200}"
+SAMPLE_TICKS="${SAMPLE_TICKS:-1200}"
+REPLAY_MODE="${REPLAY_MODE:-tick}"
 WIDTH="${WIDTH:-1280}"
 HEIGHT="${HEIGHT:-720}"
 CAMERA_MODE="${CAMERA_MODE:-stationary}"
@@ -155,6 +165,9 @@ write_jvm_prop() {
   write_jvm_prop "ultima.clientBenchmark" "true"
   write_jvm_prop "ultima.clientBenchmark.warmupFrames" "$WARMUP_FRAMES"
   write_jvm_prop "ultima.clientBenchmark.sampleFrames" "$SAMPLE_FRAMES"
+  write_jvm_prop "ultima.clientBenchmark.warmupTicks" "$WARMUP_TICKS"
+  write_jvm_prop "ultima.clientBenchmark.sampleTicks" "$SAMPLE_TICKS"
+  write_jvm_prop "ultima.clientBenchmark.replayMode" "$REPLAY_MODE"
   write_jvm_prop "ultima.clientBenchmark.output" "$OUTPUT_JAVA"
   write_jvm_prop "ultima.clientBenchmark.exitAfterWrite" "$([[ "$EXIT_AFTER_WRITE" == 1 ]] && echo true || echo false)"
   write_jvm_prop "ultima.clientBenchmark.captureScreenshots" "$([[ "$CAPTURE_SCREENSHOTS" == 1 ]] && echo true || echo false)"
@@ -162,7 +175,7 @@ write_jvm_prop() {
   write_jvm_prop "ultima.clientBenchmark.cameraMode" "$CAMERA_MODE"
   write_jvm_prop "ultima.clientBenchmark.scene" "$SCENE"
   write_jvm_prop "ultima.clientBenchmark.pairLabel" "$PAIR_LABEL"
-  write_jvm_prop "ultima.clientBenchmark.abRole" "$MODE"
+  write_jvm_prop "ultima.clientBenchmark.abRole" "${AB_ROLE:-$MODE}"
   if [[ -n "${WORLD:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.worldId" "$WORLD"
   fi
@@ -176,6 +189,27 @@ write_jvm_prop() {
   fi
   if [[ -n "${CAMERA_Z_PER_FRAME:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.cameraZPerFrame" "$CAMERA_Z_PER_FRAME"
+  fi
+  if [[ -n "${CAMERA_YAW_PER_TICK:-}" ]]; then
+    write_jvm_prop "ultima.clientBenchmark.cameraYawDegreesPerTick" "$CAMERA_YAW_PER_TICK"
+  fi
+  if [[ -n "${CAMERA_Z_PER_TICK:-}" ]]; then
+    write_jvm_prop "ultima.clientBenchmark.cameraZPerTick" "$CAMERA_Z_PER_TICK"
+  fi
+  if [[ -n "${BROKER_MODE:-}" ]]; then
+    write_jvm_prop "ultima.crossPipelineAdmissionBroker.mode" "$BROKER_MODE"
+  fi
+  if [[ -n "${WARMUP_MODE:-}" ]]; then
+    write_jvm_prop "ultima.renderWarmupSystem.mode" "$WARMUP_MODE"
+  fi
+  if [[ -n "${BROKER_STATIC_PERMIT_EVERY_FRAMES:-}" ]]; then
+    write_jvm_prop "ultima.crossPipelineAdmissionBroker.staticPermitEveryFrames" "$BROKER_STATIC_PERMIT_EVERY_FRAMES"
+  fi
+  if [[ "${IRIS_CACHE_VERIFY:-0}" == 1 ]]; then
+    write_jvm_prop "ultima.irisShaderFrontendArtifactCache.verify" "true"
+  fi
+  if [[ "${WARMUP_DETAILED_PROFILER:-0}" == 1 ]]; then
+    write_jvm_prop "ultima.renderWarmupSystem.detailedProfiler" "true"
   fi
   if [[ -n "${HOLD_POSITION:-}" ]]; then
     write_jvm_prop "ultima.clientBenchmark.holdPosition" "$([[ "$HOLD_POSITION" == 1 ]] && echo true || echo false)"
@@ -211,7 +245,7 @@ echo "Config: ${CONFIG_ROOT}/config/ultima.properties"
 echo "Camera: ${CAMERA_MODE}"
 echo "Scene: ${SCENE}"
 echo "Resolution: ${WIDTH}x${HEIGHT}"
-echo "Recorder: warmup=${WARMUP_FRAMES} sample=${SAMPLE_FRAMES} exitAfterWrite=${EXIT_AFTER_WRITE}"
+echo "Recorder: replay=${REPLAY_MODE} ticks=${WARMUP_TICKS}+${SAMPLE_TICKS} frames=${WARMUP_FRAMES}+${SAMPLE_FRAMES} exitAfterWrite=${EXIT_AFTER_WRITE}"
 echo "Keep world copy, camera path, resolution, distances, graphics, shaders, packs, and population identical."
 echo "Primary release comparison is disabled versus default, not enabled."
 echo "== module states (${MODE}) =="

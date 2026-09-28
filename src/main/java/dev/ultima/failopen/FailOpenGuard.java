@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 public final class FailOpenGuard {
     public static final int CIRCUIT_BREAKER_THRESHOLD = 3;
     static final int MAX_TRIPPED_CASES = 256;
+    static final int MAX_CONSECUTIVE_CASES = 256;
 
     public enum Module {
         RECIPE_MATCH_CACHE("recipe_match_cache", "ultima-recipe-cache"),
@@ -37,6 +38,7 @@ public final class FailOpenGuard {
         private final AtomicLong failOpens = new AtomicLong();
         private final ConcurrentHashMap<Object, Integer> consecutive = new ConcurrentHashMap<>();
         private final Set<Object> tripped = ConcurrentHashMap.newKeySet();
+        private volatile boolean overflow;
 
         Module(final String key, final String loggerName) {
             this.key = key;
@@ -55,6 +57,7 @@ public final class FailOpenGuard {
             this.failOpens.set(0L);
             this.consecutive.clear();
             this.tripped.clear();
+            this.overflow = false;
         }
     }
 
@@ -100,7 +103,14 @@ public final class FailOpenGuard {
     }
 
     public static boolean isTripped(final Module module, final Object caseId) {
-        return caseId != null && module.tripped.contains(caseId);
+        if (caseId == null) {
+            return false;
+        }
+        if (module.tripped.contains(caseId)) {
+            return true;
+        }
+        // overflow is false on the healthy path, so the consecutive map is not touched.
+        return module.overflow && !module.consecutive.containsKey(caseId);
     }
 
     /**
@@ -190,7 +200,10 @@ public final class FailOpenGuard {
     }
 
     private static void recordSuccess(final Module module, final Object caseId) {
-        if (caseId != null) {
+        if (caseId == null || module.consecutive.isEmpty()) {
+            return;
+        }
+        if (module.consecutive.get(caseId) != null) {
             module.consecutive.remove(caseId);
         }
     }
@@ -200,9 +213,48 @@ public final class FailOpenGuard {
         if (caseId == null) {
             return;
         }
-        int consecutive = module.consecutive.merge(caseId, 1, Integer::sum);
-        if (consecutive >= CIRCUIT_BREAKER_THRESHOLD && module.tripped.size() < MAX_TRIPPED_CASES) {
-            module.tripped.add(caseId);
+        if (!module.consecutive.containsKey(caseId) && module.consecutive.size() >= MAX_CONSECUTIVE_CASES) {
+            if (module.tripped.size() < MAX_TRIPPED_CASES) {
+                module.tripped.add(caseId);
+            } else {
+                module.overflow = true;
+            }
+            return;
         }
+        int consecutive = module.consecutive.merge(caseId, 1, FailOpenGuard::saturate);
+        if (consecutive >= CIRCUIT_BREAKER_THRESHOLD) {
+            if (module.tripped.size() < MAX_TRIPPED_CASES) {
+                module.tripped.add(caseId);
+            } else {
+                module.consecutive.remove(caseId);
+                module.overflow = true;
+            }
+        }
+    }
+
+    private static int saturate(final int left, final int right) {
+        long sum = (long) left + (long) right;
+        if (sum > Integer.MAX_VALUE || sum < 0L) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) sum;
+    }
+
+    static int consecutiveCaseCount(final Module module) {
+        return module.consecutive.size();
+    }
+
+    static int consecutiveCount(final Module module, final Object caseId) {
+        Integer count = module.consecutive.get(caseId);
+        return count == null ? 0 : count;
+    }
+
+    /** Fault accounting without the WARN log. Production doors call {@link #failOpen}. */
+    static void noteFailureForTests(final Module module, final Object caseId) {
+        recordFailure(module, caseId);
+    }
+
+    static void seedConsecutiveForTests(final Module module, final Object caseId, final int count) {
+        module.consecutive.put(caseId, count);
     }
 }

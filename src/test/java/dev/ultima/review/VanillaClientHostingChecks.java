@@ -71,6 +71,9 @@ final class VanillaClientHostingChecks {
             "rgss_endpoint",
             "temporal",
             "fsr_upscaling",
+            "iris_shader_frontend_artifact_cache",
+            "cross_pipeline_admission_broker",
+            "render_warmup_system",
             "settings_ui");
 
     private VanillaClientHostingChecks() {
