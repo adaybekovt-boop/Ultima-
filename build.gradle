@@ -64,6 +64,11 @@ loom {
             runDir "run/scenarios"
             vmArg "-Dultima.scenario.label=${project.findProperty('ultima.scenario.label') ?: 'unlabelled'}"
             vmArg "-Dultima.scenario.out=${projectDir}/build/scenarios"
+            if (project.hasProperty("ultima.scenario.bench")) {
+                vmArg "-Dultima.scenario.bench=${project.property('ultima.scenario.bench')}"
+                vmArg "-Dultima.scenario.warmup=${project.findProperty('ultima.scenario.warmup') ?: '600'}"
+                vmArg "-Dultima.scenario.ticks=${project.findProperty('ultima.scenario.ticks') ?: '1200'}"
+            }
             programArg "nogui"
         }
     }
