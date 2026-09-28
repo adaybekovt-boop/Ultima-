@@ -11,7 +11,7 @@ find_jar() {
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "$line" || "$line" == \#* ]] && continue
   read -r cmd rest <<<"$line"
-  echo "::group::$line"
+  echo "::group::${line:0:70}"
   case "$cmd" in
     jar)
       find_jar "$rest" 20
