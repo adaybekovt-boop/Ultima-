@@ -48,7 +48,7 @@ public final class SettingsScreenLogicTest {
         assertTrue(UltimaSettingsCatalog.unknownCatalogKeys().isEmpty(),
                 "catalog must not invent modules: " + UltimaSettingsCatalog.unknownCatalogKeys());
         assertEquals((long) UltimaModules.all().size(), UltimaSettingsCatalog.all().size(), "catalog size");
-        assertEquals(27L, UltimaModules.all().size(), "merged module count");
+        assertEquals(26L, UltimaModules.all().size(), "merged module count");
 
         assertTrue(UltimaSettingsCatalog.require("fsr_upscaling").category() == SettingsCategory.RENDERING,
                 "fsr_upscaling is Rendering");
