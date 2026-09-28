@@ -53,8 +53,14 @@ fi
 
 echo "=== client test: $LABEL (modules on: ${FORCE_ON:-none, or shipped defaults})"
 status=0
-timeout "${CLIENT_TEST_TIMEOUT:-1200}" "${runner[@]}" \
-  ./gradlew runClientGametest -Pultima.clienttest.label="$LABEL" --console=plain || status=$?
+for attempt in 1 2; do
+  status=0
+  timeout "${CLIENT_TEST_TIMEOUT:-1200}" "${runner[@]}" \
+    ./gradlew runClientGametest -Pultima.clienttest.label="$LABEL" --console=plain || status=$?
+  # A build that died before the game started (a dropped asset download) says nothing about Ultima: retry it once.
+  if [[ $status -eq 0 || -f "$RUN_DIR/logs/latest.log" ]]; then break; fi
+  echo "the client never started (exit $status); retrying once" >&2
+done
 
 mkdir -p "build/clienttest/logs"
 cp "$RUN_DIR/logs/latest.log" "build/clienttest/logs/$LABEL.log" 2>/dev/null || true

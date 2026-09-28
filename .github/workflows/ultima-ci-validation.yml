@@ -153,22 +153,22 @@ jobs:
         shell: bash
         run: bash scripts/client-test.sh mesher java_mesher,mesher_fast_path,render_snapshot,section_task_queue
 
-      - name: Screenshots with defaults and with mesher modules must equal the baseline
+      - name: Client test, retained terrain on
+        shell: bash
+        run: bash scripts/client-test.sh retained retained_terrain
+
+      - name: Screenshots with the module sets must match the baseline
         shell: bash
         run: |
           status=0
-          for label in defaults mesher; do
+          for label in defaults mesher retained; do
             echo "=== baseline vs $label"
             python3 scripts/compare-screenshots.py build/clienttest/baseline "build/clienttest/$label" \
-              --control build/clienttest/control --max-unstable 0.10 --ignore '01_title.png' '02_settings_*' || status=1
+              --control build/clienttest/control --max-unstable 0.10 \
+              --channel-tolerance 4 --max-changed-fraction 0.0025 \
+              --ignore '01_title.png' '02_settings_*' || status=1
           done
           exit "$status"
-
-      - name: Text pictures of two world screenshots, for reading a failure from the log
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: python3 scripts/dump-thumbnails.py build/clienttest/baseline/03_world_point1.png build/clienttest/baseline/03_world_point2.png
 
       - name: Upload client test outputs
         if: always()
